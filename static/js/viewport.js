@@ -128,7 +128,6 @@ export class ViewportController {
     });
   }
 
-  // 1. UNIFIED CAMERA ACTION PRIMITIVES
   orbitHeading(deltaDeg) {
     const cam = CADState.state.camera;
     cam.heading = ((cam.heading || 0) + deltaDeg + 360) % 360;
@@ -237,7 +236,6 @@ export class ViewportController {
       this.orbitTilt(dTilt);
     });
 
-    // Preset chip single-click listeners
     document.querySelectorAll('.preset-chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
         e.preventDefault();
@@ -252,13 +250,10 @@ export class ViewportController {
     });
   }
 
-  // Fit adjusts the viewport to 25" (635 mm) larger than model/selection
   centerViewport() {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
-    const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
-    
-    const marginMm = 25.0 * 25.4; // 25 inches in mm = 635.0 mm
+    const marginMm = 25.0 * 25.4; // 25 inches = 635.0 mm margin
     const targetDim = bounds.maxDimension + marginMm;
     
     cam.heading = 30;
@@ -332,7 +327,6 @@ export class ViewportController {
         return;
       }
 
-      // Keyboard Pan Controls: Same-direction movement (Left arrow pans view left/scene right, Right arrow pans view right)
       if (!isShift && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         if (e.key === 'ArrowLeft') this.panScreen(panStep, 0);
@@ -342,7 +336,6 @@ export class ViewportController {
         return;
       }
 
-      // Shift Arrows (ORBIT)
       if (isShift) {
         if (e.key === 'ArrowLeft') { e.preventDefault(); this.orbitHeading(-rotStep); return; }
         if (e.key === 'ArrowRight') { e.preventDefault(); this.orbitHeading(rotStep); return; }
@@ -428,7 +421,6 @@ export class ViewportController {
     return best;
   }
 
-  // Two-Finger Pinch Zoom & Pan on Touch Devices
   initTouchControls() {
     if (!this.canvasOverlay) return;
     const canvas = this.canvasOverlay;
@@ -506,7 +498,6 @@ export class ViewportController {
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
 
-      // Transform tools: move, rotate, scale
       const activeTransTool = CADState.state.activeTransformTool;
       const selObjs = CADState.getSelectedObjects();
       
@@ -754,7 +745,6 @@ export class ViewportController {
   async handleHitTest(mx, my, isCtrl, isShift) {
     const selMode = CADState.state.selectionMode || 'part';
 
-    // 1. VERTEX SELECTION MODE
     if (selMode === 'vertex') {
       let bestV = null, bestDist = 12;
       for (const v of this.lastRenderVertices) {
@@ -767,7 +757,6 @@ export class ViewportController {
       }
     }
 
-    // 2. EDGE SELECTION MODE
     if (selMode === 'edge') {
       let bestEdge = null, bestDist = 10;
       for (const edge of this.lastRenderEdges) {
@@ -780,7 +769,6 @@ export class ViewportController {
       }
     }
 
-    // 3. FACE SELECTION MODE
     let hitItem = null;
     for (let i = this.lastRenderQueue.length - 1; i >= 0; i--) {
       const item = this.lastRenderQueue[i];
@@ -828,7 +816,6 @@ export class ViewportController {
     this.render();
   }
 
-  // AUTHORITATIVE RENDERING PIPELINE
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
     const w = this.cssWidth || (this.canvasOverlay.width / (window.devicePixelRatio || 1));
@@ -884,7 +871,7 @@ export class ViewportController {
       this.ctx.strokeStyle = '#38bdf8'; this.ctx.beginPath(); this.ctx.moveTo(ox, oy); this.ctx.lineTo(zx, zy); this.ctx.stroke();
     }
 
-    // 3. Object Transform Pipeline with Sub-element Classification
+    // 3. Object Rendering
     const objects = CADState.state.objects || [];
     const selectedIds = CADState.state.selectedIds || [];
     const selMode = CADState.state.selectionMode || 'part';
@@ -896,6 +883,10 @@ export class ViewportController {
     const verticesRender = [];
     const edgesRender = [];
     const snaps = [];
+
+    const lightDir = [0.45, 0.35, 0.82];
+    const lLen = Math.hypot(...lightDir);
+    const lx = lightDir[0] / lLen, ly = lightDir[1] / lLen, lz = lightDir[2] / lLen;
 
     objects.forEach(obj => {
       if (obj.visible === false) return;
@@ -914,15 +905,16 @@ export class ViewportController {
       faces.forEach((face, fIdx) => {
         const poly2D = [];
         const polyCamZ = [];
+        const polyWorld = [];
         let faceCentroid = [0, 0, 0];
 
         face.forEach(pt => {
-          const lx = (pt.x !== undefined ? pt.x : 0) * scale[0];
-          const ly = (pt.y !== undefined ? pt.y : 0) * scale[1];
-          const lz = (pt.z !== undefined ? pt.z : 0) * scale[2];
-          const rx = lx * cosR - ly * sinR;
-          const ry = lx * sinR + ly * cosR;
-          const rz = lz;
+          const lx_pt = (pt.x !== undefined ? pt.x : 0) * scale[0];
+          const ly_pt = (pt.y !== undefined ? pt.y : 0) * scale[1];
+          const lz_pt = (pt.z !== undefined ? pt.z : 0) * scale[2];
+          const rx = lx_pt * cosR - ly_pt * sinR;
+          const ry = lx_pt * sinR + ly_pt * cosR;
+          const rz = lz_pt;
           const wx = pos[0] + rx;
           const wy = pos[1] + ry;
           const wz = pos[2] + rz;
@@ -930,6 +922,7 @@ export class ViewportController {
           const [px, py, camZ] = project3D(wx, wy, wz);
           poly2D.push([px, py]);
           polyCamZ.push(camZ);
+          polyWorld.push([wx, wy, wz]);
           
           verticesRender.push({ objId, vIdx: vGlobalIdx++, px, py, wx, wy, wz, camZ, isSel: isSel && selVertIdx === (vGlobalIdx - 1) });
           snaps.push({ type: 'vertex', objId, px, py, world: [wx, wy, wz] });
@@ -969,9 +962,21 @@ export class ViewportController {
         const avgCamZ = polyCamZ.reduce((acc, z) => acc + z, 0) / (polyCamZ.length || 1);
         const isFaceSel = isSel && selFaceIdx === fIdx;
 
+        let faceNorm = [0, 0, 1];
+        if (polyWorld.length >= 3) {
+          const v10 = [polyWorld[1][0] - polyWorld[0][0], polyWorld[1][1] - polyWorld[0][1], polyWorld[1][2] - polyWorld[0][2]];
+          const v20 = [polyWorld[2][0] - polyWorld[0][0], polyWorld[2][1] - polyWorld[0][1], polyWorld[2][2] - polyWorld[0][2]];
+          const cross = [v10[1]*v20[2] - v10[2]*v20[1], v10[2]*v20[0] - v10[0]*v20[2], v10[0]*v20[1] - v10[1]*v20[0]];
+          const cLen = Math.hypot(...cross);
+          if (cLen > 1e-6) faceNorm = [cross[0]/cLen, cross[1]/cLen, cross[2]/cLen];
+        }
+
+        const dotL = Math.max(0.18, faceNorm[0]*lx + faceNorm[1]*ly + faceNorm[2]*lz);
+
         faceRenderQueue.push({
           obj, isSel, isFaceSel, fIdx, poly2D, avgCamZ, isFrontFacing,
           centroid3D: faceCentroid,
+          dotLight: dotL,
           baseColor: obj.color || '#38bdf8', objOpacity: obj.opacity ?? 1.0
         });
       });
@@ -983,7 +988,7 @@ export class ViewportController {
     faceRenderQueue.sort((a, b) => a.avgCamZ - b.avgCamZ);
     this.lastRenderQueue = faceRenderQueue;
 
-    // Face rendering
+    // Directional shading & CAD rendering
     faceRenderQueue.forEach(item => {
       if (item.objOpacity >= 0.99 && !item.isFrontFacing && faceRenderQueue.length > 2) return;
       this.ctx.beginPath();
@@ -996,20 +1001,31 @@ export class ViewportController {
       if (item.isFaceSel) {
         this.ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
       } else if (item.isSel && selMode === 'part') {
-        this.ctx.fillStyle = 'rgba(235, 203, 139, 0.85)';
+        this.ctx.fillStyle = 'rgba(235, 203, 139, 0.88)';
       } else {
-        this.ctx.fillStyle = item.baseColor;
+        let hex = item.baseColor || '#38bdf8';
+        if (hex.startsWith('#') && hex.length === 7) {
+          const r = parseInt(hex.slice(1, 3), 16);
+          const g = parseInt(hex.slice(3, 5), 16);
+          const b = parseInt(hex.slice(5, 7), 16);
+          const factor = 0.45 + 0.55 * item.dotLight;
+          const sr = Math.min(255, Math.round(r * factor));
+          const sg = Math.min(255, Math.round(g * factor));
+          const sb = Math.min(255, Math.round(b * factor));
+          this.ctx.fillStyle = `rgb(${sr}, ${sg}, ${sb})`;
+        } else {
+          this.ctx.fillStyle = hex;
+        }
       }
       
       this.ctx.globalAlpha = item.objOpacity;
       this.ctx.fill();
       this.ctx.globalAlpha = 1.0;
-      this.ctx.strokeStyle = item.isFaceSel ? '#ffffff' : (item.isSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
-      this.ctx.lineWidth = item.isFaceSel ? 3.0 : (item.isSel ? 2.5 : 0.9);
+      this.ctx.strokeStyle = item.isFaceSel ? '#ffffff' : (item.isSel ? '#ffffff' : 'rgba(255,255,255,0.4)');
+      this.ctx.lineWidth = item.isFaceSel ? 3.0 : (item.isSel ? 2.0 : 0.8);
       this.ctx.stroke();
     });
 
-    // Highlight edges in edge selection mode
     if (selMode === 'edge') {
       edgesRender.forEach(e => {
         if (e.isSel) {
@@ -1023,7 +1039,6 @@ export class ViewportController {
       });
     }
 
-    // Highlight vertices in vertex selection mode
     if (selMode === 'vertex') {
       verticesRender.forEach(v => {
         this.ctx.beginPath();
@@ -1036,7 +1051,7 @@ export class ViewportController {
       });
     }
 
-    // 4. CONSTRUCTION LINES FOR SCALE & ROTATE TOOLS
+    // 4. Construction Lines for Scale and Rotate Tools
     const activeTransTool = CADState.state.activeTransformTool;
     const selObjs = CADState.getSelectedObjects();
     if (activeTransTool && selObjs.length > 0) {
@@ -1044,7 +1059,6 @@ export class ViewportController {
       const [cpx, cpy] = project3D(selCenter[0], selCenter[1], selCenter[2]);
       
       if (activeTransTool === 'scale') {
-        // Draw forward/reverse bidirectional sizing construction-line
         const guideLen = 400.0;
         const [fpx, fpy] = project3D(selCenter[0] + guideLen, selCenter[1] + guideLen, selCenter[2]);
         const [rpx, rpy] = project3D(selCenter[0] - guideLen, selCenter[1] - guideLen, selCenter[2]);
@@ -1058,7 +1072,6 @@ export class ViewportController {
         this.ctx.lineTo(fpx, fpy);
         this.ctx.stroke();
         
-        // Draw scale sizing arrow anchors
         this.ctx.setLineDash([]);
         this.ctx.fillStyle = '#00f3ff';
         this.ctx.beginPath(); this.ctx.arc(fpx, fpy, 5, 0, Math.PI * 2); this.ctx.fill();
@@ -1075,7 +1088,6 @@ export class ViewportController {
         }
         this.ctx.restore();
       } else if (activeTransTool === 'rotate') {
-        // Draw plane-of-view rotation compass construction circle & guide ray
         const radius = 180.0;
         this.ctx.save();
         this.ctx.strokeStyle = '#00f3ff';
@@ -1103,7 +1115,6 @@ export class ViewportController {
       }
     }
 
-    // Snapping Marker
     if (this.activeSnapTarget && prefs.csnap !== false) {
       const s = this.activeSnapTarget;
       this.ctx.save();
@@ -1121,7 +1132,6 @@ export class ViewportController {
       this.ctx.restore();
     }
 
-    // Draft preview line
     if (CADState.state.activeTool && this.draftPoints.length > 0) {
       this.ctx.strokeStyle = '#bf616a';
       this.ctx.lineWidth = 2.5;

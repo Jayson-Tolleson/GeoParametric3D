@@ -430,7 +430,6 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         ]
         context_snippet = f"\nCurrent Active Assembly Scene ({len(objs)} bodies, canonical unit: {CANONICAL_INTERNAL_UNIT}): " + "; ".join(parts_summary)
 
-    # Vertex AI REST invocation with project broadcasterfishmap and location global
     token = None
     try:
         import google.auth

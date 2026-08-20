@@ -311,27 +311,70 @@ class GeoSurface:
         self.parameters = parameters or {}
         self.source_id = source_id
 
+    def _get_frame(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        origin = np.asarray(self.parameters.get("origin", [0, 0, 0]), dtype=np.float64)
+        axis = np.asarray(self.parameters.get("axis", self.parameters.get("normal", [0, 0, 1])), dtype=np.float64)
+        axis_len = np.linalg.norm(axis)
+        z_axis = axis / axis_len if axis_len > 1e-9 else np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        
+        ref = np.asarray(self.parameters.get("ref_direction", self.parameters.get("u_dir", [1, 0, 0])), dtype=np.float64)
+        ref_proj = ref - np.dot(ref, z_axis) * z_axis
+        ref_len = np.linalg.norm(ref_proj)
+        if ref_len > 1e-9:
+            x_axis = ref_proj / ref_len
+        else:
+            arb = np.array([0.0, 1.0, 0.0]) if abs(z_axis[0]) > 0.8 or abs(z_axis[2]) > 0.8 else np.array([1.0, 0.0, 0.0])
+            x_axis = np.cross(z_axis, arb)
+            x_norm = np.linalg.norm(x_axis)
+            x_axis = x_axis / x_norm if x_norm > 1e-9 else np.array([1.0, 0.0, 0.0])
+            
+        y_axis = np.cross(z_axis, x_axis)
+        y_norm = np.linalg.norm(y_axis)
+        y_axis = y_axis / y_norm if y_norm > 1e-9 else np.array([0.0, 1.0, 0.0])
+        return origin, x_axis, y_axis, z_axis
+
     def evaluate(self, u: float, v: float) -> np.ndarray:
         """Evaluate parametric coordinates P(u, v) -> 3D point."""
+        origin, x_axis, y_axis, z_axis = self._get_frame()
         if self.surface_type == SurfaceType.PLANE:
-            origin = np.asarray(self.parameters.get("origin", [0, 0, 0]), dtype=np.float64)
-            u_dir = np.asarray(self.parameters.get("u_dir", [1, 0, 0]), dtype=np.float64)
-            v_dir = np.asarray(self.parameters.get("v_dir", [0, 1, 0]), dtype=np.float64)
+            u_dir = np.asarray(self.parameters.get("u_dir", x_axis), dtype=np.float64)
+            v_dir = np.asarray(self.parameters.get("v_dir", y_axis), dtype=np.float64)
             return origin + u * u_dir + v * v_dir
         elif self.surface_type == SurfaceType.CYLINDER:
-            origin = np.asarray(self.parameters.get("origin", [0, 0, 0]), dtype=np.float64)
             radius = float(self.parameters.get("radius", 50.0))
             rad = u * 2.0 * math.pi
-            return origin + np.array([radius * math.cos(rad), radius * math.sin(rad), v], dtype=np.float64)
-        elif self.surface_type == SurfaceType.SPHERE:
-            origin = np.asarray(self.parameters.get("origin", [0, 0, 0]), dtype=np.float64)
+            return origin + radius * (math.cos(rad) * x_axis + math.sin(rad) * y_axis) + v * z_axis
+        elif self.surface_type == SurfaceType.CONE:
             radius = float(self.parameters.get("radius", 50.0))
-            theta = (u - 0.5) * math.pi
-            phi = v * 2.0 * math.pi
-            return origin + radius * np.array([math.cos(theta) * math.cos(phi), math.cos(theta) * math.sin(phi), math.sin(theta)], dtype=np.float64)
-        return np.array([u, v, 0.0], dtype=np.float64)
+            semi_angle = float(self.parameters.get("semi_angle", 0.5))
+            rad = u * 2.0 * math.pi
+            r_v = max(0.0, radius - v * math.tan(semi_angle))
+            return origin + r_v * (math.cos(rad) * x_axis + math.sin(rad) * y_axis) + v * z_axis
+        elif self.surface_type == SurfaceType.SPHERE:
+            radius = float(self.parameters.get("radius", 50.0))
+            lat = (u - 0.5) * math.pi
+            lon = v * 2.0 * math.pi
+            return origin + radius * (math.cos(lat) * (math.cos(lon) * x_axis + math.sin(lon) * y_axis) + math.sin(lat) * z_axis)
+        elif self.surface_type == SurfaceType.TORUS:
+            major_r = float(self.parameters.get("major_radius", 50.0))
+            minor_r = float(self.parameters.get("minor_radius", 10.0))
+            phi = u * 2.0 * math.pi
+            theta = v * 2.0 * math.pi
+            r_tube = major_r + minor_r * math.cos(theta)
+            return origin + r_tube * (math.cos(phi) * x_axis + math.sin(phi) * y_axis) + (minor_r * math.sin(theta)) * z_axis
+        return origin + u * x_axis + v * y_axis
 
     def normal(self, u: float, v: float) -> np.ndarray:
+        origin, x_axis, y_axis, z_axis = self._get_frame()
+        if self.surface_type == SurfaceType.PLANE:
+            return z_axis
+        elif self.surface_type == SurfaceType.CYLINDER:
+            rad = u * 2.0 * math.pi
+            return math.cos(rad) * x_axis + math.sin(rad) * y_axis
+        elif self.surface_type == SurfaceType.SPHERE:
+            lat = (u - 0.5) * math.pi
+            lon = v * 2.0 * math.pi
+            return math.cos(lat) * (math.cos(lon) * x_axis + math.sin(lon) * y_axis) + math.sin(lat) * z_axis
         delta = 1e-5
         p0 = self.evaluate(u, v)
         pu = (self.evaluate(u + delta, v) - p0) / delta
@@ -340,7 +383,7 @@ class GeoSurface:
         norm_len = np.linalg.norm(n)
         if norm_len > EPSILON_NORMAL:
             return n / norm_len
-        return np.array([0.0, 0.0, 1.0], dtype=np.float64)
+        return z_axis
 
     def to_dict(self) -> dict:
         return {
@@ -576,7 +619,7 @@ class RenderMesh:
 def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Dict[str, Any]:
     """
     Numerical validation layer before B-Rep geometry is passed to the visualization payload.
-    Checks for NaN, infinite, or extreme coordinates (e.g., > 1e10) before tessellation.
+    Checks for NaN, infinite, or extreme coordinates before tessellation.
     Logs errors and sanitizes data to prevent camera bounds or LOD corruption.
     """
     diagnostics = {
@@ -641,7 +684,6 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
             diagnostics["sanitized"] = True
             continue
             
-        # Check for zero area using the outer loop vertices
         loop = part.loops.get(face.outer_loop_id)
         if not loop:
             continue
@@ -655,7 +697,6 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
                 poly_pts.append(part.vertices[v_target].point)
             
         if len(poly_pts) >= 3:
-            # Calculate area of 3D polygon
             area = 0.0
             p0 = poly_pts[0]
             for i in range(1, len(poly_pts) - 1):
@@ -664,12 +705,14 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
                 cross = np.cross(p1 - p0, p2 - p0)
                 area += 0.5 * np.linalg.norm(cross)
             if area < 1e-9 or not np.isfinite(area):
-                logger.error(f"Zero-area or invalid face detected in {part.id}: {fid} (area={area})")
-                invalid_fids.add(fid)
-                del part.faces[fid]
-                diagnostics["zero_area_faces"] += 1
-                diagnostics["sanitized"] = True
-                continue
+                surface = part.surfaces.get(face.surface_id)
+                # Keep curved surface faces even if polygon projection is co-linear (e.g. seam edge loop)
+                if not surface or surface.surface_type == SurfaceType.PLANE:
+                    invalid_fids.add(fid)
+                    del part.faces[fid]
+                    diagnostics["zero_area_faces"] += 1
+                    diagnostics["sanitized"] = True
+                    continue
                 
         face.inner_loop_ids = [lid for lid in face.inner_loop_ids if lid not in invalid_lids]
         
@@ -694,6 +737,7 @@ class AdaptiveTessellator:
     """
     Converts canonical geometry to derived render representations
     using curvature, feature size, and desired level-of-detail.
+    Supports both exact planar polygons and smooth composite parametric surfaces.
     """
     def __init__(self, chordal_tolerance: float = 0.05, angular_tolerance_deg: float = 12.0):
         self.chordal_tolerance = float(chordal_tolerance)
@@ -709,7 +753,6 @@ class AdaptiveTessellator:
                 f"Outer boundary loop {face.outer_loop_id} not found in part"
             )
 
-        # Collect outer loop vertices
         poly_pts: List[np.ndarray] = []
         for e_id in outer_loop.ordered_edge_ids:
             edge = part.edges.get(e_id)
@@ -720,17 +763,63 @@ class AdaptiveTessellator:
             if vertex:
                 poly_pts.append(vertex.point)
 
-        if len(poly_pts) < 3:
-            return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int32), np.empty((0, 3), dtype=np.float64)
+        # Planar faces or low-complexity loops
+        if not surface or surface.surface_type == SurfaceType.PLANE:
+            if len(poly_pts) < 3:
+                return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int32), np.empty((0, 3), dtype=np.float64)
+            from universal_byte_parser import triangulate_polygon_3d
+            face_norm = surface.normal(0.5, 0.5) if surface else np.array([0.0, 0.0, 1.0], dtype=np.float64)
+            tris = triangulate_polygon_3d(poly_pts, face_norm)
+            verts_arr = np.array(poly_pts, dtype=np.float64)
+            indices_arr = np.array(tris, dtype=np.int32)
+            norms_arr = np.tile(face_norm, (len(verts_arr), 1))
+            return verts_arr, indices_arr, norms_arr
 
-        # Planar ear-clipping with minimal triangulation
-        from universal_byte_parser import triangulate_polygon_3d
-        face_norm = surface.normal(0.5, 0.5) if surface else np.array([0.0, 0.0, 1.0], dtype=np.float64)
-        tris = triangulate_polygon_3d(poly_pts, face_norm)
+        # Parametric Curved Surfaces (Cylinder, Cone, Sphere, Torus, NURBS, Revolve, Extrude)
+        lod_samples = {
+            LODLevel.BOUNDS_LOD0: (4, 4),
+            LODLevel.LOW_LOD1: (8, 6),
+            LODLevel.MEDIUM_LOD2: (16, 12),
+            LODLevel.HIGH_LOD3: (32, 16)
+        }
+        nu, nv = lod_samples.get(lod, (24, 12))
 
-        verts_arr = np.array(poly_pts, dtype=np.float64)
-        indices_arr = np.array(tris, dtype=np.int32)
-        norms_arr = np.tile(face_norm, (len(verts_arr), 1))
+        if len(poly_pts) >= 3:
+            # If boundary loop exists, use its bounds to form composite face facets
+            pts_arr = np.array(poly_pts, dtype=np.float64)
+            v_min = float(np.min(pts_arr[:, 2]))
+            v_max = float(np.max(pts_arr[:, 2]))
+            h = max(1.0, v_max - v_min)
+        else:
+            v_min, v_max, h = 0.0, 100.0, 100.0
+
+        u_vals = np.linspace(0.0, 1.0, nu, endpoint=False)
+        v_vals = np.linspace(v_min, v_max, nv)
+        
+        grid_verts: List[np.ndarray] = []
+        grid_norms: List[np.ndarray] = []
+        
+        for v in v_vals:
+            for u in u_vals:
+                p = surface.evaluate(float(u), float(v))
+                n = surface.normal(float(u), float(v))
+                grid_verts.append(p)
+                grid_norms.append(n)
+                
+        grid_indices: List[Tuple[int, int, int]] = []
+        for j in range(nv - 1):
+            for i in range(nu):
+                i_next = (i + 1) % nu
+                idx00 = j * nu + i
+                idx10 = j * nu + i_next
+                idx01 = (j + 1) * nu + i
+                idx11 = (j + 1) * nu + i_next
+                grid_indices.append((idx00, idx10, idx11))
+                grid_indices.append((idx00, idx11, idx01))
+                
+        verts_arr = np.array(grid_verts, dtype=np.float64)
+        indices_arr = np.array(grid_indices, dtype=np.int32)
+        norms_arr = np.array(grid_norms, dtype=np.float64)
         return verts_arr, indices_arr, norms_arr
 
     def tessellate_part(self, part: GeoPart, lod: LODLevel = LODLevel.HIGH_LOD3) -> RenderMesh:
@@ -753,19 +842,17 @@ class AdaptiveTessellator:
                 all_indices.append((offset + int(t[0]), offset + int(t[1]), offset + int(t[2])))
                 tri_face_ids.append(face.id)
 
-        # Compact coincident geometric vertices, but NEVER deduplicate triangles.
-        # Six planar B-Rep faces therefore remain six faces / twelve triangles while
-        # the shared cube corners remain a compact set of eight render vertices.
+        # Compact coincident geometric vertices for planar surfaces
         unique = {}
         final_vertices = []
         remap = []
         for p in all_verts:
-            key = tuple(np.asarray(p, dtype=np.float64).round(12))
+            key = tuple(np.asarray(p, dtype=np.float64).round(9))
             if key not in unique:
                 unique[key] = len(final_vertices)
                 final_vertices.append(np.asarray(p, dtype=np.float64))
             remap.append(unique[key])
-        final_indices = [(remap[a], remap[b], remap[c]) for a,b,c in all_indices]
+        final_indices = [(remap[a], remap[b], remap[c]) for a, b, c in all_indices]
 
         final_v = np.asarray(final_vertices, dtype=np.float64).reshape((-1, 3)) if final_vertices else np.empty((0, 3), dtype=np.float64)
         final_t = np.asarray(final_indices, dtype=np.int32).reshape((-1, 3)) if final_indices else np.empty((0, 3), dtype=np.int32)

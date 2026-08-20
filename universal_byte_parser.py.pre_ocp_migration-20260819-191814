@@ -105,63 +105,29 @@ DEFAULT_MATERIAL_COLORS = {
     'Rubber_Nitrile': '#0f172a'
 }
 
-# Optional Open CASCADE Technology (OCCT) Integration (supports OCP and python-occ)
+# Optional Open CASCADE Technology (OCCT) Integration
 _OCCT_AVAILABLE = False
-_OCCT_BACKEND = None
-
 try:
-    from OCP.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
-    from OCP.IFSelect import IFSelect_RetDone
-    from OCP.BRepMesh import BRepMesh_IncrementalMesh
-    from OCP.TopExp import TopExp_Explorer
-    from OCP.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_SHELL, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX
-    from OCP.TopoDS import TopoDS, TopoDS_Shape
-    from OCP.BRep import BRep_Tool, BRep_Builder
-    from OCP.TopLoc import TopLoc_Location
-    from OCP.ShapeFix import ShapeFix_Shape
-    from OCP.BRepAdaptor import BRepAdaptor_Surface
-    from OCP.BRepTools import BRepTools
-    from OCP.GeomAbs import (
+    from OCC.Core.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
+    from OCC.Core.IFSelect import IFSelect_RetDone
+    from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
+    from OCC.Core.TopExp import TopExp_Explorer
+    from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_SHELL, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX
+    from OCC.Core.TopoDS import topods, TopoDS_Shape
+    from OCC.Core.BRep import BRep_Tool, BRep_Builder
+    from OCC.Core.TopLoc import TopLoc_Location
+    from OCC.Core.ShapeFix import ShapeFix_Shape
+    from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
+    from OCC.Core.BRepTools import breptools
+    from OCC.Core.GeomAbs import (
         GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Cone,
         GeomAbs_Sphere, GeomAbs_Torus, GeomAbs_BezierSurface,
         GeomAbs_BSplineSurface, GeomAbs_SurfaceOfRevolution,
         GeomAbs_SurfaceOfExtrusion
     )
     _OCCT_AVAILABLE = True
-    _OCCT_BACKEND = "OCP"
-    TopoDS_Face_Cast = TopoDS.Face
-    TopoDS_Wire_Cast = TopoDS.Wire
-    TopoDS_Edge_Cast = TopoDS.Edge
-    TopoDS_Vertex_Cast = TopoDS.Vertex
-    brep_read_fn = getattr(BRepTools, "Read_s", getattr(BRepTools, "Read", None))
 except ImportError:
-    try:
-        from OCC.Core.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
-        from OCC.Core.IFSelect import IFSelect_RetDone
-        from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
-        from OCC.Core.TopExp import TopExp_Explorer
-        from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_SOLID, TopAbs_SHELL, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX
-        from OCC.Core.TopoDS import topods, TopoDS_Shape
-        from OCC.Core.BRep import BRep_Tool, BRep_Builder
-        from OCC.Core.TopLoc import TopLoc_Location
-        from OCC.Core.ShapeFix import ShapeFix_Shape
-        from OCC.Core.BRepAdaptor import BRepAdaptor_Surface
-        from OCC.Core.BRepTools import breptools
-        from OCC.Core.GeomAbs import (
-            GeomAbs_Plane, GeomAbs_Cylinder, GeomAbs_Cone,
-            GeomAbs_Sphere, GeomAbs_Torus, GeomAbs_BezierSurface,
-            GeomAbs_BSplineSurface, GeomAbs_SurfaceOfRevolution,
-            GeomAbs_SurfaceOfExtrusion
-        )
-        _OCCT_AVAILABLE = True
-        _OCCT_BACKEND = "OCC"
-        TopoDS_Face_Cast = topods.Face
-        TopoDS_Wire_Cast = topods.Wire
-        TopoDS_Edge_Cast = topods.Edge
-        TopoDS_Vertex_Cast = topods.Vertex
-        brep_read_fn = breptools.Read
-    except ImportError:
-        _OCCT_AVAILABLE = False
+    _OCCT_AVAILABLE = False
 
 
 # ============================================================
@@ -1083,7 +1049,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             triangle_provenance: List[str] = []
             
             while exp_face.More():
-                occ_face = TopoDS_Face_Cast(exp_face.Current())
+                occ_face = topods.Face(exp_face.Current())
                 loc = TopLoc_Location()
                 triangulation = BRep_Tool.Triangulation(occ_face, loc)
                 
@@ -1128,16 +1094,16 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 inner_loop_ids = []
                 
                 while exp_wire.More():
-                    occ_wire = TopoDS_Wire_Cast(exp_wire.Current())
+                    occ_wire = topods.Wire(exp_wire.Current())
                     exp_edge = TopExp_Explorer(occ_wire, TopAbs_EDGE)
                     wire_edge_ids = []
                     
                     while exp_edge.More():
-                        occ_edge = TopoDS_Edge_Cast(exp_edge.Current())
+                        occ_edge = topods.Edge(exp_edge.Current())
                         exp_v = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
                         v_edge_ids = []
                         while exp_v.More():
-                            occ_v = TopoDS_Vertex_Cast(exp_v.Current())
+                            occ_v = topods.Vertex(exp_v.Current())
                             pt = BRep_Tool.Pnt(occ_v)
                             gv = geo_part.add_vertex(np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64))
                             v_edge_ids.append(gv.id)
@@ -1818,7 +1784,7 @@ def parse_fcstd(content_bytes: bytes, filename: str = "model.FCStd") -> Optional
                             tmp_brep = tmp.name
                         occ_shape = TopoDS_Shape()
                         builder = BRep_Builder()
-                        brep_read_fn(occ_shape, tmp_brep, builder)
+                        breptools.Read(occ_shape, tmp_brep, builder)
                         os.remove(tmp_brep)
                     except Exception:
                         pass
