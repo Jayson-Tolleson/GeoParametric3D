@@ -157,7 +157,8 @@ export class ViewportController {
   zoomBy(factor, focalScreenX = null, focalScreenY = null) {
     const cam = CADState.state.camera;
     const oldRange = cam.range || 1828.8;
-    const newRange = Math.max(0.1, oldRange * factor);
+    // Multi-scale range: 0.125 inches (3.175 mm / 0.003175 m) to 3000+ ft (1,000,000 mm / 1000.0 m)
+    const newRange = Math.max(3.175, Math.min(1000000.0, oldRange * factor));
     
     if (focalScreenX !== null && focalScreenY !== null) {
       const cx = (this.cssWidth || 800) / 2 + (cam.panX || 0);
@@ -252,21 +253,27 @@ export class ViewportController {
     });
   }
 
-  // Fit adjusts the viewport to 25" (635 mm) larger than model/selection
+  // Zoom to Fit (7x Viewport Fit): Position gizmo/target at model center, camera distance = 7 * R
   centerViewport() {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
     const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
     
-    const marginMm = 25.0 * 25.4; // 25 inches in mm = 635.0 mm
-    const targetDim = bounds.maxDimension + marginMm;
+    const R = bounds.radius || (bounds.diagonal ? bounds.diagonal / 2.0 : 152.4);
+    const targetDistance = Math.max(22.225, 7.0 * R); // strictly 7x model size (7 * R)
     
+    const geoCenter = enuToGeodetic(cx, cy, cz);
+    cam.center = geoCenter;
     cam.heading = 30;
     cam.tilt = 65;
-    cam.range = Math.max(635.0, targetDim * 2.1);
+    cam.range = targetDistance;
     cam.panX = 0;
     cam.panY = 0;
+    cam.target = [cx, cy, cz];
     
+    if (this.trackball) {
+      this.trackball.updateFromCamera(cam.heading, cam.tilt);
+    }
     this.syncMap3DFromState();
     CADState.notify();
     this.render();
@@ -278,7 +285,7 @@ export class ViewportController {
     let minX = Infinity, minY = Infinity, minZ = Infinity;
     let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
     
-    if (objects.length === 0) return { min: [-152.4, -152.4, 0], max: [152.4, 152.4, 304.8], maxDimension: 304.8, center: [0, 0, 152.4] };
+    if (objects.length === 0) return { min: [-152.4, -152.4, 0], max: [152.4, 152.4, 304.8], maxDimension: 304.8, diagonal: 527.93, radius: 263.96, center: [0, 0, 152.4] };
     
     objects.forEach(obj => {
       if (obj.visible === false) return;
@@ -297,11 +304,16 @@ export class ViewportController {
       });
     });
     
-    if (minX === Infinity) return { min: [-152.4, -152.4, 0], max: [152.4, 152.4, 304.8], maxDimension: 304.8, center: [0, 0, 152.4] };
+    if (minX === Infinity) return { min: [-152.4, -152.4, 0], max: [152.4, 152.4, 304.8], maxDimension: 304.8, diagonal: 527.93, radius: 263.96, center: [0, 0, 152.4] };
     const dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+    const diag = Math.hypot(dx, dy, dz);
+    const radius = Math.max(diag / 2.0, 25.0);
     return {
       min: [minX, minY, minZ], max: [maxX, maxY, maxZ],
       center: [(minX + maxX)/2, (minY + maxY)/2, (minZ + maxZ)/2],
+      extents: [dx, dy, dz],
+      diagonal: diag,
+      radius: radius,
       maxDimension: Math.max(dx, dy, dz, 50.0)
     };
   }
@@ -374,6 +386,13 @@ export class ViewportController {
 
   initOverlay() {
     if (!this.canvasOverlay) return;
+    // Multi-scale WebGL rendering context with logarithmicDepthBuffer for wide dynamic clipping
+    try {
+      this.gl = this.canvasOverlay.getContext('webgl2', { logarithmicDepthBuffer: true, antialias: true, alpha: true }) ||
+                this.canvasOverlay.getContext('webgl', { logarithmicDepthBuffer: true, antialias: true, alpha: true });
+    } catch (e) {
+      console.warn('[Viewport] WebGL init fallback:', e);
+    }
     const resize = () => {
       if (this.canvasOverlay.parentElement) {
         const rect = this.canvasOverlay.parentElement.getBoundingClientRect();

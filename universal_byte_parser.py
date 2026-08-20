@@ -670,7 +670,8 @@ def compute_bounding_box(positions: np.ndarray) -> Dict[str, Any]:
         return {
             "min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0],
             "center": [0.0, 0.0, 0.0], "extents": [0.0, 0.0, 0.0],
-            "diagonal": 0.0
+            "diagonal": 0.0,
+            "radius": 0.0
         }
     pts = np.asarray(positions, dtype=np.float64)
     if not np.isfinite(pts).all():
@@ -680,19 +681,22 @@ def compute_bounding_box(positions: np.ndarray) -> Dict[str, Any]:
         return {
             "min": [0.0, 0.0, 0.0], "max": [0.0, 0.0, 0.0],
             "center": [0.0, 0.0, 0.0], "extents": [0.0, 0.0, 0.0],
-            "diagonal": 0.0
+            "diagonal": 0.0,
+            "radius": 0.0
         }
     min_v = np.min(pts, axis=0)
     max_v = np.max(pts, axis=0)
     center = (min_v + max_v) / 2.0
     extents = max_v - min_v
     diag = float(np.linalg.norm(extents))
+    radius = float(diag / 2.0)
     return {
         "min": min_v.tolist(),
         "max": max_v.tolist(),
         "center": center.tolist(),
         "extents": extents.tolist(),
-        "diagonal": diag
+        "diagonal": diag,
+        "radius": radius
     }
 
 def triangulate_polygon_3d(vertices: List[np.ndarray], face_normal: Optional[np.ndarray] = None) -> List[Tuple[int, int, int]]:
