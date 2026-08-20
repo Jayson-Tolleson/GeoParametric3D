@@ -1202,8 +1202,16 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 face_ids.append(g_face.id)
                 
                 if triangulation is not None:
-                    trsf = loc.Transformation()
-                    # Directive: Check transformation determinant and TopAbs_REVERSED for winding reversal
+                    try:
+                        total_loc = shape.Location() * loc
+                        trsf = total_loc.Transformation()
+                    except Exception:
+                        try:
+                            trsf = shape.Location().Transformation().Multiplied(loc.Transformation())
+                        except Exception:
+                            trsf = loc.Transformation()
+
+                    # Check transformation determinant and TopAbs_REVERSED for winding reversal
                     is_inverted = False
                     try:
                         det = float(trsf.VectorialPart().Determinant())
@@ -1231,11 +1239,13 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     for i in range(1, nb_triangles + 1):
                         tri = triangulation.Triangle(i)
                         n1, n2, n3 = tri.Get()
+                        v0 = n1 - 1 + face_v_offset
+                        v1 = n2 - 1 + face_v_offset
+                        v2 = n3 - 1 + face_v_offset
                         if reverse_winding:
-                            # Reverse winding (swap node 2 and 3)
-                            global_tris.append((face_v_offset + n1 - 1, face_v_offset + n3 - 1, face_v_offset + n2 - 1))
+                            global_tris.append((v0, v2, v1))
                         else:
-                            global_tris.append((face_v_offset + n1 - 1, face_v_offset + n2 - 1, face_v_offset + n3 - 1))
+                            global_tris.append((v0, v1, v2))
                         triangle_provenance.append(g_face.id)
                         
                 exp_face.Next()
