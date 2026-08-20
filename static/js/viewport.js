@@ -401,5 +401,3 @@ export class ViewportController {
     };
   }
 }
-
-}
