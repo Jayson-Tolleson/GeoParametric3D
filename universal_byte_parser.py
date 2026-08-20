@@ -1338,7 +1338,10 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             bbox = compute_bounding_box(final_v)
             
             import base64
-            flat_positions = np.ascontiguousarray(final_v, dtype=np.float32)
+            # Standard CAD to WebGL mapping: WebGL_X = CAD_X, WebGL_Y = CAD_Z, WebGL_Z = -CAD_Y
+            # Preserve exact X sign handedness without negation
+            webgl_v = np.column_stack([final_v[:, 0], final_v[:, 2], -final_v[:, 1]])
+            flat_positions = np.ascontiguousarray(webgl_v, dtype=np.float32)
             flat_indices = np.ascontiguousarray(final_t, dtype=np.uint32)
             pos_b64 = base64.b64encode(flat_positions.tobytes()).decode('ascii')
             idx_b64 = base64.b64encode(flat_indices.tobytes()).decode('ascii')
