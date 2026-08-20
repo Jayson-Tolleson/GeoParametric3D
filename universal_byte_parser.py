@@ -100,6 +100,7 @@ try:
         GeomAbs_BSplineSurface, GeomAbs_SurfaceOfRevolution,
         GeomAbs_SurfaceOfExtrusion
     )
+    from OCP.Interface import Interface_Static
     _OCCT_AVAILABLE = True
     _OCCT_BACKEND = "OCP"
     TopoDS_Face_Cast = getattr(TopoDS, "Face_s", getattr(TopoDS, "Face", None))
@@ -126,6 +127,7 @@ except ImportError:
             GeomAbs_BSplineSurface, GeomAbs_SurfaceOfRevolution,
             GeomAbs_SurfaceOfExtrusion
         )
+        from OCC.Core.Interface import Interface_Static
         _OCCT_AVAILABLE = True
         _OCCT_BACKEND = "OCC"
         TopoDS_Face_Cast = getattr(topods, "Face", None)
@@ -1093,6 +1095,10 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             
         try:
             t_acq = time.perf_counter()
+            try:
+                Interface_Static.SetCVal("xstep.cascade.unit", "IN")
+            except Exception:
+                pass
             reader = STEPControl_Reader()
             status = reader.ReadFile(tmp_path)
             if status != IFSelect_RetDone:
