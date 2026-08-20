@@ -101,6 +101,8 @@ try:
         GeomAbs_SurfaceOfExtrusion
     )
     from OCP.Interface import Interface_Static
+    from OCP.gp import gp_Trsf, gp_Pnt
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
     _OCCT_AVAILABLE = True
     _OCCT_BACKEND = "OCP"
     TopoDS_Face_Cast = getattr(TopoDS, "Face_s", getattr(TopoDS, "Face", None))
@@ -128,6 +130,8 @@ except ImportError:
             GeomAbs_SurfaceOfExtrusion
         )
         from OCC.Core.Interface import Interface_Static
+        from OCC.Core.gp import gp_Trsf, gp_Pnt
+        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Transform
         _OCCT_AVAILABLE = True
         _OCCT_BACKEND = "OCC"
         TopoDS_Face_Cast = getattr(topods, "Face", None)
@@ -1118,6 +1122,37 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 pass
             t_fix_end = time.perf_counter()
                 
+            # 1. Dynamic STEP Header Unit Inspection & Transformation Scale Calculation
+            header_sample = content_bytes[:65536].decode('latin1', errors='ignore')
+            source_u, scale_fac = detect_step_units(header_sample)
+            if desc and desc.source_units != 'mm':
+                source_u = desc.source_units
+
+            unit_clean = parse_unit_string(source_u)
+            if unit_clean in ('meter', 'm', 'metre', 'metres'):
+                orig_unit_str = 'm'
+                to_inch_scale = 1000.0 / 25.4
+            elif unit_clean in ('inch', 'in', 'inches'):
+                orig_unit_str = 'in'
+                to_inch_scale = 1.0
+            elif unit_clean in ('cm', 'centimeter', 'centimeters'):
+                orig_unit_str = 'cm'
+                to_inch_scale = 10.0 / 25.4
+            elif unit_clean in ('foot', 'ft', 'feet'):
+                orig_unit_str = 'ft'
+                to_inch_scale = 12.0
+            else:
+                orig_unit_str = 'mm'
+                to_inch_scale = 1.0 / 25.4
+
+            # 2. Conditional BRepBuilderAPI_Transform into standard canonical inches
+            try:
+                trsf_scale = gp_Trsf()
+                trsf_scale.SetScale(gp_Pnt(0.0, 0.0, 0.0), float(to_inch_scale))
+                shape = BRepBuilderAPI_Transform(shape, trsf_scale, True).Shape()
+            except Exception as trsf_err:
+                logger.warning(f"BRepBuilderAPI_Transform unit scaling to inches failed: {trsf_err}")
+
             # Directive 1: Fast Adaptive OCCT Tessellation with parallel deflection
             bbox_diagonal = 300.0
             try:
@@ -1146,8 +1181,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
             t_mesh_end = time.perf_counter()
             
-            source_u, scale_fac = detect_step_units(content_bytes[:65536].decode('latin1', errors='ignore'))
-            scale = scale_fac
+            scale = 1.0
             t_dec = time.perf_counter()
             
             job_uuid = f"job_{uuid.uuid4().hex[:8]}"
@@ -1372,12 +1406,14 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "brep": geo_part.to_dict(),
                 "canonical_part": geo_part,
                 "bounding_box": bbox,
-                "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "canonical_unit": "inch",
+                "original_unit": orig_unit_str,
                 "parameters": {
                     "facets": len(body_faces),
                     "kernel": "OCCT",
                     "source_units": source_u,
-                    "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                    "original_unit": orig_unit_str,
+                    "canonical_unit": "inch",
                     "job_uuid": job_uuid,
                     "body_uuid": body_uuid
                 }
@@ -1392,8 +1428,9 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "filename": filename,
                 "application_protocol": desc.application_protocol if desc else "AP242",
                 "source_units": source_u,
-                "scale_factor": scale_fac,
-                "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "original_unit": orig_unit_str,
+                "scale_factor": to_inch_scale,
+                "canonical_unit": "inch",
                 "performance": {
                     "file_acquisition_ms": round((t_acq - t_start) * 1000, 3),
                     "format_detection_ms": 0.0,
@@ -1425,6 +1462,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             
             return {
                 "headers": headers,
+                "original_unit": orig_unit_str,
                 "descriptor": desc.to_dict() if desc else None,
                 "canonical_assembly": assembly.to_dict(),
                 "objects": bodies,
