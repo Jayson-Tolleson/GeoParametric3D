@@ -527,11 +527,13 @@ def validate_numpy_mesh_contract(positions: np.ndarray, triangle_indices: np.nda
 def validate_and_compact_mesh(
     raw_vertices: Union[List[Union[List[float], np.ndarray]], np.ndarray],
     raw_triangles: Union[List[Tuple[int, int, int]], np.ndarray],
-    tolerance: float = 1e-8
+    tolerance: float = 1e-8,
+    normals: Optional[Union[List[Any], np.ndarray]] = None,
+    triangle_provenance: Optional[Union[List[Any], np.ndarray]] = None
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     Filters non-finite vertices, remaps indices, eliminates degenerate triangles,
-    and enforces compact global NumPy array contract using C-level NumPy operations.
+    preserves vertex normals and triangle provenance, and enforces compact global NumPy array contract.
     """
     raw_v_arr = np.asarray(raw_vertices, dtype=np.float64) if len(raw_vertices) > 0 else np.empty((0, 3), dtype=np.float64)
     raw_v_count = len(raw_v_arr)
@@ -548,7 +550,9 @@ def validate_and_compact_mesh(
             "final_triangle_count": 0,
             "index_validation": "PASS",
             "finite_coordinates": "PASS",
-            "coordinate_bounds": compute_bounding_box(np.empty((0, 3), dtype=np.float64))
+            "coordinate_bounds": compute_bounding_box(np.empty((0, 3), dtype=np.float64)),
+            "normals": None,
+            "triangle_provenance": []
         }
 
     finite_mask = np.all(np.isfinite(raw_v_arr), axis=1)
@@ -577,6 +581,7 @@ def validate_and_compact_mesh(
     filtered_t = remapped_t[valid_tri_mask]
     same_vertex_mask = (filtered_t[:, 0] == filtered_t[:, 1]) | (filtered_t[:, 1] == filtered_t[:, 2]) | (filtered_t[:, 2] == filtered_t[:, 0])
     
+    area_valid = np.zeros(0, dtype=bool)
     if len(filtered_t) > 0 and len(compact_verts) > 0:
         non_same_t = filtered_t[~same_vertex_mask]
         if len(non_same_t) > 0:
@@ -598,6 +603,26 @@ def validate_and_compact_mesh(
     final_positions = compact_verts
     valid_contract, contract_msg = validate_numpy_mesh_contract(final_positions, final_indices) if len(final_positions) > 0 and len(final_indices) > 0 else (True, "Valid")
     bbox = compute_bounding_box(final_positions)
+
+    final_normals = None
+    if normals is not None:
+        norm_arr = np.asarray(normals, dtype=np.float64)
+        if len(norm_arr) == raw_v_count:
+            final_normals = norm_arr[finite_mask]
+
+    final_prov = None
+    if triangle_provenance is not None:
+        prov_arr = np.asarray(triangle_provenance)
+        if len(prov_arr) == raw_t_count:
+            filtered_prov = prov_arr[valid_tri_mask]
+            if len(filtered_prov) > 0:
+                non_same_prov = filtered_prov[~same_vertex_mask]
+                if len(non_same_prov) > 0 and len(area_valid) == len(non_same_prov):
+                    final_prov = non_same_prov[area_valid]
+                else:
+                    final_prov = non_same_prov
+            else:
+                final_prov = np.empty((0,), dtype=prov_arr.dtype)
     
     diagnostics = {
         "raw_vertex_count": raw_v_count,
@@ -609,7 +634,9 @@ def validate_and_compact_mesh(
         "final_triangle_count": len(final_indices),
         "index_validation": "PASS" if valid_contract else f"FAIL ({contract_msg})",
         "finite_coordinates": "PASS" if np.isfinite(final_positions).all() else "FAIL",
-        "coordinate_bounds": bbox
+        "coordinate_bounds": bbox,
+        "normals": final_normals,
+        "triangle_provenance": final_prov.tolist() if final_prov is not None else None
     }
     
     return final_positions, final_indices, diagnostics
