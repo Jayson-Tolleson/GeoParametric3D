@@ -10,9 +10,13 @@ export function fitCameraToModel(options = {}) {
   const bounds = windowViewport ? windowViewport.computeSceneBoundingBox() : null;
   if (!bounds) return;
 
-  const radiusMm = bounds.radius || (bounds.diagonal ? bounds.diagonal / 2.0 : 152.4);
-  const radiusMeters = radiusMm / 1000.0;
-  const targetRangeMeters = Math.max(radiusMeters * 7.0, 35.0);
+  // Calculate bounding box maximum dimension
+  const maxDim = bounds.maxDimension || bounds.diagonal || 304.8;
+  const fov = (CADState.state.camera && CADState.state.camera.fov) || 45;
+  // Dynamic distance based on FOV with 1.5 safety breathing room factor
+  const fitDistanceMm = (maxDim / (2 * Math.tan((Math.PI * fov) / 360))) * 1.5;
+  const fitDistanceMeters = fitDistanceMm / 1000.0;
+  const targetRangeMeters = Math.max(0.001, Math.min(1000000, fitDistanceMeters));
 
   const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
   const geoCenter = enuToGeodetic(cx, cy, cz);
@@ -21,6 +25,21 @@ export function fitCameraToModel(options = {}) {
   const tilt = typeof options.tilt === 'number' ? options.tilt : (CADState.state.camera.tilt || 65);
   const roll = 0;
 
+  // Unlock camera frustum and projection settings if Three.js/Perspective camera is active
+  if (window.camera) {
+    window.camera.near = 0.001;
+    window.camera.far = 1000000;
+    if (typeof window.camera.updateProjectionMatrix === 'function') {
+      window.camera.updateProjectionMatrix();
+    }
+  }
+
+  // Override camera controller zoom clamps
+  if (window.controls) {
+    window.controls.minDistance = 0.001;
+    window.controls.maxDistance = 1000000;
+  }
+
   CADState.state.camera.center = geoCenter;
   CADState.state.camera.heading = heading;
   CADState.state.camera.tilt = tilt;
@@ -28,10 +47,16 @@ export function fitCameraToModel(options = {}) {
   CADState.state.camera.panX = 0;
   CADState.state.camera.panY = 0;
   CADState.state.camera.target = [cx, cy, cz];
+  CADState.state.camera.near = 0.001;
+  CADState.state.camera.far = 1000000;
+  CADState.state.camera.minDistance = 0.001;
+  CADState.state.camera.maxDistance = 1000000;
 
   if (map3d) {
     map3d.setAttribute('min-altitude', '0');
     map3d.setAttribute('max-altitude', '1000000000');
+    map3d.setAttribute('min-distance', '0.001');
+    map3d.setAttribute('max-distance', '1000000');
 
     const centerObj = {
       lat: geoCenter.lat,
