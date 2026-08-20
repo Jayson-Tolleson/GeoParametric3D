@@ -1108,8 +1108,29 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 pass
             t_fix_end = time.perf_counter()
                 
-            # Directive 1: Fast OCCT Tessellation with parallel deflection
-            linear_deflection = 0.2
+            # Directive 1: Fast Adaptive OCCT Tessellation with parallel deflection
+            bbox_diagonal = 300.0
+            try:
+                if _OCCT_BACKEND == "OCP":
+                    from OCP.Bnd import Bnd_Box
+                    from OCP.BRepBndLib import BRepBndLib
+                    bnd = Bnd_Box()
+                    BRepBndLib.Add_s(shape, bnd)
+                    xmin, ymin, zmin, xmax, ymax, zmax = bnd.Get()
+                    dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
+                    bbox_diagonal = math.sqrt(dx * dx + dy * dy + dz * dz)
+                elif _OCCT_BACKEND == "OCC":
+                    from OCC.Core.Bnd import Bnd_Box
+                    from OCC.Core.BRepBndLib import brepbndlib
+                    bnd = Bnd_Box()
+                    brepbndlib.Add(shape, bnd)
+                    xmin, ymin, zmin, xmax, ymax, zmax = bnd.Get()
+                    dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
+                    bbox_diagonal = math.sqrt(dx * dx + dy * dy + dz * dz)
+            except Exception:
+                bbox_diagonal = 300.0
+
+            linear_deflection = max(0.5, bbox_diagonal * 0.005)
             angular_deflection = 0.5
             t_mesh_start = time.perf_counter()
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
@@ -1312,6 +1333,12 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             all_faces_combined.extend(body_faces)
             bbox = compute_bounding_box(final_v)
             
+            import base64
+            flat_positions = np.ascontiguousarray(final_v, dtype=np.float32)
+            flat_indices = np.ascontiguousarray(final_t, dtype=np.uint32)
+            pos_b64 = base64.b64encode(flat_positions.tobytes()).decode('ascii')
+            idx_b64 = base64.b64encode(flat_indices.tobytes()).decode('ascii')
+
             cad_obj = {
                 "id": geo_part.id,
                 "object_id": geo_part.id,
@@ -1325,6 +1352,10 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "rotation": [0.0, 0.0, 0.0],
                 "scale": [1.0, 1.0, 1.0],
                 "faces": body_faces,
+                "positions_base64": pos_b64,
+                "indices_base64": idx_b64,
+                "positions_flat": flat_positions.flatten().tolist(),
+                "indices_flat": flat_indices.flatten().tolist(),
                 "brep": geo_part.to_dict(),
                 "canonical_part": geo_part,
                 "bounding_box": bbox,
