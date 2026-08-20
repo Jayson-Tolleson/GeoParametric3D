@@ -1227,21 +1227,24 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 
                 if triangulation is not None:
                     try:
-                        total_loc = shape.Location() * loc
-                        trsf = total_loc.Transformation()
+                        trsf = shape.Location().Multiplied(loc).Transformation()
                     except Exception:
                         try:
                             trsf = shape.Location().Transformation().Multiplied(loc.Transformation())
                         except Exception:
-                            trsf = loc.Transformation()
+                            try:
+                                trsf = loc.Transformation()
+                            except Exception:
+                                trsf = None
 
                     # Check transformation determinant and TopAbs_REVERSED for winding reversal
                     is_inverted = False
-                    try:
-                        det = float(trsf.VectorialPart().Determinant())
-                        is_inverted = (det < 0.0)
-                    except Exception:
-                        is_inverted = False
+                    if trsf is not None:
+                        try:
+                            det = float(trsf.VectorialPart().Determinant())
+                            is_inverted = (det < 0.0)
+                        except Exception:
+                            is_inverted = False
 
                     is_face_reversed = False
                     try:
@@ -1256,13 +1259,22 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     
                     face_v_offset = len(global_verts)
                     for i in range(1, nb_nodes + 1):
-                        pt = triangulation.Node(i).Transformed(trsf)
+                        pt = triangulation.Node(i)
+                        if trsf is not None:
+                            try:
+                                pt = pt.Transformed(trsf)
+                            except Exception:
+                                pass
                         p = np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64)
                         global_verts.append(p)
                         
                     for i in range(1, nb_triangles + 1):
                         tri = triangulation.Triangle(i)
                         n1, n2, n3 = tri.Get()
+                        if not (1 <= n1 <= nb_nodes and 1 <= n2 <= nb_nodes and 1 <= n3 <= nb_nodes):
+                            continue
+                        if n1 == n2 or n2 == n3 or n3 == n1:
+                            continue
                         v0 = n1 - 1 + face_v_offset
                         v1 = n2 - 1 + face_v_offset
                         v2 = n3 - 1 + face_v_offset
