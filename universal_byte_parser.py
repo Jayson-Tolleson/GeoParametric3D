@@ -1061,7 +1061,8 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             except Exception:
                 pass
                 
-            linear_deflection = 0.1
+            # Directive 1: Balanced deflection parameters for speed and precision
+            linear_deflection = 0.2
             angular_deflection = 0.5
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
             

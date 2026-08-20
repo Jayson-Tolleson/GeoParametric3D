@@ -22,3 +22,11 @@ build/
 *.egg-info/
 
 .DS_Store
+# GeoParametric3D Runtime & Pipeline Ignores
+gp3d*-audit*
+gp3d-github-*
+governor_raw.txt
+storage/*.json
+*.pre_ocp_migration*
+__pycache__/
+*.pyc

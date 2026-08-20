@@ -785,7 +785,6 @@ class AdaptiveTessellator:
         nu, nv = lod_samples.get(lod, (24, 12))
 
         if len(poly_pts) >= 3:
-            # If boundary loop exists, use its bounds to form composite face facets
             pts_arr = np.array(poly_pts, dtype=np.float64)
             v_min = float(np.min(pts_arr[:, 2]))
             v_max = float(np.max(pts_arr[:, 2]))

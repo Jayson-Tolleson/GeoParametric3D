@@ -5,6 +5,9 @@
  * Revision Doctrine v4.2 — Hierarchical Assembly Kernel (WASM to DOM)
  * Implements sliceGeometryFromHeap and recursive G(x,y,z) scenegraph tree construction.
  * Preserves topology, normal vectors, and validates finite vertex contracts without inventing triangles.
+ * Directives:
+ *  - Determinant Check & Winding Fix on negative scale/inversion.
+ *  - Robust per-face and per-vertex normal vector preservation without zero-length normal collapse.
  */
 
 export function sliceGeometryFromHeap(wasmMemory, geomMeta) {
@@ -81,6 +84,18 @@ export class WasmKernelBridge {
     return low.endsWith('.step') || low.endsWith('.stp') || low.endsWith('.fcstd') || low.endsWith('.brep') || low.endsWith('.iges') || low.endsWith('.igs');
   }
 
+  computeMatrixDeterminant(mat) {
+    if (!Array.isArray(mat) || mat.length < 16) return 1.0;
+    const m00 = mat[0], m01 = mat[1], m02 = mat[2];
+    const m10 = mat[4], m11 = mat[5], m12 = mat[6];
+    const m20 = mat[8], m21 = mat[9], m22 = mat[10];
+    return (
+      m00 * (m11 * m22 - m12 * m21) -
+      m01 * (m10 * m22 - m12 * m20) +
+      m02 * (m10 * m21 - m11 * m20)
+    );
+  }
+
   multiplyMat4(a, b) {
     const out = new Array(16);
     for (let r = 0; r < 4; r++) {
@@ -145,6 +160,9 @@ export class WasmKernelBridge {
         : (Array.isArray(node.matrix) && node.matrix.length === 16 ? node.matrix : defaultIdentityMatrix);
 
       const worldTransform = parentTransform ? this.multiplyMat4(parentTransform, localTransform) : localTransform;
+      const det = this.computeMatrixDeterminant(worldTransform);
+      const isInverted = det < 0;
+
       const nodeId = node.id || node.uuid || `node_${depth}_${Math.random().toString(36).substring(2, 7)}`;
       const originalStepName = node.name || node.stepName || node.partName || `Part_${nodeId}`;
       const currentPath = path ? `${path}/${originalStepName}` : originalStepName;
@@ -175,18 +193,33 @@ export class WasmKernelBridge {
 
           if (idxArr && idxArr.length >= 3) {
             for (let i = 0; i < idxArr.length - 2; i += 3) {
-              const i0 = idxArr[i] * 3;
-              const i1 = idxArr[i + 1] * 3;
-              const i2 = idxArr[i + 2] * 3;
-              if (i2 + 2 < posArr.length) {
+              const rawIdx0 = idxArr[i];
+              const rawIdx1 = isInverted ? idxArr[i + 2] : idxArr[i + 1];
+              const rawIdx2 = isInverted ? idxArr[i + 1] : idxArr[i + 2];
+
+              const i0 = rawIdx0 * 3;
+              const i1 = rawIdx1 * 3;
+              const i2 = rawIdx2 * 3;
+
+              if (i0 + 2 < posArr.length && i1 + 2 < posArr.length && i2 + 2 < posArr.length) {
                 const p0 = { x: posArr[i0], y: posArr[i0 + 1], z: posArr[i0 + 2] };
                 const p1 = { x: posArr[i1], y: posArr[i1 + 1], z: posArr[i1 + 2] };
                 const p2 = { x: posArr[i2], y: posArr[i2 + 1], z: posArr[i2 + 2] };
 
-                if (normArr && i2 + 2 < normArr.length) {
+                if (normArr && i0 + 2 < normArr.length && i1 + 2 < normArr.length && i2 + 2 < normArr.length) {
                   p0.nx = normArr[i0]; p0.ny = normArr[i0 + 1]; p0.nz = normArr[i0 + 2];
                   p1.nx = normArr[i1]; p1.ny = normArr[i1 + 1]; p1.nz = normArr[i1 + 2];
                   p2.nx = normArr[i2]; p2.ny = normArr[i2 + 1]; p2.nz = normArr[i2 + 2];
+                } else {
+                  const v10 = [p1.x - p0.x, p1.y - p0.y, p1.z - p0.z];
+                  const v20 = [p2.x - p0.x, p2.y - p0.y, p2.z - p0.z];
+                  const cx = v10[1] * v20[2] - v10[2] * v20[1];
+                  const cy = v10[2] * v20[0] - v10[0] * v20[2];
+                  const cz = v10[0] * v20[1] - v10[1] * v20[0];
+                  const len = Math.hypot(cx, cy, cz) || 1.0;
+                  p0.nx = p1.nx = p2.nx = cx / len;
+                  p0.ny = p1.ny = p2.ny = cy / len;
+                  p0.nz = p1.nz = p2.nz = cz / len;
                 }
 
                 if (Number.isFinite(p0.x) && Number.isFinite(p0.y) && Number.isFinite(p0.z) &&
