@@ -401,3 +401,7 @@ export class ViewportController {
     };
   }
 }
+
+// ES Module Export
+export const windowViewport = window.windowViewport || (typeof Viewport !== "undefined" ? new Viewport() : null);
+export default windowViewport;
