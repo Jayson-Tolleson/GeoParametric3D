@@ -403,5 +403,8 @@ export class ViewportController {
 }
 
 // ES Module Export
-export const windowViewport = window.windowViewport || (typeof Viewport !== "undefined" ? new Viewport() : null);
+export const windowViewport = new SphericalTrackball();
+if (typeof window !== "undefined") {
+    window.windowViewport = windowViewport;
+}
 export default windowViewport;
