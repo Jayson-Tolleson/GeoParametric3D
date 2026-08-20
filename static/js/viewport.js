@@ -1142,7 +1142,6 @@ export const windowViewport = new ViewportController();
 window.CADViewport = windowViewport;
 
 // ES Module Export
-export const windowViewport = typeof windowViewport !== 'undefined' ? windowViewport : (typeof Viewport !== 'undefined' ? new Viewport() : null);
 if (typeof window !== 'undefined' && windowViewport) {
     window.windowViewport = windowViewport;
 }
