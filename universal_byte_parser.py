@@ -102,10 +102,10 @@ try:
     )
     _OCCT_AVAILABLE = True
     _OCCT_BACKEND = "OCP"
-    TopoDS_Face_Cast = TopoDS.Face
-    TopoDS_Wire_Cast = TopoDS.Wire
-    TopoDS_Edge_Cast = TopoDS.Edge
-    TopoDS_Vertex_Cast = TopoDS.Vertex
+    TopoDS_Face_Cast = getattr(TopoDS, "Face_s", getattr(TopoDS, "Face", None))
+    TopoDS_Wire_Cast = getattr(TopoDS, "Wire_s", getattr(TopoDS, "Wire", None))
+    TopoDS_Edge_Cast = getattr(TopoDS, "Edge_s", getattr(TopoDS, "Edge", None))
+    TopoDS_Vertex_Cast = getattr(TopoDS, "Vertex_s", getattr(TopoDS, "Vertex", None))
     brep_read_fn = getattr(BRepTools, "Read_s", getattr(BRepTools, "Read", None))
 except ImportError:
     try:
@@ -128,13 +128,37 @@ except ImportError:
         )
         _OCCT_AVAILABLE = True
         _OCCT_BACKEND = "OCC"
-        TopoDS_Face_Cast = topods.Face
-        TopoDS_Wire_Cast = topods.Wire
-        TopoDS_Edge_Cast = topods.Edge
-        TopoDS_Vertex_Cast = topods.Vertex
+        TopoDS_Face_Cast = getattr(topods, "Face", None)
+        TopoDS_Wire_Cast = getattr(topods, "Wire", None)
+        TopoDS_Edge_Cast = getattr(topods, "Edge", None)
+        TopoDS_Vertex_Cast = getattr(topods, "Vertex", None)
         brep_read_fn = breptools.Read
     except ImportError:
         _OCCT_AVAILABLE = False
+
+
+def get_brep_triangulation(face, loc):
+    if hasattr(BRep_Tool, 'Triangulation_s'):
+        return BRep_Tool.Triangulation_s(face, loc)
+    elif hasattr(BRep_Tool, 'Triangulation'):
+        try:
+            return BRep_Tool.Triangulation(face, loc)
+        except Exception:
+            return BRep_Tool().Triangulation(face, loc)
+    else:
+        return BRep_Tool().Triangulation(face, loc)
+
+
+def get_brep_pnt(vert):
+    if hasattr(BRep_Tool, 'Pnt_s'):
+        return BRep_Tool.Pnt_s(vert)
+    elif hasattr(BRep_Tool, 'Pnt'):
+        try:
+            return BRep_Tool.Pnt(vert)
+        except Exception:
+            return BRep_Tool().Pnt(vert)
+    else:
+        return BRep_Tool().Pnt(vert)
 
 
 # ============================================================
@@ -1115,7 +1139,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 face_count += 1
                 occ_face = TopoDS_Face_Cast(exp_face.Current())
                 loc = TopLoc_Location()
-                triangulation = BRep_Tool.Triangulation(occ_face, loc)
+                triangulation = get_brep_triangulation(occ_face, loc)
                 
                 stype = SurfaceType.PLANE
                 surf_params = {"origin": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0]}
@@ -1173,7 +1197,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                         v_edge_ids = []
                         while exp_v.More():
                             occ_v = TopoDS_Vertex_Cast(exp_v.Current())
-                            pt = BRep_Tool.Pnt(occ_v)
+                            pt = get_brep_pnt(occ_v)
                             gv = geo_part.add_vertex(np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64))
                             v_edge_ids.append(gv.id)
                             exp_v.Next()
