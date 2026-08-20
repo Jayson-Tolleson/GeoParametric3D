@@ -1203,14 +1203,22 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 
                 if triangulation is not None:
                     trsf = loc.Transformation()
-                    # Directive 2: Check transformation determinant for winding inversion
+                    # Directive: Check transformation determinant and TopAbs_REVERSED for winding reversal
                     is_inverted = False
                     try:
                         det = float(trsf.VectorialPart().Determinant())
                         is_inverted = (det < 0.0)
                     except Exception:
                         is_inverted = False
-                        
+
+                    is_face_reversed = False
+                    try:
+                        ori = occ_face.Orientation()
+                        is_face_reversed = (str(ori).endswith("REVERSED") or int(ori) == 1)
+                    except Exception:
+                        is_face_reversed = False
+
+                    reverse_winding = is_inverted ^ is_face_reversed
                     nb_nodes = triangulation.NbNodes()
                     nb_triangles = triangulation.NbTriangles()
                     
@@ -1223,8 +1231,8 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     for i in range(1, nb_triangles + 1):
                         tri = triangulation.Triangle(i)
                         n1, n2, n3 = tri.Get()
-                        if is_inverted:
-                            # Reverse winding directly
+                        if reverse_winding:
+                            # Reverse winding (swap node 2 and 3)
                             global_tris.append((face_v_offset + n1 - 1, face_v_offset + n3 - 1, face_v_offset + n2 - 1))
                         else:
                             global_tris.append((face_v_offset + n1 - 1, face_v_offset + n2 - 1, face_v_offset + n3 - 1))
