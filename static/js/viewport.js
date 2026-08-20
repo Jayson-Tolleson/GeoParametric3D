@@ -250,22 +250,7 @@ export class ViewportController {
     });
   }
 
-  centerViewport() {
-    const bounds = this.computeSceneBoundingBox();
-    const cam = CADState.state.camera;
-    const marginMm = 25.0 * 25.4; // 25 inches = 635.0 mm margin
-    const targetDim = bounds.maxDimension + marginMm;
-    
-    cam.heading = 30;
-    cam.tilt = 65;
-    cam.range = Math.max(635.0, targetDim * 2.1);
-    cam.panX = 0;
-    cam.panY = 0;
-    
-    this.syncMap3DFromState();
-    CADState.notify();
-    this.render();
-  }
+  
 
   computeSceneBoundingBox() {
     const selObjs = CADState.getSelectedObjects();
@@ -406,5 +391,13 @@ export class ViewportController {
 export const windowViewport = new SphericalTrackball();
 if (typeof window !== "undefined") {
     window.windowViewport = windowViewport;
+
+
+  centerViewport() {
+    if (typeof CADState !== 'undefined' && CADState.state) {
+      CADState.state.camera = { heading: 30, tilt: 65, range: 1828.8, panX: 0, panY: 0 };
+    }
+    if (this.render) this.render();
+  }
 }
 export default windowViewport;
