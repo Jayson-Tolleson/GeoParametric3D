@@ -390,4 +390,16 @@ export class ViewportController {
     const w = this.cssWidth || 800;
     const h = this.cssHeight || 600;
     const cam = CADState.state.camera || { heading: 30, tilt: 65, range: 1828.8, panX: 0, panY: 0 };
-    const hdgRad = ((cam.heading || 30) * Math.PI)
+    const hdgRad = ((cam.heading || 30) * Math.PI) / 180;
+    const tiltRad = ((cam.tilt || 65) * Math.PI) / 180;
+    const ndcX = (mx / w) * 2 - 1;
+    const ndcY = -(my / h) * 2 + 1;
+    return {
+      x: (cam.panX || 0) + ndcX * (cam.range || 1000) * 0.5 * Math.cos(hdgRad),
+      y: (cam.panY || 0) + ndcY * (cam.range || 1000) * 0.5 * Math.sin(hdgRad),
+      z: planeZ
+    };
+  }
+}
+
+}
