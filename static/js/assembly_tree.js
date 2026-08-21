@@ -1,9 +1,10 @@
 "use strict";
 
 /**
- * GeoParametric3D Assembly Tree Controller
+ * GeoParametric3D Assembly Tree Controller (Phase 2 & 3)
  * Synchronizes hierarchical B-Rep selection with GeoAssembly, GeoPart, GeoSolid, GeoShell, and GeoFace UUIDs.
  * Implements bidirectional selection: Viewport -> Tree and Tree -> Viewport.
+ * Preserves exact mathematical surface classification and face-provenance attributes.
  */
 
 import { CADState } from './state.js';
@@ -47,16 +48,17 @@ export class AssemblyTreeController {
       const structureType = (node.structure_type || node.type || '').toUpperCase();
       let icon = '⚙️';
       if (hasChildren) icon = '📦';
-      else if (structureType === 'SOLID') icon = '🧊';
-      else if (structureType === 'SHELL') icon = '🛡️';
-      else if (structureType === 'FACE') icon = '▱';
-      else if (structureType === 'EDGE') icon = '╱';
-      else if (structureType === 'VERTEX') icon = '•';
+      else if (structureType === 'SOLID' || structureType === 'GEOSOLID') icon = '🧊';
+      else if (structureType === 'SHELL' || structureType === 'GEOSHELL') icon = '🛡️';
+      else if (structureType === 'FACE' || structureType === 'GEOFACE') icon = '▱';
+      else if (structureType === 'EDGE' || structureType === 'GEOEDGE') icon = '╱';
+      else if (structureType === 'VERTEX' || structureType === 'GEOVERTEX') icon = '•';
 
       li.className = `tree-item ${isSel ? 'selected' : ''} ${isHidden ? 'hidden-part' : ''}`;
       li.style.paddingLeft = `${Math.max(8, depth * 14 + 8)}px`;
       li.dataset.nodeId = objId;
       li.dataset.nodeType = structureType;
+      if (node.manifest_id) li.dataset.manifestId = node.manifest_id;
 
       const chevron = hasChildren
         ? `<span class="tree-toggle" style="cursor:pointer; user-select:none; margin-right:4px;">▶</span>`
@@ -96,7 +98,7 @@ export class AssemblyTreeController {
         if (objId) {
           const isCtrl = e.ctrlKey || e.metaKey;
           const isShift = e.shiftKey;
-          if (structureType === 'FACE') {
+          if (structureType === 'FACE' || structureType === 'GEOFACE') {
             CADState.setSelectedId(objId, isCtrl, isShift, {
               type: 'face',
               index: 0,

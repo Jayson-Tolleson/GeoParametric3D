@@ -2,8 +2,9 @@
 
 /**
  * GeoParametric3D AI Engineering Assistant Controller
- * Connects user input to Vertex AI (/cad/api/assistant/chat and /api/generate)
- * and executes returned CadQuery parametric operations or mutations against the active B-Rep model.
+ * Connects UI input dock to Google Cloud Vertex AI REST gateways (/cad/api/assistant/chat, /api/assistant/chat, and /api/generate)
+ * Executes returned CadQuery parametric operations or direct B-Rep mutations against the active CAD assembly.
+ * Enforces authoritative B-Rep mathematical truth (Project: broadcasterfishmap, Location: global).
  */
 
 import { CADState } from './state.js';
@@ -88,7 +89,27 @@ export class AIAssistantController {
 
     try {
       const activeSel = CADState.getSelectedObject();
-      let res = await CADApi.sendAssistantPrompt(promptText);
+      const selContext = activeSel ? {
+        id: activeSel.manifest_id || activeSel.id,
+        name: activeSel.name,
+        material: activeSel.material,
+        volume_cm3: activeSel.volume_cm3
+      } : null;
+
+      let res = null;
+      // Try direct generator endpoint if available, then fallback to assistant chat gateway
+      try {
+        res = await CADApi.requestJSON('/assistant/chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            message: promptText,
+            prompt: promptText,
+            target_selection: selContext
+          })
+        });
+      } catch (e) {
+        res = await CADApi.sendAssistantPrompt(promptText);
+      }
 
       if (res && res.document) {
         CADState.setDocument(res.document);
@@ -100,13 +121,13 @@ export class AIAssistantController {
 
       if (res && res.action_intent && res.action_intent.action) {
         const intent = res.action_intent;
-        if (intent.action.startsWith('feature_') || intent.action.startsWith('create_')) {
-          await CADCommands.execute(intent.action, intent.parameters || {});
+        if (intent.action.startsWith('feature_') || intent.action.startsWith('create_') || intent.action === 'transform') {
+          await CADCommands.execute(intent.action, intent.parameters || intent.params || {});
         }
       }
 
-      const reply = res.message || res.reply || res.response || 'Operation completed.';
-      this.appendAssistantMessage(reply, !res.success && res.ok === false);
+      const reply = res?.message || res?.reply || res?.response || 'Analyzed CAD assembly state.';
+      this.appendAssistantMessage(reply, !res?.success && res?.ok === false);
     } catch (err) {
       this.appendAssistantMessage(`Error contacting Vertex AI Assistant: ${err.message}`, true);
     } finally {
