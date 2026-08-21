@@ -926,8 +926,48 @@ export class ViewportController {
       if (object.visible === false) return;
       const objId = object.manifest_id || object.id || object.object_id;
       const isObjSel = selectedIds.includes(objId);
-      const faces = object.faces || [];
+      
+      // Target 2: True N-Gon Native <gmp-polygon-3d> direct rendering pipeline
+      const planarPolys = object.planar_polygons || [];
+      if (planarPolys.length > 0) {
+        planarPolys.forEach((poly, polyIndex) => {
+          const key = `${objId}-ngon-${polyIndex}`;
+          const isFaceSel = isObjSel && (selFaceIdx === polyIndex || (CADState.state.selectedFaceInfo && CADState.state.selectedFaceInfo.face_id === poly.face_id));
+          const baseColor = poly.color || object.color || '#38bdf8';
+          const fillColor = isFaceSel ? 'rgba(251, 191, 36, 0.95)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 0.85)' : baseColor);
+          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
+          const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
 
+          let polygon = polygonPool.get(key);
+          if (polygon) {
+            polygon.outerCoordinates = poly.outer_coordinates;
+            if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
+              polygon.innerCoordinates = poly.inner_coordinates;
+            }
+            polygon.fillColor = fillColor;
+            polygon.strokeColor = strokeColor;
+            polygon.strokeWidth = strokeWidth;
+            polygonPool.delete(key);
+          } else {
+            polygon = document.createElement('gmp-polygon-3d');
+            polygon.dataset.objectId = objId;
+            polygon.dataset.faceIndex = polyIndex;
+            polygon.dataset.faceId = poly.face_id || `Face_${polyIndex + 1}`;
+            polygon.altitudeMode = 'absolute';
+            polygon.fillColor = fillColor;
+            polygon.strokeColor = strokeColor;
+            polygon.strokeWidth = strokeWidth;
+            polygon.outerCoordinates = poly.outer_coordinates;
+            if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
+              polygon.innerCoordinates = poly.inner_coordinates;
+            }
+            map3dElement.appendChild(polygon);
+          }
+        });
+        return;
+      }
+
+      const faces = object.faces || [];
       faces.forEach((face, faceIndex) => {
         const key = `${objId}-${faceIndex}`;
         const pts = Array.isArray(face) ? face : (face.vertices || []);

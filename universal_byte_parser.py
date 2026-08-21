@@ -1270,6 +1270,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 body_raw_tris: List[Tuple[int, int, int]] = []
                 face_ids = []
                 triangle_provenance: List[str] = []
+                planar_n_gons: List[Dict[str, Any]] = []
                 
                 while exp_face.More():
                     total_face_count += 1
@@ -1361,6 +1362,38 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     )
                     face_ids.append(g_face.id)
                     global_face_id_list.append(g_face.id)
+
+                    # Target 1: Planar Face Detection & Direct N-Gon Loop Extraction
+                    if stype == SurfaceType.PLANE:
+                        outer_poly_pts = []
+                        loop_obj = geo_part.loops.get(outer_loop_id)
+                        if loop_obj:
+                            for eid in loop_obj.ordered_edge_ids:
+                                edge_obj = geo_part.edges.get(eid)
+                                if edge_obj and edge_obj.vertex_start in geo_part.vertices:
+                                    outer_poly_pts.append(geo_part.vertices[edge_obj.vertex_start].point)
+                        if len(outer_poly_pts) >= 3:
+                            inner_loops_wgs = []
+                            for in_lid in inner_loop_ids:
+                                in_loop_obj = geo_part.loops.get(in_lid)
+                                if in_loop_obj:
+                                    in_pts = []
+                                    for eid in in_loop_obj.ordered_edge_ids:
+                                        edge_obj = geo_part.edges.get(eid)
+                                        if edge_obj and edge_obj.vertex_start in geo_part.vertices:
+                                            in_pts.append(geo_part.vertices[edge_obj.vertex_start].point)
+                                    if len(in_pts) >= 3:
+                                        inner_loops_wgs.append(enu_to_wgs84(np.array(in_pts, dtype=np.float64), face_id=g_face.id))
+                            
+                            planar_n_gons.append({
+                                "face_id": g_face.id,
+                                "type": "N_GON_POLYGON_3D",
+                                "color": part_color,
+                                "normal": surf_params.get("normal", [0.0, 0.0, 1.0]),
+                                "outer_coordinates": enu_to_wgs84(np.array(outer_poly_pts, dtype=np.float64), face_id=g_face.id),
+                                "inner_coordinates": inner_loops_wgs,
+                                "vertex_count": len(outer_poly_pts)
+                            })
                     
                     if triangulation is not None:
                         try:
@@ -1465,6 +1498,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "rotation": [0.0, 0.0, 0.0],
                     "scale": [1.0, 1.0, 1.0],
                     "faces": body_faces,
+                    "planar_polygons": planar_n_gons,
                     "positions_base64": pos_b64,
                     "indices_base64": idx_b64,
                     "positions_flat": flat_positions.flatten().tolist(),
