@@ -1533,6 +1533,18 @@ export class ViewportController {
         const avgSort = (this.telemetryMetrics.totalSortTimeMs / count).toFixed(2);
         const fps = ((count * 1000) / Math.max(1, now - this.telemetryMetrics.lastReportTime)).toFixed(1);
 
+        CADState.state.telemetry.fps = fps;
+        CADState.state.telemetry.frameTimeMs = avgRender;
+        CADState.state.telemetry.vertices = nVertices;
+        CADState.state.telemetry.objects = objects.length;
+
+        const telemFps = document.getElementById('telem-fps');
+        const telemVert = document.getElementById('telem-vertices');
+        const telemObj = document.getElementById('telem-objects');
+        if (telemFps) telemFps.textContent = fps;
+        if (telemVert) telemVert.textContent = nVertices;
+        if (telemObj) telemObj.textContent = objects.length;
+
         console.log(
           `[VIEWPORT_PERF_TELEMETRY] FPS: ${fps} | ` +
           `Avg Render: ${avgRender}ms (Max: ${this.telemetryMetrics.maxRenderTimeMs.toFixed(2)}ms) | ` +
