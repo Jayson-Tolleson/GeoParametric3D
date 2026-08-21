@@ -81,18 +81,6 @@ export class SphericalTrackball {
 }
 
 export class ViewportController {
-    renderNgons(geometryData) {
-        if (geometryData && geometryData.ngon_loops) {
-            const container = document.getElementById("viewport-container") || document.body;
-            geometryData.ngon_loops.forEach(loop => {
-                let poly = document.createElement("gmp-polygon-3d");
-                poly.setAttribute("outer-boundary", JSON.stringify(loop.outer));
-                container.appendChild(poly);
-            });
-            return true;
-        }
-        return false;
-    }
   constructor() {
     this.canvasOverlay = document.getElementById('viewport-overlay-canvas');
     this.ctx = this.canvasOverlay ? this.canvasOverlay.getContext('2d') : null;
@@ -123,7 +111,6 @@ export class ViewportController {
     this.draftCurrent = null;
 
     this.geometryCacheDirty = true;
-    this.lastDocUpdatedTime = 0;
     this.faceRenderQueue = [];
     this.verticesRender = [];
     this.edgesRender = [];
@@ -194,7 +181,7 @@ export class ViewportController {
   zoomBy(factor, focalScreenX = null, focalScreenY = null) {
     const cam = CADState.state.camera;
     const oldRange = cam.range || 1828.8;
-    // Multi-scale range: 0.125 inches (3.175 mm / 0.003175 m) to 3000+ ft (1,000,000 mm / 1000.0 m)
+    // Multi-scale range: 0.125 inches (3.175 mm) to 3000+ ft (1,000,000 mm)
     const newRange = Math.max(3.175, Math.min(1000000.0, oldRange * factor));
     
     if (focalScreenX !== null && focalScreenY !== null) {
@@ -211,7 +198,7 @@ export class ViewportController {
   }
 
   async initMap3D() {
-    this.map3d = document.getElementById('map-3d-element');
+    this.map3d = document.getElementById('map-3d-element') || document.querySelector('gmp-map-3d');
     try {
       await customElements.whenDefined('gmp-map-3d');
       if (!this.map3d) {
@@ -277,7 +264,6 @@ export class ViewportController {
       this.orbitTilt(dTilt);
     });
 
-    // Preset chip single-click listeners
     document.querySelectorAll('.preset-chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
         e.preventDefault();
@@ -292,14 +278,14 @@ export class ViewportController {
     });
   }
 
-  // Zoom to Fit (60:1 Viewport Fit): Position gizmo/target at model center, camera distance = 60 * R (2x doubled framing ratio)
+  // Fit adjusts the viewport to frame model with 60:1 ratio
   fitView(options = {}) {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
     const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
     
     const R = bounds.radius || (bounds.diagonal ? bounds.diagonal / 2.0 : 152.4);
-    const targetDistance = Math.max(152.4, 60.0 * R); // 60:1 viewport-to-part framing ratio (doubled to eliminate edge clipping)
+    const targetDistance = Math.max(152.4, 60.0 * R);
     
     const geoCenter = enuToGeodetic(cx, cy, cz);
     cam.center = geoCenter;
@@ -320,7 +306,7 @@ export class ViewportController {
             center: { lat: geoCenter.lat, lng: geoCenter.lng, altitude: geoCenter.altitude },
             heading: cam.heading,
             tilt: cam.tilt,
-            range: targetDistance,
+            range: targetDistance / 1000.0,
             roll: 0
           },
           durationMillis: 800
@@ -404,7 +390,7 @@ export class ViewportController {
         return;
       }
 
-      // Keyboard Pan Controls: Same-direction movement (Left arrow pans view left/scene right, Right arrow pans view right)
+      // Keyboard Pan Controls
       if (!isShift && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         if (e.key === 'ArrowLeft') this.panScreen(panStep, 0);
@@ -446,13 +432,6 @@ export class ViewportController {
 
   initOverlay() {
     if (!this.canvasOverlay) return;
-    // Multi-scale WebGL rendering context with logarithmicDepthBuffer for wide dynamic clipping
-    try {
-      this.gl = this.canvasOverlay.getContext('webgl2', { logarithmicDepthBuffer: true, antialias: true, alpha: true }) ||
-                this.canvasOverlay.getContext('webgl', { logarithmicDepthBuffer: true, antialias: true, alpha: true });
-    } catch (e) {
-      console.warn('[Viewport] WebGL init fallback:', e);
-    }
     const resize = () => {
       if (this.canvasOverlay.parentElement) {
         const rect = this.canvasOverlay.parentElement.getBoundingClientRect();
@@ -507,7 +486,6 @@ export class ViewportController {
     return best;
   }
 
-  // Two-Finger Pinch Zoom & Pan on Touch Devices
   initTouchControls() {
     if (!this.canvasOverlay) return;
     const canvas = this.canvasOverlay;
@@ -590,7 +568,6 @@ export class ViewportController {
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
 
-      // Transform tools: move, rotate, scale
       const activeTransTool = CADState.state.activeTransformTool;
       const selObjs = CADState.getSelectedObjects();
       
@@ -913,6 +890,89 @@ export class ViewportController {
     this.render();
   }
 
+  purgeNgons(container = null) {
+    const targetContainer = container || this.map3d || document.getElementById('map-3d-element') || document.querySelector('gmp-map-3d');
+    if (!targetContainer) return;
+    const existingPolygons = targetContainer.querySelectorAll('gmp-polygon-3d');
+    existingPolygons.forEach(p => p.remove());
+  }
+
+  clearGeometry() {
+    this.purgeNgons();
+    const targetContainer = this.map3d || document.getElementById('map-3d-element') || document.querySelector('gmp-map-3d');
+    if (targetContainer) {
+      targetContainer.querySelectorAll('gmp-polyline-3d').forEach(p => p.remove());
+    }
+    this.geometryCacheDirty = true;
+    this.render();
+  }
+
+  renderNgons(geometryData) {
+    if (!geometryData) return false;
+    const container = this.map3d || document.getElementById('map-3d-element') || document.querySelector('gmp-map-3d') || document.body;
+    const loops = geometryData.ngon_loops || geometryData.planar_polygons || geometryData.planar_loops || [];
+    
+    if (!Array.isArray(loops) || loops.length === 0) return false;
+
+    const objId = geometryData.object_id || geometryData.id || 'imported_obj';
+    const color = geometryData.color || '#38bdf8';
+
+    loops.forEach((loop, idx) => {
+      const poly = document.createElement('gmp-polygon-3d');
+      poly.dataset.objectId = objId;
+      poly.dataset.faceIndex = String(idx);
+      poly.dataset.faceId = loop.face_id || `Face_${idx + 1}`;
+      poly.setAttribute('altitude-mode', 'absolute');
+      poly.altitudeMode = 'absolute';
+      
+      let outerCoords = [];
+      const rawOuter = loop.outer || loop.outer_coordinates || [];
+      
+      rawOuter.forEach(pt => {
+        if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+          outerCoords.push({ lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 95.0 });
+        } else if (pt.x !== undefined && pt.y !== undefined) {
+          outerCoords.push(enuToGeodetic(pt.x, pt.y, pt.z || 0));
+        } else if (Array.isArray(pt) && pt.length >= 2) {
+          outerCoords.push(enuToGeodetic(pt[0], pt[1], pt[2] || 0));
+        }
+      });
+
+      if (outerCoords.length >= 3) {
+        poly.outerCoordinates = outerCoords;
+        try {
+          const boundStr = outerCoords.map(c => `${c.lat},${c.lng},${c.altitude}`).join(' ');
+          poly.setAttribute('outer-boundary', boundStr);
+        } catch (_) {}
+
+        if (loop.inner || loop.inner_coordinates) {
+          const rawInner = loop.inner || loop.inner_coordinates || [];
+          const innerCoords = [];
+          rawInner.forEach(hole => {
+            const holeCoords = [];
+            hole.forEach(pt => {
+              if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+                holeCoords.push({ lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 95.0 });
+              } else if (pt.x !== undefined && pt.y !== undefined) {
+                holeCoords.push(enuToGeodetic(pt.x, pt.y, pt.z || 0));
+              }
+            });
+            if (holeCoords.length >= 3) innerCoords.push(holeCoords);
+          });
+          if (innerCoords.length > 0) {
+            poly.innerCoordinates = innerCoords;
+          }
+        }
+
+        poly.fillColor = loop.color || color;
+        poly.strokeColor = '#ffffff';
+        poly.strokeWidth = 1.5;
+        container.appendChild(poly);
+      }
+    });
+    return true;
+  }
+
   syncNativeDOM() {
     if (!this.map3d) return;
     const objects = CADState.state.objects || [];
@@ -939,8 +999,8 @@ export class ViewportController {
       const objId = object.manifest_id || object.id || object.object_id;
       const isObjSel = selectedIds.includes(objId);
       
-      // Target 2: True N-Gon Native <gmp-polygon-3d> direct rendering pipeline
-      const planarPolys = object.planar_polygons || [];
+      // True N-Gon Native <gmp-polygon-3d> rendering pipeline
+      const planarPolys = object.planar_polygons || object.ngon_loops || object.planar_loops || [];
       if (planarPolys.length > 0) {
         planarPolys.forEach((poly, polyIndex) => {
           const key = `ngon-${objId}-${poly.face_id || polyIndex}`;
@@ -952,9 +1012,9 @@ export class ViewportController {
 
           let polygon = polygonPool.get(key);
           if (polygon) {
-            polygon.outerCoordinates = poly.outer_coordinates;
-            if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
-              polygon.innerCoordinates = poly.inner_coordinates;
+            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
+            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
+              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
             }
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
@@ -964,15 +1024,16 @@ export class ViewportController {
             polygon = document.createElement('gmp-polygon-3d');
             polygon.dataset.key = key;
             polygon.dataset.objectId = objId;
-            polygon.dataset.faceIndex = polyIndex;
+            polygon.dataset.faceIndex = String(polyIndex);
             polygon.dataset.faceId = poly.face_id || `Face_${polyIndex + 1}`;
+            polygon.setAttribute('altitude-mode', 'absolute');
             polygon.altitudeMode = 'absolute';
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
             polygon.strokeWidth = strokeWidth;
-            polygon.outerCoordinates = poly.outer_coordinates;
-            if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
-              polygon.innerCoordinates = poly.inner_coordinates;
+            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
+            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
+              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
             }
             map3dElement.appendChild(polygon);
           }
@@ -1012,8 +1073,9 @@ export class ViewportController {
           polygon = document.createElement('gmp-polygon-3d');
           polygon.dataset.key = key;
           polygon.dataset.objectId = objId;
-          polygon.dataset.faceIndex = faceIndex;
+          polygon.dataset.faceIndex = String(faceIndex);
           polygon.dataset.faceId = (pts[0] && pts[0].face_id) || `Face_${faceIndex + 1}`;
+          polygon.setAttribute('altitude-mode', 'absolute');
           polygon.altitudeMode = 'absolute';
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
@@ -1078,7 +1140,8 @@ export class ViewportController {
               polyline = document.createElement('gmp-polyline-3d');
               polyline.dataset.key = key;
               polyline.dataset.objectId = objId;
-              polyline.dataset.edgeIndex = eIdx;
+              polyline.dataset.edgeIndex = String(eIdx);
+              polyline.setAttribute('altitude-mode', 'absolute');
               polyline.altitudeMode = 'absolute';
               polyline.coordinates = [c1, c2];
               polyline.strokeColor = isEdgeSel ? '#ef4444' : '#38bdf8';
@@ -1280,23 +1343,8 @@ export class ViewportController {
     this.geometryCacheDirty = false;
   }
 
-  // AUTHORITATIVE RENDERING PIPELINE
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
-    
-    // Native gmp-polygon-3d injection for ngon_loops
-    if (CADState.state.currentGeometry && CADState.state.currentGeometry.ngon_loops) {
-        const container = document.getElementById("viewport-container") || document.body;
-        // Check if we already rendered these to avoid spamming DOM creation
-        if (!this._nativeNgonsRendered) {
-            CADState.state.currentGeometry.ngon_loops.forEach(loop => {
-                let poly = document.createElement("gmp-polygon-3d");
-                poly.setAttribute("outer-boundary", JSON.stringify(loop.outer));
-                container.appendChild(poly);
-            });
-            this._nativeNgonsRendered = true;
-        }
-    }
 
     const tRenderStart = performance.now();
     const w = this.cssWidth || (this.canvasOverlay.width / (window.devicePixelRatio || 1));
@@ -1356,7 +1404,7 @@ export class ViewportController {
       this.ctx.strokeStyle = '#38bdf8'; this.ctx.beginPath(); this.ctx.moveTo(ox, oy); this.ctx.lineTo(zx, zy); this.ctx.stroke();
     }
 
-    // 3. In-Place Persistent Projection Pipeline (Zero Per-Frame Array Allocation)
+    // 3. In-Place Persistent Projection Pipeline
     const objects = CADState.state.objects || [];
     const selectedIds = CADState.state.selectedIds || [];
     const selMode = CADState.state.selectionMode || 'part';
@@ -1435,7 +1483,7 @@ export class ViewportController {
 
     const tProjEnd = performance.now();
 
-    // In-place sort on persistent face reference list (Transition Painter's Algorithm)
+    // In-place sort on persistent face reference list
     const tSortStart = performance.now();
     this.persistentFaces.sort((a, b) => a.avgCamZ - b.avgCamZ);
     const tSortEnd = performance.now();
@@ -1501,7 +1549,6 @@ export class ViewportController {
       const [cpx, cpy] = project3D(selCenter[0], selCenter[1], selCenter[2]);
       
       if (activeTransTool === 'scale') {
-        // Draw forward/reverse bidirectional sizing construction-line
         const guideLen = 400.0;
         const [fpx, fpy] = project3D(selCenter[0] + guideLen, selCenter[1] + guideLen, selCenter[2]);
         const [rpx, rpy] = project3D(selCenter[0] - guideLen, selCenter[1] - guideLen, selCenter[2]);
@@ -1515,7 +1562,6 @@ export class ViewportController {
         this.ctx.lineTo(fpx, fpy);
         this.ctx.stroke();
         
-        // Draw scale sizing arrow anchors
         this.ctx.setLineDash([]);
         this.ctx.fillStyle = '#00f3ff';
         this.ctx.beginPath(); this.ctx.arc(fpx, fpy, 5, 0, Math.PI * 2); this.ctx.fill();
@@ -1532,7 +1578,6 @@ export class ViewportController {
         }
         this.ctx.restore();
       } else if (activeTransTool === 'rotate') {
-        // Draw plane-of-view rotation compass construction circle & guide ray
         const radius = 180.0;
         this.ctx.save();
         this.ctx.strokeStyle = '#00f3ff';
@@ -1606,9 +1651,6 @@ export class ViewportController {
       if (renderDuration > this.telemetryMetrics.maxRenderTimeMs) {
         this.telemetryMetrics.maxRenderTimeMs = renderDuration;
       }
-      this.telemetryMetrics.vertexAllocCount = 0;
-      this.telemetryMetrics.edgeAllocCount = 0;
-      this.telemetryMetrics.faceAllocCount = 0;
 
       const now = performance.now();
       if (now - this.telemetryMetrics.lastReportTime >= 1000 || this.telemetryMetrics.renderCount >= 60) {
@@ -1630,14 +1672,6 @@ export class ViewportController {
         if (telemVert) telemVert.textContent = nVertices;
         if (telemObj) telemObj.textContent = objects.length;
 
-        console.log(
-          `[VIEWPORT_PERF_TELEMETRY] FPS: ${fps} | ` +
-          `Avg Render: ${avgRender}ms (Max: ${this.telemetryMetrics.maxRenderTimeMs.toFixed(2)}ms) | ` +
-          `Proj Loop: ${avgProj}ms | ` +
-          `Painter Sort: ${avgSort}ms | ` +
-          `Per-Frame Heap Allocations: 0 (Persistent Retained Cache: ${this.persistentVertices.length} verts, ${this.persistentEdges.length} edges, ${this.persistentFaces.length} faces)`
-        );
-
         this.telemetryMetrics.renderCount = 0;
         this.telemetryMetrics.totalRenderTimeMs = 0;
         this.telemetryMetrics.totalProjTimeMs = 0;
@@ -1652,8 +1686,7 @@ export class ViewportController {
 export const windowViewport = new ViewportController();
 window.CADViewport = windowViewport;
 
-// ES Module Export
 if (typeof window !== 'undefined' && windowViewport) {
-    window.windowViewport = windowViewport;
+  window.windowViewport = windowViewport;
 }
 export default windowViewport;
