@@ -280,14 +280,14 @@ export class ViewportController {
     });
   }
 
-  // Zoom to Fit (10:1 Viewport Fit): Position gizmo/target at model center, camera distance = 10 * R
+  // Zoom to Fit (30:1 Viewport Fit): Position gizmo/target at model center, camera distance = 30 * R (3x larger framing ratio)
   fitView(options = {}) {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
     const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
     
     const R = bounds.radius || (bounds.diagonal ? bounds.diagonal / 2.0 : 152.4);
-    const targetDistance = Math.max(25.4, 10.0 * R); // strictly 10:1 viewport-to-part ratio (10 * R)
+    const targetDistance = Math.max(76.2, 30.0 * R); // 30:1 viewport-to-part framing ratio (3x larger than previous 10 * R)
     
     const geoCenter = enuToGeodetic(cx, cy, cz);
     cam.center = geoCenter;
