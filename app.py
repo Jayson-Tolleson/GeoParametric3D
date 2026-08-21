@@ -169,6 +169,42 @@ async def canonical_export():
         'canonical_unit': CANONICAL_INTERNAL_UNIT
     })
 
+@app.route('/api/geometry/binary', methods=['GET', 'POST'])
+@app.route('/GeoParametric3D/api/geometry/binary', methods=['GET', 'POST'])
+@app.route('/cad/api/geometry/binary', methods=['GET', 'POST'])
+async def handle_geometry_binary():
+    """
+    Zero-copy binary transport endpoint.
+    Transports packed float32 vertex coordinates and uint32 index arrays.
+    """
+    import struct
+    from quart import Response
+    data = (await request.get_json(silent=True)) or {}
+    obj_id = data.get('id') or request.args.get('id')
+    
+    obj = global_cad_state.get_object(obj_id) if obj_id else next(iter(global_cad_state.objects.values()), None)
+    if not obj:
+        return json_response({'ok': False, 'error': 'No active CAD object found'}, 404)
+
+    flat_verts = []
+    flat_indices = []
+    v_idx = 0
+    for face in obj.faces:
+        if len(face) >= 3:
+            base = v_idx
+            for pt in face:
+                flat_verts.extend([float(pt.get('x', 0)), float(pt.get('y', 0)), float(pt.get('z', 0))])
+                v_idx += 1
+            for i in range(1, len(face) - 1):
+                flat_indices.extend([base, base + i, base + i + 1])
+                
+    pos_arr = np.array(flat_verts, dtype=np.float32)
+    idx_arr = np.array(flat_indices, dtype=np.uint32)
+    
+    header = struct.pack('<II', len(pos_arr) // 3, len(idx_arr))
+    payload = header + pos_arr.tobytes() + idx_arr.tobytes()
+    return Response(payload, mimetype='application/octet-stream')
+
 @app.route('/api/manifest/transform', methods=['POST'])
 @app.route('/GeoParametric3D/api/manifest/transform', methods=['POST'])
 @app.route('/cad/api/manifest/transform', methods=['POST'])

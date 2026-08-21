@@ -283,6 +283,41 @@ class APIClient {
       body: JSON.stringify({ message })
     });
   }
+
+  async fetchGeometryBinary(objectId = null) {
+    const url = `${this.baseUrl}/geometry/binary${objectId ? `?id=${encodeURIComponent(objectId)}` : ''}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        return { ok: false, error: `HTTP ${response.status} from ${url}` };
+      }
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength < 8) {
+        return { ok: false, error: 'Binary buffer underflow' };
+      }
+      const headerView = new Uint32Array(buffer, 0, 2);
+      const vertexCount = headerView[0];
+      const indexCount = headerView[1];
+      const posByteOffset = 8;
+      const posByteLength = vertexCount * 3 * 4;
+      const idxByteOffset = posByteOffset + posByteLength;
+      
+      const positions = new Float32Array(buffer, posByteOffset, vertexCount * 3);
+      const indices = new Uint32Array(buffer, idxByteOffset, indexCount);
+
+      return {
+        ok: true,
+        vertexCount,
+        indexCount,
+        positions,
+        indices,
+        arrayBuffer: buffer
+      };
+    } catch (err) {
+      console.error('[API] fetchGeometryBinary error:', err);
+      return { ok: false, error: err.message };
+    }
+  }
 }
 
 export const CADApi = new APIClient();

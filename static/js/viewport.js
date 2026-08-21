@@ -213,7 +213,9 @@ export class ViewportController {
       }
       if (this.map3d) {
         this.bindMap3DEvents();
+        this.bindSelectionEvents();
         this.syncMap3DFromState();
+        this.syncNativeDOM();
       }
     } catch (err) {
       console.warn('[Viewport] <gmp-map-3d> element readiness notice:', err);
@@ -869,7 +871,186 @@ export class ViewportController {
     const cam = CADState.state.camera;
     if (this.trackball && cam) this.trackball.updateFromCamera(cam.heading || 0, cam.tilt || 0);
     this.syncMap3DFromState();
+    this.syncNativeDOM();
     this.render();
+  }
+
+  syncNativeDOM() {
+    if (!this.map3d) return;
+    const objects = CADState.state.objects || [];
+    this.syncNativePolygons(this.map3d, objects);
+    this.syncNativePolylines(this.map3d, objects);
+  }
+
+  syncNativePolygons(map3dElement, objects) {
+    if (!map3dElement) return;
+    const existingPolygons = Array.from(map3dElement.querySelectorAll('gmp-polygon-3d'));
+    const polygonPool = new Map();
+
+    existingPolygons.forEach(polygon => {
+      const key = `${polygon.dataset.objectId}-${polygon.dataset.faceIndex}`;
+      polygonPool.set(key, polygon);
+    });
+
+    const selectedIds = CADState.state.selectedIds || [];
+    const selFaceIdx = CADState.state.selectedFaceIndex;
+    const selMode = CADState.state.selectionMode || 'part';
+
+    objects.forEach(object => {
+      if (object.visible === false) return;
+      const objId = object.manifest_id || object.id || object.object_id;
+      const isObjSel = selectedIds.includes(objId);
+      const faces = object.faces || [];
+
+      faces.forEach((face, faceIndex) => {
+        const key = `${objId}-${faceIndex}`;
+        const pts = Array.isArray(face) ? face : (face.vertices || []);
+        if (pts.length < 3) return;
+
+        const isFaceSel = isObjSel && selFaceIdx === faceIndex;
+        const baseColor = face.color || object.color || '#38bdf8';
+        const fillColor = isFaceSel ? 'rgba(251, 191, 36, 0.95)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 0.85)' : baseColor);
+        const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
+        const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
+
+        const geodeticCoords = pts.map(pt => {
+          if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+            return { lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 95.0 };
+          }
+          const [wx, wy, wz] = [pt.x || 0, pt.y || 0, pt.z || 0];
+          return enuToGeodetic(wx, wy, wz);
+        });
+
+        let polygon = polygonPool.get(key);
+
+        if (polygon) {
+          polygon.outerCoordinates = geodeticCoords;
+          polygon.fillColor = fillColor;
+          polygon.strokeColor = strokeColor;
+          polygon.strokeWidth = strokeWidth;
+          polygonPool.delete(key);
+        } else {
+          polygon = document.createElement('gmp-polygon-3d');
+          polygon.dataset.objectId = objId;
+          polygon.dataset.faceIndex = faceIndex;
+          polygon.altitudeMode = 'absolute';
+          polygon.fillColor = fillColor;
+          polygon.strokeColor = strokeColor;
+          polygon.strokeWidth = strokeWidth;
+          polygon.outerCoordinates = geodeticCoords;
+          map3dElement.appendChild(polygon);
+        }
+      });
+    });
+
+    polygonPool.forEach(stalePolygon => {
+      stalePolygon.remove();
+    });
+  }
+
+  syncNativePolylines(map3dElement, objects) {
+    if (!map3dElement) return;
+    const existingPolylines = Array.from(map3dElement.querySelectorAll('gmp-polyline-3d'));
+    const polylinePool = new Map();
+
+    existingPolylines.forEach(polyline => {
+      const key = polyline.dataset.key || `${polyline.dataset.objectId}-${polyline.dataset.edgeIndex}`;
+      polylinePool.set(key, polyline);
+    });
+
+    const selMode = CADState.state.selectionMode || 'part';
+    const selectedIds = CADState.state.selectedIds || [];
+    const selEdgeIdx = CADState.state.selectedEdgeIndex;
+
+    if (selMode === 'edge' || selMode === 'vertex') {
+      let globalEdgeIdx = 0;
+      objects.forEach(object => {
+        if (object.visible === false) return;
+        const objId = object.manifest_id || object.id || object.object_id;
+        const isObjSel = selectedIds.includes(objId);
+        const faces = object.faces || [];
+
+        faces.forEach(face => {
+          const pts = Array.isArray(face) ? face : (face.vertices || []);
+          for (let i = 0; i < pts.length; i++) {
+            const next = (i + 1) % pts.length;
+            const eIdx = globalEdgeIdx++;
+            const isEdgeSel = isObjSel && selEdgeIdx === eIdx;
+            const key = `edge-${objId}-${eIdx}`;
+
+            const p1 = pts[i];
+            const p2 = pts[next];
+            const c1 = (typeof p1.lat === 'number' && typeof p1.lng === 'number')
+              ? { lat: p1.lat, lng: p1.lng, altitude: p1.altitude || 95.0 }
+              : enuToGeodetic(p1.x || 0, p1.y || 0, p1.z || 0);
+            const c2 = (typeof p2.lat === 'number' && typeof p2.lng === 'number')
+              ? { lat: p2.lat, lng: p2.lng, altitude: p2.altitude || 95.0 }
+              : enuToGeodetic(p2.x || 0, p2.y || 0, p2.z || 0);
+
+            let polyline = polylinePool.get(key);
+            if (polyline) {
+              polyline.coordinates = [c1, c2];
+              polyline.strokeColor = isEdgeSel ? '#ef4444' : '#38bdf8';
+              polyline.strokeWidth = isEdgeSel ? 4 : 2;
+              polylinePool.delete(key);
+            } else {
+              polyline = document.createElement('gmp-polyline-3d');
+              polyline.dataset.key = key;
+              polyline.dataset.objectId = objId;
+              polyline.dataset.edgeIndex = eIdx;
+              polyline.altitudeMode = 'absolute';
+              polyline.coordinates = [c1, c2];
+              polyline.strokeColor = isEdgeSel ? '#ef4444' : '#38bdf8';
+              polyline.strokeWidth = isEdgeSel ? 4 : 2;
+              map3dElement.appendChild(polyline);
+            }
+          }
+        });
+      });
+    }
+
+    polylinePool.forEach(stale => stale.remove());
+  }
+
+  bindSelectionEvents() {
+    if (!this.map3d) return;
+
+    this.map3d.addEventListener('click', (event) => {
+      const clickedPolyline = event.target.closest('gmp-polyline-3d');
+      const clickedPolygon = event.target.closest('gmp-polygon-3d');
+
+      const isCtrl = event.ctrlKey || event.metaKey;
+      const isShift = event.shiftKey;
+      const selMode = CADState.state.selectionMode || 'part';
+
+      if (clickedPolyline) {
+        const objId = clickedPolyline.dataset.objectId;
+        const edgeIdx = parseInt(clickedPolyline.dataset.edgeIndex, 10);
+        CADState.setSelectedId(objId, isCtrl, isShift, { type: 'edge', index: edgeIdx });
+        this.geometryCacheDirty = true;
+        this.syncViewport();
+        return;
+      }
+
+      if (clickedPolygon) {
+        const objId = clickedPolygon.dataset.objectId;
+        const faceIndex = parseInt(clickedPolygon.dataset.faceIndex, 10);
+
+        if (selMode === 'face') {
+          CADState.setSelectedId(objId, isCtrl, isShift, { type: 'face', index: faceIndex });
+        } else {
+          CADState.setSelectedId(objId, isCtrl, isShift, null);
+        }
+
+        this.geometryCacheDirty = true;
+        this.syncViewport();
+        return;
+      }
+
+      CADState.setSelectedId(null);
+      this.geometryCacheDirty = true;
+      this.syncViewport();
+    });
   }
 
   rebuildGeometryCache() {
