@@ -1,10 +1,10 @@
 """
 GeoParametric3D OpenCASCADE (OCCT / OCP) Kernel & Dual-Route Surface Extractor
-Enforces Sections 1 & 2 of the Governing Architecture Specification (Phases 2 & 3):
-  1. Exact B-Rep as authoritative geometric truth (GeoPart, GeoSolid, GeoShell, GeoFace, GeoSurface, GeoLoop)
-  2. Dual-route classification: GeomAbs_Plane -> Planar N-Gon Loops vs Non-Planar -> Adaptive Tessellator
-  3. Boundary wire extraction with inner cutout hole preservation (e.g. 'L' concave bracket and 'B' multi-void alphabet topology)
-  4. Suppression of triangulation diagonals on planar faces in rendering and transport
+Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (Phases 2 & 3):
+  1. Exact B-Rep as authoritative geometric truth (GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace -> GeoSurface / GeoLoop)
+  2. Dual-route classification: GeomAbs_Plane -> Planar N-Gon Loops vs Non-Planar -> Adaptive Deflection Tessellator
+  3. Arbitrary concave perimeter extraction ('L', 'T', 'E' brackets) without internal triangulation diagonals
+  4. Multiply-connected cutout void loop extraction ('A', 'B', 'O' alphabet genus topology)
   5. Multi-solid compound unpacking and parallel batch deflection support
 """
 
@@ -15,7 +15,7 @@ import numpy as np
 
 try:
     from OCP.TopExp import TopExp_Explorer
-    from OCP.TopAbs import TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID, TopAbs_SHELL
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID, TopAbs_SHELL, TopAbs_COMPOUND
     from OCP.TopoDS import TopoDS, TopoDS_Shape
     from OCP.BRepTools import BRepTools, BRepTools_WireExplorer
     from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
@@ -37,7 +37,7 @@ try:
 except ImportError:
     try:
         from OCC.Core.TopExp import TopExp_Explorer
-        from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID, TopAbs_SHELL
+        from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_WIRE, TopAbs_EDGE, TopAbs_VERTEX, TopAbs_SOLID, TopAbs_SHELL, TopAbs_COMPOUND
         from OCC.Core.TopoDS import topods as TopoDS, TopoDS_Shape
         from OCC.Core.BRepTools import breptools as BRepTools, BRepTools_WireExplorer
         from OCC.Core.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
@@ -60,7 +60,8 @@ except ImportError:
         _OCCT_AVAILABLE = False
 
 
-def get_brep_triangulation(face, loc):
+def get_brep_triangulation(face: Any, loc: Any) -> Any:
+    """Extract Poly_Triangulation from TopoDS_Face safely across OCCT bindings."""
     if not _OCCT_AVAILABLE or face is None:
         return None
     if hasattr(BRep_Tool, 'Triangulation_s'):
@@ -73,7 +74,8 @@ def get_brep_triangulation(face, loc):
     return None
 
 
-def get_brep_pnt(vert):
+def get_brep_pnt(vert: Any) -> Any:
+    """Extract gp_Pnt from TopoDS_Vertex safely across OCCT bindings."""
     if not _OCCT_AVAILABLE or vert is None:
         return None
     if hasattr(BRep_Tool, 'Pnt_s'):
@@ -86,11 +88,12 @@ def get_brep_pnt(vert):
     return None
 
 
-def extract_clean_planar_wires(occ_face, scale: float = 1.0, linear_deflection: float = 0.05) -> Dict[str, Any]:
+def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Dict[str, Any]:
     """
     Extracts outer and inner boundary loops from an authoritative TopoDS_Face.
     Preserves exact topological winding, eliminates internal meshing diagonals,
     and discretizes curved edge segments under strict chordal tolerance.
+    Handles multiply-connected void topologies ('A', 'B', 'O' alphabet cutouts).
     """
     if not _OCCT_AVAILABLE or occ_face is None:
         return {"outer": [], "inner": []}
@@ -164,7 +167,7 @@ def extract_clean_planar_wires(occ_face, scale: float = 1.0, linear_deflection: 
 def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Classifies every TopoDS_Face into either:
-      - Planar N-Gon polygons (GeomAbs_Plane, zero internal diagonals)
+      - Planar N-Gon polygons (GeomAbs_Plane, zero internal diagonals, outer & inner cutout loops)
       - Curved / freeform analytical surfaces requiring adaptive deflection tessellation.
     """
     if not _OCCT_AVAILABLE or shape is None:

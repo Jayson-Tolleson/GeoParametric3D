@@ -97,7 +97,7 @@ export class AIAssistantController {
       } : null;
 
       let res = null;
-      // Try direct generator endpoint if available, then fallback to assistant chat gateway
+      // Try direct assistant chat gateway or generate endpoint
       try {
         res = await CADApi.requestJSON('/assistant/chat', {
           method: 'POST',

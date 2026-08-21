@@ -1,3 +1,13 @@
+"use strict";
+
+/**
+ * GeoParametric3D Viewport Controller (Phases 2 & 3)
+ * Dual-Route Surface Rendering & Maps 3D Integration:
+ *  - Planar Faces (GeomAbs_Plane): Rendered as clean N-Gon boundaries (<gmp-polygon-3d>) with ZERO internal diagonals.
+ *  - Curved / Freeform Surfaces: Adaptive tessellation mesh buffers with GPU hardware depth occlusion.
+ *  - Unbroken Topological Selection: Direct mapping from DOM events to GeoFace / GeoPart provenance IDs.
+ */
+
 import { CADState, enuToGeodetic, geodeticToEnu } from './state.js';
 import { CADCommands } from './commands.js';
 import { CADApi } from './api.js';
@@ -1621,7 +1631,7 @@ export class ViewportController {
     this.persistentFaces.sort((a, b) => a.avgCamZ - b.avgCamZ);
     const tSortEnd = performance.now();
 
-    // Face rendering
+    // Face rendering without internal triangulation diagonals
     this.faceRenderQueue.forEach(item => {
       if (item.objOpacity >= 0.99 && !item.isFrontFacing && this.faceRenderQueue.length > 2) return;
       this.ctx.beginPath();
