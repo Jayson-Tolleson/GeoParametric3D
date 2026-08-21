@@ -1423,6 +1423,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             
             assembly_tree = build_assembly_tree_from_canonical(assembly)
             
+            t_serialize_start = time.perf_counter()
             headers = {
                 "format": "STEP_OCCT_BREP",
                 "filename": filename,
@@ -1460,7 +1461,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 }
             }
             
-            return {
+            payload = {
                 "headers": headers,
                 "original_unit": orig_unit_str,
                 "descriptor": desc.to_dict() if desc else None,
@@ -1469,6 +1470,23 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "assembly_tree": assembly_tree,
                 "faces": all_faces_combined
             }
+            t_serialize_end = time.perf_counter()
+            
+            parse_extract_ms = round((t_fix_end - t_acq) * 1000, 3)
+            tess_ms = round((t_mesh_end - t_mesh_start) * 1000, 3)
+            serialize_ms = round((t_serialize_end - t_serialize_start) * 1000, 3)
+            total_ms = round((t_serialize_end - t_start) * 1000, 3)
+            print(
+                f"[PERF_TELEMETRY][STEP_OCCT] File: {filename} | "
+                f"B-Rep Parse/Extract: {parse_extract_ms}ms | "
+                f"Tessellation: {tess_ms}ms | "
+                f"Payload Prep/Serialize: {serialize_ms}ms | "
+                f"Total: {total_ms}ms | "
+                f"Faces: {len(face_ids)} | Vertices: {len(final_v)} | Triangles: {len(final_t)}",
+                flush=True
+            )
+            
+            return payload
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -1959,7 +1977,8 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         
         assembly_tree = build_assembly_tree_from_canonical(assembly)
         
-        return {
+        t_serialize_start = time.perf_counter()
+        payload = {
             "headers": headers,
             "descriptor": desc.to_dict() if desc else None,
             "canonical_assembly": assembly.to_dict(),
@@ -1967,6 +1986,23 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
             "assembly_tree": assembly_tree,
             "faces": all_faces_combined
         }
+        t_serialize_end = time.perf_counter()
+        
+        dec_ms = round((t_dec - t_start) * 1000, 3)
+        canon_ms = round((t_end - t_canon_start) * 1000, 3)
+        serialize_ms = round((t_serialize_end - t_serialize_start) * 1000, 3)
+        total_ms = round((t_serialize_end - t_start) * 1000, 3)
+        print(
+            f"[PERF_TELEMETRY][STEP_STRUCT] File: {filename} | "
+            f"B-Rep Decode: {dec_ms}ms | "
+            f"Canonical/Tessellation: {canon_ms}ms | "
+            f"Payload Prep/Serialize: {serialize_ms}ms | "
+            f"Total: {total_ms}ms | "
+            f"Faces: {len(faces_topol)} | Triangles: {len(all_faces_combined)}",
+            flush=True
+        )
+        
+        return payload
     except Exception as e:
         logger.exception("STEP B-Rep Structured Parser Exception")
         return None

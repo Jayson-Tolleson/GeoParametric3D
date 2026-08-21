@@ -116,6 +116,18 @@ export class ViewportController {
     this.snapCandidates = [];
     this.activeSnapTarget = null;
 
+    this.telemetryMetrics = {
+      renderCount: 0,
+      lastReportTime: performance.now(),
+      totalRenderTimeMs: 0,
+      totalProjTimeMs: 0,
+      totalSortTimeMs: 0,
+      maxRenderTimeMs: 0,
+      vertexAllocCount: 0,
+      edgeAllocCount: 0,
+      faceAllocCount: 0
+    };
+
     this.initMap3D();
     this.initTrackball();
     this.initOverlay();
@@ -850,6 +862,7 @@ export class ViewportController {
   // AUTHORITATIVE RENDERING PIPELINE
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
+    const tRenderStart = performance.now();
     const w = this.cssWidth || (this.canvasOverlay.width / (window.devicePixelRatio || 1));
     const h = this.cssHeight || (this.canvasOverlay.height / (window.devicePixelRatio || 1));
     this.ctx.clearRect(0, 0, w, h);
@@ -916,6 +929,7 @@ export class ViewportController {
     const edgesRender = [];
     const snaps = [];
 
+    const tProjStart = performance.now();
     objects.forEach(obj => {
       if (obj.visible === false) return;
       const objId = obj.manifest_id || obj.id || obj.object_id;
@@ -996,10 +1010,15 @@ export class ViewportController {
       });
     });
 
+    const tProjEnd = performance.now();
+
     this.lastRenderVertices = verticesRender;
     this.lastRenderEdges = edgesRender;
     this.snapCandidates = snaps;
+
+    const tSortStart = performance.now();
     faceRenderQueue.sort((a, b) => a.avgCamZ - b.avgCamZ);
+    const tSortEnd = performance.now();
     this.lastRenderQueue = faceRenderQueue;
 
     // Face rendering
@@ -1153,6 +1172,50 @@ export class ViewportController {
       if (this.draftCurrent) this.ctx.lineTo(this.draftCurrent.x, this.draftCurrent.y);
       this.ctx.stroke();
       this.ctx.setLineDash([]);
+    }
+
+    const tRenderEnd = performance.now();
+    const renderDuration = tRenderEnd - tRenderStart;
+    const projDuration = (typeof tProjEnd === 'number' && typeof tProjStart === 'number') ? (tProjEnd - tProjStart) : 0;
+    const sortDuration = (typeof tSortEnd === 'number' && typeof tSortStart === 'number') ? (tSortEnd - tSortStart) : 0;
+
+    if (this.telemetryMetrics) {
+      this.telemetryMetrics.renderCount++;
+      this.telemetryMetrics.totalRenderTimeMs += renderDuration;
+      this.telemetryMetrics.totalProjTimeMs += projDuration;
+      this.telemetryMetrics.totalSortTimeMs += sortDuration;
+      if (renderDuration > this.telemetryMetrics.maxRenderTimeMs) {
+        this.telemetryMetrics.maxRenderTimeMs = renderDuration;
+      }
+      this.telemetryMetrics.vertexAllocCount = this.lastRenderVertices.length;
+      this.telemetryMetrics.edgeAllocCount = this.lastRenderEdges.length;
+      this.telemetryMetrics.faceAllocCount = this.lastRenderQueue.length;
+
+      const now = performance.now();
+      if (now - this.telemetryMetrics.lastReportTime >= 1000 || this.telemetryMetrics.renderCount >= 60) {
+        const count = Math.max(1, this.telemetryMetrics.renderCount);
+        const avgRender = (this.telemetryMetrics.totalRenderTimeMs / count).toFixed(2);
+        const avgProj = (this.telemetryMetrics.totalProjTimeMs / count).toFixed(2);
+        const avgSort = (this.telemetryMetrics.totalSortTimeMs / count).toFixed(2);
+        const fps = ((count * 1000) / Math.max(1, now - this.telemetryMetrics.lastReportTime)).toFixed(1);
+
+        console.log(
+          `[VIEWPORT_PERF_TELEMETRY] FPS: ${fps} | ` +
+          `Avg Render: ${avgRender}ms (Max: ${this.telemetryMetrics.maxRenderTimeMs.toFixed(2)}ms) | ` +
+          `Proj Loop: ${avgProj}ms | ` +
+          `Painter Sort: ${avgSort}ms | ` +
+          `Per-Frame Heap Alloc Proxy: ${this.telemetryMetrics.vertexAllocCount} verts, ` +
+          `${this.telemetryMetrics.edgeAllocCount} edges, ` +
+          `${this.telemetryMetrics.faceAllocCount} faces`
+        );
+
+        this.telemetryMetrics.renderCount = 0;
+        this.telemetryMetrics.totalRenderTimeMs = 0;
+        this.telemetryMetrics.totalProjTimeMs = 0;
+        this.telemetryMetrics.totalSortTimeMs = 0;
+        this.telemetryMetrics.maxRenderTimeMs = 0;
+        this.telemetryMetrics.lastReportTime = now;
+      }
     }
   }
 }
