@@ -1365,34 +1365,43 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
 
                     # Target 1: Planar Face Detection & Direct N-Gon Loop Extraction
                     if stype == SurfaceType.PLANE:
-                        outer_poly_pts = []
-                        loop_obj = geo_part.loops.get(outer_loop_id)
-                        if loop_obj:
-                            for eid in loop_obj.ordered_edge_ids:
-                                edge_obj = geo_part.edges.get(eid)
-                                if edge_obj and edge_obj.vertex_start in geo_part.vertices:
-                                    outer_poly_pts.append(geo_part.vertices[edge_obj.vertex_start].point)
-                        if len(outer_poly_pts) >= 3:
-                            inner_loops_wgs = []
-                            for in_lid in inner_loop_ids:
-                                in_loop_obj = geo_part.loops.get(in_lid)
-                                if in_loop_obj:
-                                    in_pts = []
-                                    for eid in in_loop_obj.ordered_edge_ids:
-                                        edge_obj = geo_part.edges.get(eid)
-                                        if edge_obj and edge_obj.vertex_start in geo_part.vertices:
-                                            in_pts.append(geo_part.vertices[edge_obj.vertex_start].point)
-                                    if len(in_pts) >= 3:
-                                        inner_loops_wgs.append(enu_to_wgs84(np.array(in_pts, dtype=np.float64), face_id=g_face.id))
+                        face_wire_loops = []
+                        exp_w = TopExp_Explorer(occ_face, TopAbs_WIRE)
+                        while exp_w.More():
+                            w_shape = TopoDS_Wire_Cast(exp_w.Current())
+                            loop_pts = []
+                            exp_e = TopExp_Explorer(w_shape, TopAbs_EDGE)
+                            while exp_e.More():
+                                occ_e = TopoDS_Edge_Cast(exp_e.Current())
+                                exp_v_w = TopExp_Explorer(occ_e, TopAbs_VERTEX)
+                                while exp_v_w.More():
+                                    occ_v_w = TopoDS_Vertex_Cast(exp_v_w.Current())
+                                    pnt = get_brep_pnt(occ_v_w)
+                                    loop_pts.append(np.array([pnt.X() * scale, pnt.Y() * scale, pnt.Z() * scale], dtype=np.float64))
+                                    exp_v_w.Next()
+                                exp_e.Next()
                             
+                            clean_loop = []
+                            for pt in loop_pts:
+                                if not clean_loop or np.linalg.norm(pt - clean_loop[-1]) > 1e-5:
+                                    clean_loop.append(pt)
+                            if len(clean_loop) >= 2 and np.linalg.norm(clean_loop[0] - clean_loop[-1]) < 1e-5:
+                                clean_loop.pop()
+                            if len(clean_loop) >= 3:
+                                face_wire_loops.append(clean_loop)
+                            exp_w.Next()
+
+                        if face_wire_loops:
+                            outer_pts = face_wire_loops[0]
+                            inner_holes = face_wire_loops[1:]
                             planar_n_gons.append({
                                 "face_id": g_face.id,
                                 "type": "N_GON_POLYGON_3D",
                                 "color": part_color,
                                 "normal": surf_params.get("normal", [0.0, 0.0, 1.0]),
-                                "outer_coordinates": enu_to_wgs84(np.array(outer_poly_pts, dtype=np.float64), face_id=g_face.id),
-                                "inner_coordinates": inner_loops_wgs,
-                                "vertex_count": len(outer_poly_pts)
+                                "outer_coordinates": enu_to_wgs84(np.array(outer_pts, dtype=np.float64), face_id=g_face.id),
+                                "inner_coordinates": [enu_to_wgs84(np.array(h, dtype=np.float64), face_id=g_face.id) for h in inner_holes],
+                                "vertex_count": len(outer_pts)
                             })
                     
                     if triangulation is not None:
