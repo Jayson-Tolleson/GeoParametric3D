@@ -13,9 +13,9 @@ export function fitCameraToModel(options = {}) {
   // Calculate bounding box maximum dimension
   const maxDim = bounds.maxDimension || bounds.diagonal || 304.8;
   const fov = (CADState.state.camera && CADState.state.camera.fov) || 45;
-  // Dynamic distance based on 30:1 viewport-to-part ratio (30 * R where R = maxDim / 2, 3x larger framing ratio)
+  // Dynamic distance based on 60:1 viewport-to-part ratio (60 * R where R = maxDim / 2, doubled framing ratio)
   const R = bounds.radius || (maxDim / 2.0);
-  const fitDistanceMm = Math.max(76.2, 30.0 * R);
+  const fitDistanceMm = Math.max(152.4, 60.0 * R);
   const fitDistanceMeters = fitDistanceMm / 1000.0;
   const targetRangeMeters = Math.max(0.001, Math.min(1000000, fitDistanceMeters));
 
