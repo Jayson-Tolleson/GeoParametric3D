@@ -163,7 +163,7 @@ def extract_clean_planar_wires(
     if not loops:
         return {"outer": [], "inner": []}
         
-    # Primary loop is Outer Boundary; subsequent loops are Nested Holes (Cutouts)
+    # Primary loop index 0 is Outer Bound; subsequent loops are Nested Holes (Cutouts)
     return {
         "outer": loops[0],
         "inner": loops[1:] if len(loops) > 1 else []
