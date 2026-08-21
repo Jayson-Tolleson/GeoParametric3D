@@ -146,12 +146,11 @@ $$\mathcal{F} = \Omega_{\text{outer}} \setminus \bigcup_{k=1}^K \Omega_{\text{in
     "outer_coordinates": [
         {"lat": 33.881400, "lng": -117.921300, "altitude": 95.0},
         {"lat": 33.881400, "lng": -117.921280, "altitude": 95.0},
-        {"lat": 33.881420, "lng": -117.921280, "altitude": 95.0},
-        # ... 16 points defining outer boundary of 'B'
+        {"lat": 33.881420, "lng": -117.921280, "altitude": 95.0}
     ],
     "inner_coordinates": [
-        [ /* 8 points defining top D-hole (CW) */ ],
-        [ /* 8 points defining bottom D-hole (CW) */ ]
+        [ /* points defining top D-hole (CW) */ ],
+        [ /* points defining bottom D-hole (CW) */ ]
     ]
 }
 ```
@@ -187,9 +186,10 @@ def parallel_process_step_solids(shape: Any, scale: float = 1.0, worker_count: i
         solids = [shape]
 
     def process_single_solid(sub_shape: Any, solid_idx: int) -> Dict[str, Any]:
-        # Linear deflection = 0.2mm, angular deflection = 0.5rad
-        BRepMesh_IncrementalMesh(sub_shape, 0.2, False, 0.5, True)
-        planar_polys, curved_faces = route_cad_faces(sub_shape, scale=scale, linear_deflection=0.2)
+        linear_deflection = 0.2
+        angular_deflection = 0.5
+        BRepMesh_IncrementalMesh(sub_shape, linear_deflection, False, angular_deflection, True)
+        planar_polys, curved_faces = route_cad_faces(sub_shape, scale=scale, linear_deflection=linear_deflection)
         return {
             "solid_index": solid_idx,
             "solid_shape": sub_shape,
@@ -237,27 +237,21 @@ The root cause of parts displaying with distorted dimensions (e.g., $1642\,\text
 ```python
 def detect_step_units(text: str) -> Tuple[str, float]:
     """Extract SI_UNIT and CONVERSION_BASED_UNIT from STEP header/data."""
-    # 1. Check for Millimeters
     if re.search(r"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE) or \
        re.search(r"\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE):
         return "mm", 1.0
-    # 2. Check for Centimeters
     if re.search(r"SI_UNIT\s*\(\s*\.CENTI\.\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE):
         return "cm", 10.0
-    # 3. Check for Meters
     if re.search(r"SI_UNIT\s*\(\s*\$\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE) or \
        re.search(r"SI_UNIT\s*\(\s*\*\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE):
         return "meter", 1000.0
-    # 4. Check for Inches
     if re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'INCH'", text, re.IGNORECASE) or \
        re.search(r"LENGTH_MEASURE_WITH_UNIT\s*\(\s*LENGTH_MEASURE\s*\(\s*25\.4", text, re.IGNORECASE) or \
        re.search(r"'INCH'", text, re.IGNORECASE):
         return "inch", 25.4
-    # 5. Check for Feet
     if re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'FOOT'", text, re.IGNORECASE) or \
        re.search(r"'FOOT'", text, re.IGNORECASE):
         return "foot", 304.8
-    # Default to mm if unstated
     return "mm", 1.0
 ```
 

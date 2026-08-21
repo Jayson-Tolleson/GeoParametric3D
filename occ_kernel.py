@@ -6,10 +6,12 @@ Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (Phase
   3. Arbitrary concave perimeter extraction ('L', 'T', 'E' brackets) without internal triangulation diagonals
   4. Multiply-connected cutout void loop extraction ('A', 'B', 'O' alphabet genus topology)
   5. Multi-solid compound unpacking and parallel batch deflection support
+  6. STEP inch/mm unit scale factor detection & single ingestion conversion
 """
 
 from typing import List, Dict, Any, Tuple, Optional
 import math
+import re
 import concurrent.futures
 import numpy as np
 
@@ -86,6 +88,33 @@ def get_brep_pnt(vert: Any) -> Any:
         except Exception:
             return BRep_Tool().Pnt(vert)
     return None
+
+
+def detect_step_units(header_text: str) -> Tuple[str, float]:
+    """
+    Inspects STEP exchange structure to resolve source unit and linear scale factor to canonical mm.
+    Prevents the 136ft vs 8ft scaling distortion incident (Section 1.3 / Spec UNIT-003).
+    """
+    if not header_text:
+        return "mm", 1.0
+    if re.search(r"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", header_text, re.IGNORECASE) or \
+       re.search(r"\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", header_text, re.IGNORECASE):
+        return "mm", 1.0
+    if re.search(r"SI_UNIT\s*\(\s*\.CENTI\.\s*,\s*\.METRE\.\s*\)", header_text, re.IGNORECASE):
+        return "cm", 10.0
+    if re.search(r"SI_UNIT\s*\(\s*\$\s*,\s*\.METRE\.\s*\)", header_text, re.IGNORECASE) or \
+       re.search(r"SI_UNIT\s*\(\s*\*\s*,\s*\.METRE\.\s*\)", header_text, re.IGNORECASE):
+        return "meter", 1000.0
+    if re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'INCH'", header_text, re.IGNORECASE) or \
+       re.search(r"LENGTH_MEASURE_WITH_UNIT\s*\(\s*LENGTH_MEASURE\s*\(\s*25\.4", header_text, re.IGNORECASE) or \
+       re.search(r"'INCH'", header_text, re.IGNORECASE):
+        return "inch", 25.4
+    if re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'FOOT'", header_text, re.IGNORECASE) or \
+       re.search(r"'FOOT'", header_text, re.IGNORECASE):
+        return "foot", 304.8
+    if re.search(r"\.METRE\.", header_text, re.IGNORECASE) and not re.search(r"\.MILLI\.|\.CENTI\.", header_text, re.IGNORECASE):
+        return "meter", 1000.0
+    return "mm", 1.0
 
 
 def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Dict[str, Any]:
@@ -210,6 +239,8 @@ def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0
                     "inner_wires": wire_data.get("inner", []),
                     "outer": wire_data["outer"],
                     "inner": wire_data.get("inner", []),
+                    "outer_coordinates": wire_data["outer"],
+                    "inner_coordinates": wire_data.get("inner", []),
                     "vertex_count": len(wire_data["outer"]),
                     "has_holes": len(wire_data.get("inner", [])) > 0,
                     "occ_face": occ_face
