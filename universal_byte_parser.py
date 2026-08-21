@@ -1188,31 +1188,8 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             source_u, scale_fac = detect_step_units(header_sample)
             if desc and desc.source_units != 'mm':
                 source_u = desc.source_units
-
-            unit_clean = parse_unit_string(source_u)
-            if unit_clean in ('meter', 'm', 'metre', 'metres'):
-                orig_unit_str = 'm'
-                to_inch_scale = 1000.0 / 25.4
-            elif unit_clean in ('inch', 'in', 'inches'):
-                orig_unit_str = 'in'
-                to_inch_scale = 1.0
-            elif unit_clean in ('cm', 'centimeter', 'centimeters'):
-                orig_unit_str = 'cm'
-                to_inch_scale = 10.0 / 25.4
-            elif unit_clean in ('foot', 'ft', 'feet'):
-                orig_unit_str = 'ft'
-                to_inch_scale = 12.0
-            else:
-                orig_unit_str = 'mm'
-                to_inch_scale = 1.0 / 25.4
-
-            # 2. Conditional BRepBuilderAPI_Transform into standard canonical inches
-            try:
-                trsf_scale = gp_Trsf()
-                trsf_scale.SetScale(gp_Pnt(0.0, 0.0, 0.0), float(to_inch_scale))
-                shape = BRepBuilderAPI_Transform(shape, trsf_scale, True).Shape()
-            except Exception as trsf_err:
-                logger.warning(f"BRepBuilderAPI_Transform unit scaling to inches failed: {trsf_err}")
+                scale_fac = desc.scale_to_canonical
+            scale = float(scale_fac)
 
             # Directive 1: Fast Adaptive OCCT Tessellation with parallel deflection
             bbox_diagonal = 300.0
@@ -1224,7 +1201,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     BRepBndLib.Add_s(shape, bnd)
                     xmin, ymin, zmin, xmax, ymax, zmax = bnd.Get()
                     dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
-                    bbox_diagonal = math.sqrt(dx * dx + dy * dy + dz * dz)
+                    bbox_diagonal = math.sqrt(dx * dx + dy * dy + dz * dz) * scale
                 elif _OCCT_BACKEND == "OCC":
                     from OCC.Core.Bnd import Bnd_Box
                     from OCC.Core.BRepBndLib import brepbndlib
@@ -1232,302 +1209,323 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     brepbndlib.Add(shape, bnd)
                     xmin, ymin, zmin, xmax, ymax, zmax = bnd.Get()
                     dx, dy, dz = xmax - xmin, ymax - ymin, zmax - zmin
-                    bbox_diagonal = math.sqrt(dx * dx + dy * dy + dz * dz)
+                    bbox_diagonal = math.sqrt(dx * dx + dy * dy + dz * dz) * scale
             except Exception:
                 bbox_diagonal = 300.0
 
-            linear_deflection = max(0.5, bbox_diagonal * 0.005)
+            linear_deflection = max(0.1, (bbox_diagonal / scale if scale > 0 else bbox_diagonal) * 0.005)
             angular_deflection = 0.5
             t_mesh_start = time.perf_counter()
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
             t_mesh_end = time.perf_counter()
-            
-            scale = 1.0
             t_dec = time.perf_counter()
             
             job_uuid = f"job_{uuid.uuid4().hex[:8]}"
-            body_uuid = f"body_{uuid.uuid4().hex[:8]}"
             assembly = GeoAssembly(f"asm_{uuid.uuid4().hex[:6]}", desc.filename if desc else filename)
-            part_name = desc.filename.split('.')[0] if desc and desc.filename else "STEP_Part"
-            geo_part = GeoPart(f"part_occt_{uuid.uuid4().hex[:6]}", part_name)
+            base_part_name = desc.filename.split('.')[0] if desc and desc.filename else "STEP_Part"
             
+            # Product / Subpart naming metadata extraction
+            products = re.findall(r"#(\d+)\s*=\s*PRODUCT\s*\(\s*'([^']*)'\s*,\s*'([^']*)'", header_sample)
+            product_names = [p[1] or p[2] or f"Product_{p[0]}" for p in products]
+            
+            palette = ["#38bdf8", "#34d399", "#fbbf24", "#f43f5e", "#a78bfa", "#fb923c", "#06b6d4", "#ec4899"]
+            
+            # Target 2: Assembly Subpart Iteration & Tree Separation (Unpack Compounds into selectable solids)
+            exp_solid = TopExp_Explorer(shape, TopAbs_SOLID)
+            solid_shapes = []
+            while exp_solid.More():
+                solid_shapes.append(exp_solid.Current())
+                exp_solid.Next()
+                
+            if not solid_shapes:
+                exp_shell = TopExp_Explorer(shape, TopAbs_SHELL)
+                while exp_shell.More():
+                    solid_shapes.append(exp_shell.Current())
+                    exp_shell.Next()
+                    
+            if not solid_shapes:
+                solid_shapes = [shape]
+                
             bodies = []
             all_faces_combined = []
-            exp_face = TopExp_Explorer(shape, TopAbs_FACE)
+            total_face_count = 0
+            total_raw_v = 0
+            total_raw_t = 0
+            total_final_v = 0
+            total_final_t = 0
+            global_face_id_list = []
             
-            global_verts: List[np.ndarray] = []
-            global_tris: List[Tuple[int, int, int]] = []
-            face_ids = []
-            triangle_provenance: List[str] = []
-            face_count = 0
-            
-            while exp_face.More():
-                face_count += 1
-                occ_face = TopoDS_Face_Cast(exp_face.Current())
-                loc = TopLoc_Location()
-                triangulation = get_brep_triangulation(occ_face, loc)
+            for s_idx, sub_shape in enumerate(solid_shapes):
+                subpart_id = f"part_occt_{s_idx + 1}_{uuid.uuid4().hex[:6]}"
+                subpart_name = product_names[s_idx] if s_idx < len(product_names) else (f"{base_part_name} - Part {s_idx + 1}" if len(solid_shapes) > 1 else base_part_name)
                 
-                stype = SurfaceType.PLANE
-                surf_params = {"origin": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0]}
-                try:
-                    adaptor = BRepAdaptor_Surface(occ_face)
-                    occ_surf_type = adaptor.GetType()
-                    if occ_surf_type == GeomAbs_Plane:
-                        stype = SurfaceType.PLANE
-                        pln = adaptor.Plane()
-                        ax = pln.Axis().Direction()
-                        surf_params["normal"] = [float(ax.X()), float(ax.Y()), float(ax.Z())]
-                        loc_pt = pln.Location()
-                        surf_params["origin"] = [float(loc_pt.X() * scale), float(loc_pt.Y() * scale), float(loc_pt.Z() * scale)]
-                    elif occ_surf_type == GeomAbs_Cylinder:
-                        stype = SurfaceType.CYLINDER
-                        cyl = adaptor.Cylinder()
-                        surf_params["radius"] = float(cyl.Radius() * scale)
-                    elif occ_surf_type == GeomAbs_Cone:
-                        stype = SurfaceType.CONE
-                        cone = adaptor.Cone()
-                        surf_params["radius"] = float(cone.RefRadius() * scale)
-                        surf_params["semi_angle"] = float(cone.SemiAngle())
-                    elif occ_surf_type == GeomAbs_Sphere:
-                        stype = SurfaceType.SPHERE
-                        sph = adaptor.Sphere()
-                        surf_params["radius"] = float(sph.Radius() * scale)
-                    elif occ_surf_type == GeomAbs_Torus:
-                        stype = SurfaceType.TORUS
-                        tor = adaptor.Torus()
-                        surf_params["major_radius"] = float(tor.MajorRadius() * scale)
-                        surf_params["minor_radius"] = float(tor.MinorRadius() * scale)
-                    elif occ_surf_type in (GeomAbs_BSplineSurface, GeomAbs_BezierSurface):
-                        stype = SurfaceType.NURBS
-                    elif occ_surf_type == GeomAbs_SurfaceOfRevolution:
-                        stype = SurfaceType.REVOLUTION
-                    elif occ_surf_type == GeomAbs_SurfaceOfExtrusion:
-                        stype = SurfaceType.EXTRUSION
-                except Exception:
+                part_color = extract_occt_shape_color(sub_shape, color_tool) if color_tool else None
+                if not part_color:
+                    part_color = palette[s_idx % len(palette)] if len(solid_shapes) > 1 else "#38bdf8"
+                    
+                geo_part = GeoPart(subpart_id, subpart_name)
+                exp_face = TopExp_Explorer(sub_shape, TopAbs_FACE)
+                
+                body_raw_verts: List[np.ndarray] = []
+                body_raw_tris: List[Tuple[int, int, int]] = []
+                face_ids = []
+                triangle_provenance: List[str] = []
+                
+                while exp_face.More():
+                    total_face_count += 1
+                    occ_face = TopoDS_Face_Cast(exp_face.Current())
+                    loc = TopLoc_Location()
+                    triangulation = get_brep_triangulation(occ_face, loc)
+                    
                     stype = SurfaceType.PLANE
-                    
-                surf = geo_part.add_surface(stype, surf_params)
-                
-                exp_wire = TopExp_Explorer(occ_face, TopAbs_WIRE)
-                outer_loop_id = None
-                inner_loop_ids = []
-                
-                while exp_wire.More():
-                    occ_wire = TopoDS_Wire_Cast(exp_wire.Current())
-                    exp_edge = TopExp_Explorer(occ_wire, TopAbs_EDGE)
-                    wire_edge_ids = []
-                    
-                    while exp_edge.More():
-                        occ_edge = TopoDS_Edge_Cast(exp_edge.Current())
-                        exp_v = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
-                        v_edge_ids = []
-                        while exp_v.More():
-                            occ_v = TopoDS_Vertex_Cast(exp_v.Current())
-                            pt = get_brep_pnt(occ_v)
-                            gv = geo_part.add_vertex(np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64))
-                            v_edge_ids.append(gv.id)
-                            exp_v.Next()
-                        if len(v_edge_ids) >= 2:
-                            ge = geo_part.add_edge(v_edge_ids[0], v_edge_ids[1])
-                            wire_edge_ids.append(ge.id)
-                        exp_edge.Next()
-                        
-                    is_outer = (outer_loop_id is None)
-                    loop = geo_part.add_loop(wire_edge_ids, is_outer=is_outer)
-                    if is_outer:
-                        outer_loop_id = loop.id
-                    else:
-                        inner_loop_ids.append(loop.id)
-                    exp_wire.Next()
-                    
-                if not outer_loop_id:
-                    loop = geo_part.add_loop([], is_outer=True)
-                    outer_loop_id = loop.id
-                    
-                face_task_uuid = f"face_{job_uuid}_{face_count}"
-                g_face = geo_part.add_face(
-                    surf.id, outer_loop_id, inner_loop_ids,
-                    source_metadata={"surface_type": stype.value, "parameters": surf_params, "task_uuid": face_task_uuid}
-                )
-                face_ids.append(g_face.id)
-                
-                if triangulation is not None:
+                    surf_params = {"origin": [0.0, 0.0, 0.0], "normal": [0.0, 0.0, 1.0]}
                     try:
-                        trsf = shape.Location().Multiplied(loc).Transformation()
+                        adaptor = BRepAdaptor_Surface(occ_face)
+                        occ_surf_type = adaptor.GetType()
+                        if occ_surf_type == GeomAbs_Plane:
+                            stype = SurfaceType.PLANE
+                            pln = adaptor.Plane()
+                            ax = pln.Axis().Direction()
+                            surf_params["normal"] = [float(ax.X()), float(ax.Y()), float(ax.Z())]
+                            loc_pt = pln.Location()
+                            surf_params["origin"] = [float(loc_pt.X() * scale), float(loc_pt.Y() * scale), float(loc_pt.Z() * scale)]
+                        elif occ_surf_type == GeomAbs_Cylinder:
+                            stype = SurfaceType.CYLINDER
+                            cyl = adaptor.Cylinder()
+                            surf_params["radius"] = float(cyl.Radius() * scale)
+                        elif occ_surf_type == GeomAbs_Cone:
+                            stype = SurfaceType.CONE
+                            cone = adaptor.Cone()
+                            surf_params["radius"] = float(cone.RefRadius() * scale)
+                            surf_params["semi_angle"] = float(cone.SemiAngle())
+                        elif occ_surf_type == GeomAbs_Sphere:
+                            stype = SurfaceType.SPHERE
+                            sph = adaptor.Sphere()
+                            surf_params["radius"] = float(sph.Radius() * scale)
+                        elif occ_surf_type == GeomAbs_Torus:
+                            stype = SurfaceType.TORUS
+                            tor = adaptor.Torus()
+                            surf_params["major_radius"] = float(tor.MajorRadius() * scale)
+                            surf_params["minor_radius"] = float(tor.MinorRadius() * scale)
+                        elif occ_surf_type in (GeomAbs_BSplineSurface, GeomAbs_BezierSurface):
+                            stype = SurfaceType.NURBS
+                        elif occ_surf_type == GeomAbs_SurfaceOfRevolution:
+                            stype = SurfaceType.REVOLUTION
+                        elif occ_surf_type == GeomAbs_SurfaceOfExtrusion:
+                            stype = SurfaceType.EXTRUSION
                     except Exception:
+                        stype = SurfaceType.PLANE
+                        
+                    surf = geo_part.add_surface(stype, surf_params)
+                    
+                    exp_wire = TopExp_Explorer(occ_face, TopAbs_WIRE)
+                    outer_loop_id = None
+                    inner_loop_ids = []
+                    
+                    while exp_wire.More():
+                        occ_wire = TopoDS_Wire_Cast(exp_wire.Current())
+                        exp_edge = TopExp_Explorer(occ_wire, TopAbs_EDGE)
+                        wire_edge_ids = []
+                        
+                        while exp_edge.More():
+                            occ_edge = TopoDS_Edge_Cast(exp_edge.Current())
+                            exp_v = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
+                            v_edge_ids = []
+                            while exp_v.More():
+                                occ_v = TopoDS_Vertex_Cast(exp_v.Current())
+                                pt = get_brep_pnt(occ_v)
+                                gv = geo_part.add_vertex(np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64))
+                                v_edge_ids.append(gv.id)
+                                exp_v.Next()
+                            if len(v_edge_ids) >= 2:
+                                ge = geo_part.add_edge(v_edge_ids[0], v_edge_ids[1])
+                                wire_edge_ids.append(ge.id)
+                            exp_edge.Next()
+                            
+                        is_outer = (outer_loop_id is None)
+                        loop = geo_part.add_loop(wire_edge_ids, is_outer=is_outer)
+                        if is_outer:
+                            outer_loop_id = loop.id
+                        else:
+                            inner_loop_ids.append(loop.id)
+                        exp_wire.Next()
+                        
+                    if not outer_loop_id:
+                        loop = geo_part.add_loop([], is_outer=True)
+                        outer_loop_id = loop.id
+                        
+                    face_task_uuid = f"face_{job_uuid}_{total_face_count}"
+                    g_face = geo_part.add_face(
+                        surf.id, outer_loop_id, inner_loop_ids,
+                        source_metadata={"surface_type": stype.value, "parameters": surf_params, "task_uuid": face_task_uuid}
+                    )
+                    face_ids.append(g_face.id)
+                    global_face_id_list.append(g_face.id)
+                    
+                    if triangulation is not None:
                         try:
-                            trsf = shape.Location().Transformation().Multiplied(loc.Transformation())
+                            trsf = sub_shape.Location().Multiplied(loc).Transformation()
                         except Exception:
                             try:
                                 trsf = loc.Transformation()
                             except Exception:
                                 trsf = None
 
-                    # Check transformation determinant and TopAbs_REVERSED for winding reversal
-                    is_inverted = False
-                    if trsf is not None:
-                        try:
-                            det = float(trsf.VectorialPart().Determinant())
-                            is_inverted = (det < 0.0)
-                        except Exception:
-                            is_inverted = False
-
-                    is_face_reversed = False
-                    try:
-                        ori = occ_face.Orientation()
-                        is_face_reversed = (str(ori).endswith("REVERSED") or int(ori) == 1)
-                    except Exception:
-                        is_face_reversed = False
-
-                    reverse_winding = is_inverted ^ is_face_reversed
-                    nb_nodes = triangulation.NbNodes()
-                    nb_triangles = triangulation.NbTriangles()
-                    
-                    face_v_offset = len(global_verts)
-                    for i in range(1, nb_nodes + 1):
-                        pt = triangulation.Node(i)
+                        # Target 1: Handedness Correction & Orientation Determination
+                        is_inverted = False
                         if trsf is not None:
                             try:
-                                pt = pt.Transformed(trsf)
+                                det = float(trsf.VectorialPart().Determinant())
+                                is_inverted = (det < 0.0)
                             except Exception:
-                                pass
-                        p = np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64)
-                        global_verts.append(p)
+                                is_inverted = False
+
+                        is_face_reversed = False
+                        try:
+                            ori = occ_face.Orientation()
+                            is_face_reversed = (str(ori).endswith("REVERSED") or int(ori) == 1)
+                        except Exception:
+                            is_face_reversed = False
+
+                        reverse_winding = is_inverted ^ is_face_reversed
+                        nb_nodes = triangulation.NbNodes()
+                        nb_triangles = triangulation.NbTriangles()
                         
-                    for i in range(1, nb_triangles + 1):
-                        tri = triangulation.Triangle(i)
-                        n1, n2, n3 = tri.Get()
-                        if not (1 <= n1 <= nb_nodes and 1 <= n2 <= nb_nodes and 1 <= n3 <= nb_nodes):
-                            continue
-                        if n1 == n2 or n2 == n3 or n3 == n1:
-                            continue
-                        v0 = n1 - 1 + face_v_offset
-                        v1 = n2 - 1 + face_v_offset
-                        v2 = n3 - 1 + face_v_offset
-                        if reverse_winding:
-                            global_tris.append((v0, v2, v1))
-                        else:
-                            global_tris.append((v0, v1, v2))
-                        triangle_provenance.append(g_face.id)
-                        
-                exp_face.Next()
+                        face_v_offset = len(body_raw_verts)
+                        for i in range(1, nb_nodes + 1):
+                            pt = triangulation.Node(i)
+                            if trsf is not None:
+                                try:
+                                    pt = pt.Transformed(trsf)
+                                except Exception:
+                                    pass
+                            p = np.array([pt.X() * scale, pt.Y() * scale, pt.Z() * scale], dtype=np.float64)
+                            body_raw_verts.append(p)
+                            
+                        for i in range(1, nb_triangles + 1):
+                            tri = triangulation.Triangle(i)
+                            n1, n2, n3 = tri.Get()
+                            if not (1 <= n1 <= nb_nodes and 1 <= n2 <= nb_nodes and 1 <= n3 <= nb_nodes):
+                                continue
+                            if n1 == n2 or n2 == n3 or n3 == n1:
+                                continue
+                            v0 = n1 - 1 + face_v_offset
+                            v1 = n2 - 1 + face_v_offset
+                            v2 = n3 - 1 + face_v_offset
+                            if reverse_winding:
+                                body_raw_tris.append((v0, v2, v1))
+                            else:
+                                body_raw_tris.append((v0, v1, v2))
+                            triangle_provenance.append(g_face.id)
+                            
+                    exp_face.Next()
+                    
+                final_v, final_t, diag = validate_and_compact_mesh(body_raw_verts, body_raw_tris)
+                if len(final_t) == 0:
+                    continue
+                    
+                total_raw_v += diag["raw_vertex_count"]
+                total_raw_t += diag["raw_triangle_count"]
+                total_final_v += len(final_v)
+                total_final_t += len(final_t)
                 
-            t_canon = time.perf_counter()
-            final_v, final_t, diag = validate_and_compact_mesh(global_verts, global_tris)
-            t_topo = time.perf_counter()
-            
-            if len(final_t) == 0:
+                shell = GeoShell(f"shell_{uuid.uuid4().hex[:4]}", face_ids, is_closed=True)
+                geo_part.shells[shell.id] = shell
+                solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
+                geo_part.solids[solid.id] = solid
+                
+                assembly.add_part(geo_part)
+                assembly.create_instance(geo_part.id, name=geo_part.name)
+                
+                body_faces = []
+                for t_idx, (i0, i1, i2) in enumerate(final_t):
+                    pts = final_v[[i0, i1, i2]]
+                    f_prov = triangle_provenance[t_idx] if t_idx < len(triangle_provenance) else (face_ids[0] if face_ids else None)
+                    body_faces.append(enu_to_wgs84(pts, face_id=f_prov))
+                    
+                all_faces_combined.extend(body_faces)
+                bbox = compute_bounding_box(final_v)
+                
+                import base64
+                flat_positions = np.ascontiguousarray(final_v, dtype=np.float32)
+                flat_indices = np.ascontiguousarray(final_t, dtype=np.uint32)
+                pos_b64 = base64.b64encode(flat_positions.tobytes()).decode('ascii')
+                idx_b64 = base64.b64encode(flat_indices.tobytes()).decode('ascii')
+
+                cad_obj = {
+                    "id": geo_part.id,
+                    "object_id": geo_part.id,
+                    "manifest_id": geo_part.id,
+                    "name": subpart_name,
+                    "primitive_type": "solid_imported",
+                    "color": part_color,
+                    "material": "Steel",
+                    "opacity": 1.0,
+                    "position": [0.0, 0.0, 0.0],
+                    "rotation": [0.0, 0.0, 0.0],
+                    "scale": [1.0, 1.0, 1.0],
+                    "faces": body_faces,
+                    "positions_base64": pos_b64,
+                    "indices_base64": idx_b64,
+                    "positions_flat": flat_positions.flatten().tolist(),
+                    "indices_flat": flat_indices.flatten().tolist(),
+                    "brep": geo_part.to_dict(),
+                    "canonical_part": geo_part,
+                    "bounding_box": bbox,
+                    "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                    "original_unit": source_u,
+                    "parameters": {
+                        "facets": len(body_faces),
+                        "kernel": "OCCT",
+                        "subpart_index": s_idx,
+                        "source_units": source_u,
+                        "original_unit": source_u,
+                        "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                        "job_uuid": job_uuid,
+                        "body_uuid": f"body_{uuid.uuid4().hex[:8]}"
+                    }
+                }
+                bodies.append(cad_obj)
+                
+            if not bodies:
                 return None
                 
-            shell = GeoShell(f"shell_{uuid.uuid4().hex[:4]}", face_ids, is_closed=True)
-            geo_part.shells[shell.id] = shell
-            solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
-            geo_part.solids[solid.id] = solid
-            
-            assembly.add_part(geo_part)
-            assembly.create_instance(geo_part.id, name=geo_part.name)
-            
-            t_transform_start = time.perf_counter()
-            body_faces = []
-            for t_idx, (i0, i1, i2) in enumerate(final_t):
-                pts = final_v[[i0, i1, i2]]
-                f_prov = triangle_provenance[t_idx] if t_idx < len(triangle_provenance) else (face_ids[0] if face_ids else None)
-                body_faces.append(enu_to_wgs84(pts, face_id=f_prov))
-            t_transform_end = time.perf_counter()
-                
-            all_faces_combined.extend(body_faces)
-            bbox = compute_bounding_box(final_v)
-            
-            part_color = extract_occt_shape_color(shape, color_tool) if color_tool else None
-            if not part_color:
-                colors_raw = re.findall(r"COLOUR_RGB\s*\(\s*'([^']*)'\s*,\s*([\d\.\-eE]+)\s*,\s*([\d\.\-eE]+)\s*,\s*([\d\.\-eE]+)\s*\)", header_sample)
-                if colors_raw:
-                    try:
-                        part_color = rgb_to_hex(float(colors_raw[0][1]), float(colors_raw[0][2]), float(colors_raw[0][3]))
-                    except Exception:
-                        part_color = "#38bdf8"
-                else:
-                    part_color = "#38bdf8"
-
-            import base64
-            # Standard CAD to WebGL mapping: WebGL_X = CAD_X, WebGL_Y = CAD_Z, WebGL_Z = -CAD_Y
-            # Preserve exact X sign handedness without negation
-            webgl_v = np.column_stack([final_v[:, 0], final_v[:, 2], -final_v[:, 1]])
-            flat_positions = np.ascontiguousarray(webgl_v, dtype=np.float32)
-            flat_indices = np.ascontiguousarray(final_t, dtype=np.uint32)
-            pos_b64 = base64.b64encode(flat_positions.tobytes()).decode('ascii')
-            idx_b64 = base64.b64encode(flat_indices.tobytes()).decode('ascii')
-
-            cad_obj = {
-                "id": geo_part.id,
-                "object_id": geo_part.id,
-                "manifest_id": geo_part.id,
-                "name": geo_part.name,
-                "primitive_type": "solid_imported",
-                "color": part_color,
-                "material": "Steel",
-                "opacity": 1.0,
-                "position": [0.0, 0.0, 0.0],
-                "rotation": [0.0, 0.0, 0.0],
-                "scale": [1.0, 1.0, 1.0],
-                "faces": body_faces,
-                "positions_base64": pos_b64,
-                "indices_base64": idx_b64,
-                "positions_flat": flat_positions.flatten().tolist(),
-                "indices_flat": flat_indices.flatten().tolist(),
-                "brep": geo_part.to_dict(),
-                "canonical_part": geo_part,
-                "bounding_box": bbox,
-                "canonical_unit": "inch",
-                "original_unit": orig_unit_str,
-                "parameters": {
-                    "facets": len(body_faces),
-                    "kernel": "OCCT",
-                    "source_units": source_u,
-                    "original_unit": orig_unit_str,
-                    "canonical_unit": "inch",
-                    "job_uuid": job_uuid,
-                    "body_uuid": body_uuid
-                }
-            }
-            bodies.append(cad_obj)
             t_end = time.perf_counter()
-            
-            assembly_tree = build_assembly_tree_from_canonical(assembly)
+            is_multi_comp = len(bodies) > 1
+            assembly_tree = build_assembly_tree_from_canonical(assembly, is_multi_comp=is_multi_comp)
             
             t_serialize_start = time.perf_counter()
+            all_v_pts = np.array([[p['x'], p['y'], p['z']] for f in all_faces_combined for p in f], dtype=np.float64) if all_faces_combined else np.empty((0, 3))
+            overall_bbox = compute_bounding_box(all_v_pts)
+            
             headers = {
                 "format": "STEP_OCCT_BREP",
                 "filename": filename,
                 "application_protocol": desc.application_protocol if desc else "AP242",
                 "source_units": source_u,
-                "original_unit": orig_unit_str,
-                "scale_factor": to_inch_scale,
-                "canonical_unit": "inch",
+                "original_unit": source_u,
+                "scale_factor": scale_fac,
+                "canonical_unit": CANONICAL_INTERNAL_UNIT,
                 "performance": {
                     "file_acquisition_ms": round((t_acq - t_start) * 1000, 3),
                     "format_detection_ms": 0.0,
                     "byte_decoding_ms": round((t_dec - t_acq) * 1000, 3),
                     "shapefix_ms": round((t_fix_end - t_fix_start) * 1000, 3),
                     "tessellation_ms": round((t_mesh_end - t_mesh_start) * 1000, 3),
-                    "canonicalization_ms": round((t_canon - t_dec) * 1000, 3),
-                    "transformation_ms": round((t_transform_end - t_transform_start) * 1000, 3),
-                    "topology_ms": round((t_topo - t_canon) * 1000, 3),
                     "total_elapsed_ms": round((t_end - t_start) * 1000, 3),
                     "worker_count": 4
                 },
                 "diagnostics": {
                     "occt_available": True,
                     "tessellation_status": "PASS",
-                    "face_count": len(face_ids),
-                    "edge_count": len(geo_part.edges),
-                    "vertex_count": len(geo_part.vertices),
-                    "triangle_count": len(final_t),
-                    "raw_vertex_count": len(global_verts),
-                    "final_vertex_count": len(final_v),
-                    "raw_triangle_count": len(global_tris),
-                    "final_triangle_count": len(final_t),
-                    "coordinate_bounds": bbox,
+                    "subpart_count": len(bodies),
+                    "face_count": len(global_face_id_list),
+                    "triangle_count": total_final_t,
+                    "raw_vertex_count": total_raw_v,
+                    "final_vertex_count": total_final_v,
+                    "raw_triangle_count": total_raw_t,
+                    "final_triangle_count": total_final_t,
+                    "coordinate_bounds": overall_bbox,
                     "index_validation_result": "PASS",
                     "finite_coordinates_result": "PASS"
                 }
@@ -1535,7 +1533,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             
             payload = {
                 "headers": headers,
-                "original_unit": orig_unit_str,
+                "original_unit": source_u,
                 "descriptor": desc.to_dict() if desc else None,
                 "canonical_assembly": assembly.to_dict(),
                 "objects": bodies,
