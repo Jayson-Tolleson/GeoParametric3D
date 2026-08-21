@@ -673,7 +673,7 @@ export class ViewportController {
 
       if (this.isBoxSelecting && this.boxStart) {
         this.boxCurrent = { x: mx, y: my };
-        this.boxMovedDistance = Math.hypot(this.boxCurrent.x - this.boxStart.x, this.boxCurrent.y - this.boxStart.y);
+        this.boxMovedDistance = Math.hypot(this.boxCurrent.x - this.boxStart.y, this.boxCurrent.y - this.boxStart.y);
         this.render();
         return;
       }

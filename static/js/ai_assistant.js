@@ -97,18 +97,33 @@ export class AIAssistantController {
       } : null;
 
       let res = null;
-      // Try direct assistant chat gateway or generate endpoint
+      // Connect to generation / assistant chat gateway
       try {
-        res = await CADApi.requestJSON('/assistant/chat', {
+        res = await CADApi.requestJSON('/generate', {
           method: 'POST',
           body: JSON.stringify({
-            message: promptText,
             prompt: promptText,
+            message: promptText,
             target_selection: selContext
           })
         });
       } catch (e) {
-        res = await CADApi.sendAssistantPrompt(promptText);
+        res = null;
+      }
+
+      if (!res || (!res.ok && !res.success)) {
+        try {
+          res = await CADApi.requestJSON('/assistant/chat', {
+            method: 'POST',
+            body: JSON.stringify({
+              message: promptText,
+              prompt: promptText,
+              target_selection: selContext
+            })
+          });
+        } catch (e) {
+          res = await CADApi.sendAssistantPrompt(promptText);
+        }
       }
 
       if (res && res.document) {
@@ -126,7 +141,7 @@ export class AIAssistantController {
         }
       }
 
-      const reply = res?.message || res?.reply || res?.response || 'Analyzed CAD assembly state.';
+      const reply = res?.message || res?.reply || res?.response || res?.code || 'Analyzed CAD assembly state.';
       this.appendAssistantMessage(reply, !res?.success && res?.ok === false);
     } catch (err) {
       this.appendAssistantMessage(`Error contacting Vertex AI Assistant: ${err.message}`, true);
