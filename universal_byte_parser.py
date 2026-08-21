@@ -1499,6 +1499,20 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 pos_b64 = base64.b64encode(flat_positions.tobytes()).decode('ascii')
                 idx_b64 = base64.b64encode(flat_indices.tobytes()).decode('ascii')
 
+                ngon_loops = []
+                if extract_planar_ngons_from_occt is not None:
+                    try:
+                        ngon_loops = extract_planar_ngons_from_occt(sub_shape, scale=scale, color=part_color)
+                    except Exception as err:
+                        logger.debug(f"extract_planar_ngons_from_occt notice: {err}")
+                if not ngon_loops and extract_planar_ngons_from_geopart is not None:
+                    try:
+                        ngon_loops = extract_planar_ngons_from_geopart(geo_part)
+                    except Exception as err:
+                        logger.debug(f"extract_planar_ngons_from_geopart notice: {err}")
+                if not ngon_loops:
+                    ngon_loops = planar_n_gons
+
                 cad_obj = {
                     "id": geo_part.id,
                     "object_id": geo_part.id,
@@ -1512,7 +1526,9 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "rotation": [0.0, 0.0, 0.0],
                     "scale": [1.0, 1.0, 1.0],
                     "faces": body_faces,
-                    "planar_polygons": planar_n_gons,
+                    "planar_polygons": ngon_loops,
+                    "ngon_loops": ngon_loops,
+                    "planar_loops": ngon_loops,
                     "positions_base64": pos_b64,
                     "indices_base64": idx_b64,
                     "positions_flat": flat_positions.flatten().tolist(),
@@ -2075,6 +2091,13 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
                 all_faces_combined.extend(body_faces)
                 bbox = compute_bounding_box(final_v)
                 
+                ngon_loops = []
+                if extract_planar_ngons_from_geopart is not None:
+                    try:
+                        ngon_loops = extract_planar_ngons_from_geopart(geo_part)
+                    except Exception as err:
+                        logger.debug(f"extract_planar_ngons_from_geopart notice: {err}")
+
                 cad_obj = {
                     "id": geo_part.id,
                     "object_id": geo_part.id,
@@ -2088,6 +2111,9 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
                     "rotation": [0.0, 0.0, 0.0],
                     "scale": [1.0, 1.0, 1.0],
                     "faces": body_faces,
+                    "planar_polygons": ngon_loops,
+                    "ngon_loops": ngon_loops,
+                    "planar_loops": ngon_loops,
                     "brep": geo_part.to_dict(),
                     "canonical_part": geo_part,
                     "bounding_box": bbox,
