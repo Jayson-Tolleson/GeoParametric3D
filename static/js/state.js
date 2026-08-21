@@ -214,6 +214,32 @@ class StateStore {
     this.setSelectedIds(seq);
   }
 
+  removeObject(objectId) {
+    if (!objectId) return;
+    this.state.objects = this.state.objects.filter(o => (o.manifest_id !== objectId && o.id !== objectId && o.object_id !== objectId));
+    this.state.selectedIds = this.state.selectedIds.filter(id => id !== objectId);
+    if (this.state.lastSelectedId === objectId) {
+      this.state.lastSelectedId = this.state.selectedIds[this.state.selectedIds.length - 1] || null;
+    }
+    const filterTree = (nodes) => {
+      const res = [];
+      for (const n of nodes) {
+        const nid = n.manifest_id || n.objectId || n.id;
+        if (nid === objectId) continue;
+        if (n.children && Array.isArray(n.children)) {
+          n.children = filterTree(n.children);
+        }
+        res.push(n);
+      }
+      return res;
+    };
+    if (this.state.assemblyTree) {
+      this.state.assemblyTree = filterTree(this.state.assemblyTree);
+    }
+    this.clearBuffer(objectId);
+    this.notify();
+  }
+
   setSelectedIds(ids) {
     this.state.selectedIds = Array.isArray(ids) ? ids : [];
     this.state.lastSelectedId = this.state.selectedIds.length > 0 ? this.state.selectedIds[this.state.selectedIds.length - 1] : null;

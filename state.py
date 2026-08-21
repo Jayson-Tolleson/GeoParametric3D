@@ -176,7 +176,17 @@ class CADState:
     def remove_object(self, object_id: str) -> bool:
         if object_id in self.objects:
             del self.objects[object_id]
-            self.assembly_tree = [n for n in self.assembly_tree if n.get('objectId') != object_id and n.get('id') != object_id]
+            def filter_tree(nodes):
+                res = []
+                for n in nodes:
+                    nid = n.get('objectId') or n.get('id') or n.get('manifest_id')
+                    if nid == object_id:
+                        continue
+                    if 'children' in n and isinstance(n['children'], list):
+                        n['children'] = filter_tree(n['children'])
+                    res.append(n)
+                return res
+            self.assembly_tree = filter_tree(self.assembly_tree)
             self.updated_at = time.time()
             return True
         return False

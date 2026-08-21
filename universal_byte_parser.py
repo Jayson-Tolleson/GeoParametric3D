@@ -103,6 +103,16 @@ try:
     from OCP.Interface import Interface_Static
     from OCP.gp import gp_Trsf, gp_Pnt
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
+    try:
+        from OCP.STEPCAFControl import STEPCAFControl_Reader
+        from OCP.TDocStd import TDocStd_Document
+        from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ColorTool, XCAFDoc_ShapeTool, XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv
+        from OCP.XCAFApp import XCAFApp_Application
+        from OCP.TCollection import TCollection_ExtendedString
+        _XCAF_AVAILABLE = True
+    except ImportError:
+        _XCAF_AVAILABLE = False
     _OCCT_AVAILABLE = True
     _OCCT_BACKEND = "OCP"
     TopoDS_Face_Cast = getattr(TopoDS, "Face_s", getattr(TopoDS, "Face", None))
@@ -132,6 +142,16 @@ except ImportError:
         from OCC.Core.Interface import Interface_Static
         from OCC.Core.gp import gp_Trsf, gp_Pnt
         from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Transform
+        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
+        try:
+            from OCC.Core.STEPCAFControl import STEPCAFControl_Reader
+            from OCC.Core.TDocStd import TDocStd_Document
+            from OCC.Core.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ColorTool, XCAFDoc_ShapeTool, XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv
+            from OCC.Core.XCAFApp import XCAFApp_Application
+            from OCC.Core.TCollection import TCollection_ExtendedString
+            _XCAF_AVAILABLE = True
+        except ImportError:
+            _XCAF_AVAILABLE = False
         _OCCT_AVAILABLE = True
         _OCCT_BACKEND = "OCC"
         TopoDS_Face_Cast = getattr(topods, "Face", None)
@@ -141,6 +161,7 @@ except ImportError:
         brep_read_fn = breptools.Read
     except ImportError:
         _OCCT_AVAILABLE = False
+        _XCAF_AVAILABLE = False
 
 
 def get_brep_triangulation(face, loc):
@@ -165,6 +186,28 @@ def get_brep_pnt(vert):
             return BRep_Tool().Pnt(vert)
     else:
         return BRep_Tool().Pnt(vert)
+
+
+def extract_occt_shape_color(occ_shape, color_tool) -> Optional[str]:
+    if color_tool is None or occ_shape is None:
+        return None
+    try:
+        col = Quantity_Color()
+        if hasattr(color_tool, 'GetColor'):
+            try:
+                if color_tool.GetColor(occ_shape, col):
+                    return rgb_to_hex(float(col.Red()), float(col.Green()), float(col.Blue()))
+            except Exception:
+                pass
+        for c_type in (getattr(XCAFDoc_ColorSurf, 'value', 1), getattr(XCAFDoc_ColorGen, 'value', 0), getattr(XCAFDoc_ColorCurv, 'value', 2)):
+            try:
+                if color_tool.GetColor(occ_shape, c_type, col):
+                    return rgb_to_hex(float(col.Red()), float(col.Green()), float(col.Blue()))
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return None
 
 
 # ============================================================
@@ -1103,6 +1146,24 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 Interface_Static.SetCVal("xstep.cascade.unit", "IN")
             except Exception:
                 pass
+            color_tool = None
+            extracted_colors = []
+            if _XCAF_AVAILABLE:
+                try:
+                    app = XCAFApp_Application.GetApplication_s() if hasattr(XCAFApp_Application, 'GetApplication_s') else XCAFApp_Application.GetApplication()
+                    doc = TDocStd_Document(TCollection_ExtendedString("XmlXCAF"))
+                    app.NewDocument(TCollection_ExtendedString("XmlXCAF"), doc)
+                    caf_reader = STEPCAFControl_Reader()
+                    caf_reader.SetColorMode(True)
+                    caf_reader.SetNameMode(True)
+                    caf_reader.SetLayerMode(True)
+                    caf_reader.SetPropsMode(True)
+                    if caf_reader.ReadFile(tmp_path) == IFSelect_RetDone:
+                        caf_reader.Transfer(doc)
+                        color_tool = XCAFDoc_DocumentTool.ColorTool_s(doc.Main()) if hasattr(XCAFDoc_DocumentTool, 'ColorTool_s') else XCAFDoc_DocumentTool.ColorTool(doc.Main())
+                except Exception as xcaf_err:
+                    logger.debug(f"XCAF Color initialization notice: {xcaf_err}")
+
             reader = STEPControl_Reader()
             status = reader.ReadFile(tmp_path)
             if status != IFSelect_RetDone:
@@ -1377,6 +1438,17 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             all_faces_combined.extend(body_faces)
             bbox = compute_bounding_box(final_v)
             
+            part_color = extract_occt_shape_color(shape, color_tool) if color_tool else None
+            if not part_color:
+                colors_raw = re.findall(r"COLOUR_RGB\s*\(\s*'([^']*)'\s*,\s*([\d\.\-eE]+)\s*,\s*([\d\.\-eE]+)\s*,\s*([\d\.\-eE]+)\s*\)", header_sample)
+                if colors_raw:
+                    try:
+                        part_color = rgb_to_hex(float(colors_raw[0][1]), float(colors_raw[0][2]), float(colors_raw[0][3]))
+                    except Exception:
+                        part_color = "#38bdf8"
+                else:
+                    part_color = "#38bdf8"
+
             import base64
             # Standard CAD to WebGL mapping: WebGL_X = CAD_X, WebGL_Y = CAD_Z, WebGL_Z = -CAD_Y
             # Preserve exact X sign handedness without negation
@@ -1392,7 +1464,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "manifest_id": geo_part.id,
                 "name": geo_part.name,
                 "primitive_type": "solid_imported",
-                "color": "#38bdf8",
+                "color": part_color,
                 "material": "Steel",
                 "opacity": 1.0,
                 "position": [0.0, 0.0, 0.0],
@@ -1639,6 +1711,46 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
             except Exception:
                 pass
         default_color = extracted_colors[0] if extracted_colors else "#38bdf8"
+
+        # Entity map already populated during color table extraction
+
+        color_map: Dict[str, str] = {}
+        for eid, (etype, eargs) in entity_map.items():
+            if etype == 'COLOUR_RGB':
+                rgb_vals = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", eargs)
+                if len(rgb_vals) >= 3:
+                    try:
+                        r, g, b = float(rgb_vals[-3]), float(rgb_vals[-2]), float(rgb_vals[-1])
+                        color_map[eid] = rgb_to_hex(r, g, b)
+                    except Exception:
+                        pass
+
+        styled_items: Dict[str, str] = {}
+        for eid, (etype, eargs) in entity_map.items():
+            if etype in ('STYLED_ITEM', 'OVER_RIDING_STYLED_ITEM'):
+                refs = re.findall(r"#(\d+)", eargs)
+                if len(refs) >= 2:
+                    target_ref = refs[-1]
+                    found_col = None
+                    for r_style in refs[:-1]:
+                        if r_style in color_map:
+                            found_col = color_map[r_style]
+                            break
+                        nested_refs = re.findall(r"#(\d+)", entity_map.get(r_style, ('', ''))[1])
+                        for nr in nested_refs:
+                            if nr in color_map:
+                                found_col = color_map[nr]
+                                break
+                            nn_refs = re.findall(r"#(\d+)", entity_map.get(nr, ('', ''))[1])
+                            for nnr in nn_refs:
+                                if nnr in color_map:
+                                    found_col = color_map[nnr]
+                                    break
+                                if found_col: break
+                            if found_col: break
+                        if found_col: break
+                    if found_col:
+                        styled_items[target_ref] = found_col
         
         entity_pattern = re.compile(r"#(\d+)\s*=\s*([A-Z0-9_]+)\s*\((.*?)\);", re.DOTALL)
         entity_matches = entity_pattern.findall(text)
@@ -1831,7 +1943,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         else:
             for s_idx, (solid_eid, shell_eid) in enumerate(solid_items):
                 part_name = product_names[s_idx] if s_idx < len(product_names) else f"Solid_Part_{s_idx + 1}"
-                part_color = extracted_colors[s_idx % len(extracted_colors)] if extracted_colors else default_color
+                part_color = styled_items.get(solid_eid) or styled_items.get(shell_eid) or (extracted_colors[s_idx % len(extracted_colors)] if extracted_colors else default_color)
                 
                 target_faces = faces_topol.keys() if shell_eid == "all_faces" else shells.get(shell_eid, [])
                 part_id = f"part_step_{s_idx+1}_{uuid.uuid4().hex[:6]}"
