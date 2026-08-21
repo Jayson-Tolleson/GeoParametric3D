@@ -28,6 +28,11 @@ Architecture Flow:
 
 import re
 import math
+try:
+    from ngon_adapter import extract_planar_ngons_from_geopart, extract_planar_ngons_from_occt
+except ImportError:
+    extract_planar_ngons_from_geopart = None
+    extract_planar_ngons_from_occt = None
 import struct
 import json
 import zipfile
