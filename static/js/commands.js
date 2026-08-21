@@ -13,6 +13,10 @@ class CommandDispatcher {
       return;
     }
 
+    if (commandName === 'export') {
+      return CADApi.exportModel(parameters.format || 'xbf');
+    }
+
     const result = await CADApi.sendCommand(commandName, parameters);
 
     if (result && (result.ok || result.success)) {

@@ -301,7 +301,24 @@ export class ViewportController {
     if (this.trackball) {
       this.trackball.updateFromCamera(cam.heading, cam.tilt);
     }
-    this.syncMap3DFromState();
+    if (this.map3d && typeof this.map3d.flyCameraTo === 'function') {
+      try {
+        this.map3d.flyCameraTo({
+          endCamera: {
+            center: { lat: geoCenter.lat, lng: geoCenter.lng, altitude: geoCenter.altitude },
+            heading: cam.heading,
+            tilt: cam.tilt,
+            range: targetDistance,
+            roll: 0
+          },
+          durationMillis: 800
+        });
+      } catch (_) {
+        this.syncMap3DFromState();
+      }
+    } else {
+      this.syncMap3DFromState();
+    }
     CADState.notify();
     this.render();
   }
@@ -541,6 +558,11 @@ export class ViewportController {
     if (!this.canvasOverlay) return;
     const canvas = this.canvasOverlay;
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    canvas.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      this.centerViewport();
+    });
 
     canvas.addEventListener('mousedown', (e) => {
       this.isMouseDown = true;

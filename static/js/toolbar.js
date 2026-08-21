@@ -46,9 +46,16 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   bindBtn('toolbar-import', () => CADCommands.execute('import'));
-  bindBtn('toolbar-export', () => {
+  bindBtn('toolbar-export', async () => {
     const fmt = prompt('Export format: xbf or step', 'xbf');
-    if (fmt) CADCommands.execute('export', { format: fmt.trim().toLowerCase() });
+    if (fmt) {
+      const res = await CADApi.exportModel(fmt.trim().toLowerCase());
+      if (res?.ok || res?.success) {
+        windowUI.logServerEvent(`[EXPORT] Downloaded ${res.filename || fmt}`);
+      } else {
+        alert(`Export Failed: ${res?.error || 'Unknown error'}`);
+      }
+    }
   });
 
   // SHARE & CAPTURE TOOLBAR HANDLERS

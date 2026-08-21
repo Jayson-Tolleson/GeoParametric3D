@@ -284,6 +284,34 @@ class APIClient {
     });
   }
 
+  async exportModel(format = 'xbf') {
+    const res = await this.sendCommand('export', { format });
+    if (res && (res.ok || res.success) && res.content_base64) {
+      let blob;
+      const fmt = (res.format || format).toLowerCase();
+      if (fmt === 'step' || fmt === 'stp') {
+        blob = new Blob([res.content_base64], { type: 'text/plain;charset=utf-8' });
+      } else {
+        const binaryString = atob(res.content_base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        blob = new Blob([bytes], { type: 'application/octet-stream' });
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `model_export_${Date.now()}.${fmt}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return { ok: true, success: true, filename: a.download };
+    }
+    return res;
+  }
+
   async fetchGeometryBinary(objectId = null, forceRefresh = false) {
     const cacheKey = objectId || '__default__';
     if (!forceRefresh && window.CADState && typeof window.CADState.getBuffer === 'function') {
