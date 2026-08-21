@@ -226,10 +226,11 @@ class StateStore {
       for (const n of nodes) {
         const nid = n.manifest_id || n.objectId || n.id;
         if (nid === objectId) continue;
-        if (n.children && Array.isArray(n.children)) {
-          n.children = filterTree(n.children);
+        const copyNode = { ...n };
+        if (copyNode.children && Array.isArray(copyNode.children)) {
+          copyNode.children = filterTree(copyNode.children);
         }
-        res.push(n);
+        res.push(copyNode);
       }
       return res;
     };

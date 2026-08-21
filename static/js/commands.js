@@ -84,9 +84,24 @@ class CommandDispatcher {
 
   async deleteSelected() {
     const { selectedIds } = CADState.state;
-    if (!selectedIds.length) return;
-    selectedIds.forEach(id => CADState.clearBuffer(id));
-    return this.execute('delete_object', { ids: selectedIds });
+    if (!selectedIds || !selectedIds.length) return;
+    const idsToDelete = [...selectedIds];
+    idsToDelete.forEach(id => {
+      CADState.removeObject(id);
+      CADState.clearBuffer(id);
+    });
+    CADState.setSelectedId(null);
+    if (window.uiController) {
+      window.uiController.renderAssemblyTree();
+      window.uiController.renderInspector();
+      window.uiController.renderTelemetry();
+    }
+    if (window.CADViewport) {
+      window.CADViewport.geometryCacheDirty = true;
+      window.CADViewport.syncNativeDOM();
+      window.CADViewport.render();
+    }
+    return this.execute('delete_object', { ids: idsToDelete });
   }
 
   async toggleSelectedVisibility() {
