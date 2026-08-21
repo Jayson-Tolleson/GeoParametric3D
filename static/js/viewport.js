@@ -280,19 +280,19 @@ export class ViewportController {
     });
   }
 
-  // Zoom to Fit (7x Viewport Fit): Position gizmo/target at model center, camera distance = 7 * R
-  centerViewport() {
+  // Zoom to Fit (10:1 Viewport Fit): Position gizmo/target at model center, camera distance = 10 * R
+  fitView(options = {}) {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
     const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
     
     const R = bounds.radius || (bounds.diagonal ? bounds.diagonal / 2.0 : 152.4);
-    const targetDistance = Math.max(22.225, 7.0 * R); // strictly 7x model size (7 * R)
+    const targetDistance = Math.max(25.4, 10.0 * R); // strictly 10:1 viewport-to-part ratio (10 * R)
     
     const geoCenter = enuToGeodetic(cx, cy, cz);
     cam.center = geoCenter;
-    cam.heading = 30;
-    cam.tilt = 65;
+    cam.heading = typeof options.heading === 'number' ? options.heading : (cam.heading || 30);
+    cam.tilt = typeof options.tilt === 'number' ? options.tilt : (cam.tilt || 65);
     cam.range = targetDistance;
     cam.panX = 0;
     cam.panY = 0;
@@ -301,7 +301,7 @@ export class ViewportController {
     if (this.trackball) {
       this.trackball.updateFromCamera(cam.heading, cam.tilt);
     }
-    if (this.map3d && typeof this.map3d.flyCameraTo === 'function') {
+    if (this.map3d && typeof this.map3d.flyCameraTo === 'function' && !options.immediate) {
       try {
         this.map3d.flyCameraTo({
           endCamera: {
@@ -321,6 +321,10 @@ export class ViewportController {
     }
     CADState.notify();
     this.render();
+  }
+
+  centerViewport() {
+    this.fitView();
   }
 
   computeSceneBoundingBox() {

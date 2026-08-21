@@ -333,9 +333,22 @@ class StateStore {
     }
   }
 
+  getPersistentPositionsBuffer(objectId = null) {
+    const key = `pos_${objectId || '__default__'}`;
+    return this.arrayBufferCache.get(key) || null;
+  }
+
+  setPersistentPositionsBuffer(objectId = null, float32Positions = null) {
+    const key = `pos_${objectId || '__default__'}`;
+    if (float32Positions) {
+      this.arrayBufferCache.set(key, float32Positions);
+    }
+  }
+
   clearBuffer(objectId = null) {
     if (objectId) {
       this.arrayBufferCache.delete(objectId);
+      this.arrayBufferCache.delete(`pos_${objectId}`);
     } else {
       this.arrayBufferCache.clear();
     }
