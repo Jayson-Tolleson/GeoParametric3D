@@ -1277,6 +1277,7 @@ export class ViewportController {
     }
 
     // 3. In-Place Persistent Projection Pipeline (Zero Per-Frame Array Allocation)
+    const objects = CADState.state.objects || [];
     const selectedIds = CADState.state.selectedIds || [];
     const selMode = CADState.state.selectionMode || 'part';
     const selFaceIdx = CADState.state.selectedFaceIndex;
