@@ -152,7 +152,6 @@ export class ViewportController {
     });
   }
 
-  // 1. UNIFIED CAMERA ACTION PRIMITIVES
   orbitHeading(deltaDeg) {
     const cam = CADState.state.camera;
     cam.heading = ((cam.heading || 0) + deltaDeg + 360) % 360;
@@ -181,7 +180,6 @@ export class ViewportController {
   zoomBy(factor, focalScreenX = null, focalScreenY = null) {
     const cam = CADState.state.camera;
     const oldRange = cam.range || 1828.8;
-    // Multi-scale range: 0.125 inches (3.175 mm) to 3000+ ft (1,000,000 mm)
     const newRange = Math.max(3.175, Math.min(1000000.0, oldRange * factor));
     
     if (focalScreenX !== null && focalScreenY !== null) {
@@ -278,7 +276,6 @@ export class ViewportController {
     });
   }
 
-  // Fit adjusts the viewport to frame model with 60:1 ratio
   fitView(options = {}) {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
@@ -390,7 +387,6 @@ export class ViewportController {
         return;
       }
 
-      // Keyboard Pan Controls
       if (!isShift && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         if (e.key === 'ArrowLeft') this.panScreen(panStep, 0);
@@ -400,7 +396,6 @@ export class ViewportController {
         return;
       }
 
-      // Shift Arrows (ORBIT)
       if (isShift) {
         if (e.key === 'ArrowLeft') { e.preventDefault(); this.orbitHeading(-rotStep); return; }
         if (e.key === 'ArrowRight') { e.preventDefault(); this.orbitHeading(rotStep); return; }
@@ -815,7 +810,6 @@ export class ViewportController {
   async handleHitTest(mx, my, isCtrl, isShift) {
     const selMode = CADState.state.selectionMode || 'part';
 
-    // 1. VERTEX SELECTION MODE
     if (selMode === 'vertex') {
       let bestV = null, bestDist = 12;
       for (const v of this.lastRenderVertices) {
@@ -828,7 +822,6 @@ export class ViewportController {
       }
     }
 
-    // 2. EDGE SELECTION MODE
     if (selMode === 'edge') {
       let bestEdge = null, bestDist = 10;
       for (const edge of this.lastRenderEdges) {
@@ -841,7 +834,6 @@ export class ViewportController {
       }
     }
 
-    // 3. FACE SELECTION MODE
     let hitItem = null;
     for (let i = this.lastRenderQueue.length - 1; i >= 0; i--) {
       const item = this.lastRenderQueue[i];
@@ -999,7 +991,6 @@ export class ViewportController {
       const objId = object.manifest_id || object.id || object.object_id;
       const isObjSel = selectedIds.includes(objId);
       
-      // True N-Gon Native <gmp-polygon-3d> rendering pipeline
       const planarPolys = object.planar_polygons || object.ngon_loops || object.planar_loops || [];
       if (planarPolys.length > 0) {
         planarPolys.forEach((poly, polyIndex) => {
@@ -1214,6 +1205,8 @@ export class ViewportController {
     this.edgesRender.length = 0;
     this.snaps.length = 0;
 
+    const seenEdgeSet = new Set();
+
     objects.forEach(obj => {
       if (obj.visible === false) return;
       const objId = obj.manifest_id || obj.id || obj.object_id;
@@ -1223,10 +1216,143 @@ export class ViewportController {
       const rotZRad = (rot[2] * Math.PI) / 180.0;
       const cosR = Math.cos(rotZRad), sinR = Math.sin(rotZRad);
 
-      const faces = obj.faces || [];
+      const planarLoops = obj.planar_polygons || obj.ngon_loops || obj.planar_loops || [];
+      const hasPlanarPolys = Array.isArray(planarLoops) && planarLoops.length > 0;
+
       let vGlobalIdx = 0;
       let eGlobalIdx = 0;
 
+      if (hasPlanarPolys) {
+        planarLoops.forEach((loop, fIdx) => {
+          const poly2D = [];
+          const polyCamZ = [];
+          const worldPts = [];
+          let faceCentroid = [0, 0, 0];
+
+          const vertStartIndex = this.persistentVertices.length;
+          const edgeStartIndex = this.persistentEdges.length;
+          const rawCoords = loop.outer || loop.outer_coordinates || [];
+
+          rawCoords.forEach(pt => {
+            let lx = 0, ly = 0, lz = 0;
+            if (pt.x !== undefined && pt.y !== undefined) {
+              lx = (pt.x || 0) * scale[0];
+              ly = (pt.y || 0) * scale[1];
+              lz = (pt.z || 0) * scale[2];
+            } else if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
+              const enu = geodeticToEnu(pt.lat, pt.lng, pt.altitude || 95.0);
+              lx = enu[0] * scale[0];
+              ly = enu[1] * scale[1];
+              lz = enu[2] * scale[2];
+            }
+            const rx = lx * cosR - ly * sinR;
+            const ry = lx * sinR + ly * cosR;
+            const rz = lz;
+            const wx = pos[0] + rx;
+            const wy = pos[1] + ry;
+            const wz = pos[2] + rz;
+
+            worldPts.push([wx, wy, wz]);
+            poly2D.push([0, 0]);
+            polyCamZ.push(0);
+
+            const vertRecord = {
+              objId,
+              vIdx: vGlobalIdx++,
+              px: 0, py: 0,
+              wx, wy, wz,
+              camZ: 0,
+              isSel: false
+            };
+            this.persistentVertices.push(vertRecord);
+
+            this.persistentSnaps.push({
+              type: 'vertex',
+              objId,
+              px: 0, py: 0,
+              world: [wx, wy, wz]
+            });
+
+            faceCentroid[0] += wx;
+            faceCentroid[1] += wy;
+            faceCentroid[2] += wz;
+          });
+
+          const nVerts = poly2D.length;
+          for (let i = 0; i < nVerts; i++) {
+            const next = (i + 1) % nVerts;
+            const pA = worldPts[i];
+            const pB = worldPts[next];
+            
+            const kA = `${Math.round(pA[0]*10)},${Math.round(pA[1]*10)},${Math.round(pA[2]*10)}`;
+            const kB = `${Math.round(pB[0]*10)},${Math.round(pB[1]*10)},${Math.round(pB[2]*10)}`;
+            const edgeKey = kA < kB ? `${kA}_${kB}` : `${kB}_${kA}`;
+
+            if (!seenEdgeSet.has(edgeKey)) {
+              seenEdgeSet.add(edgeKey);
+              const eRecord = {
+                objId,
+                eIdx: eGlobalIdx++,
+                p1: { px: 0, py: 0 },
+                p2: { px: 0, py: 0 },
+                v1Idx: vertStartIndex + i,
+                v2Idx: vertStartIndex + next,
+                camZ: 0,
+                isSel: false
+              };
+              this.persistentEdges.push(eRecord);
+            }
+
+            const midWorld = [
+              (worldPts[i][0] + worldPts[next][0]) / 2.0,
+              (worldPts[i][1] + worldPts[next][1]) / 2.0,
+              (worldPts[i][2] + worldPts[next][2]) / 2.0
+            ];
+            this.persistentSnaps.push({
+              type: 'midpoint',
+              objId,
+              px: 0, py: 0,
+              world: midWorld
+            });
+          }
+
+          if (nVerts > 0) {
+            faceCentroid[0] /= nVerts;
+            faceCentroid[1] /= nVerts;
+            faceCentroid[2] /= nVerts;
+            this.persistentSnaps.push({
+              type: 'center',
+              objId,
+              px: 0, py: 0,
+              world: faceCentroid
+            });
+          }
+
+          const faceRecord = {
+            obj,
+            objId,
+            fIdx,
+            vertStartIndex,
+            vertCount: nVerts,
+            edgeStartIndex,
+            edgeCount: nVerts,
+            worldPts,
+            poly2D,
+            polyCamZ,
+            centroid3D: faceCentroid,
+            avgCamZ: 0,
+            isFrontFacing: true,
+            isSel: false,
+            isFaceSel: false,
+            baseColor: loop.color || obj.color || '#38bdf8',
+            objOpacity: obj.opacity ?? 1.0
+          };
+          this.persistentFaces.push(faceRecord);
+        });
+        return;
+      }
+
+      const faces = obj.faces || [];
       faces.forEach((face, fIdx) => {
         const poly2D = [];
         const polyCamZ = [];
@@ -1276,17 +1402,27 @@ export class ViewportController {
         const nVerts = poly2D.length;
         for (let i = 0; i < nVerts; i++) {
           const next = (i + 1) % nVerts;
-          const eRecord = {
-            objId,
-            eIdx: eGlobalIdx++,
-            p1: { px: 0, py: 0 },
-            p2: { px: 0, py: 0 },
-            v1Idx: vertStartIndex + i,
-            v2Idx: vertStartIndex + next,
-            camZ: 0,
-            isSel: false
-          };
-          this.persistentEdges.push(eRecord);
+          const pA = worldPts[i];
+          const pB = worldPts[next];
+          
+          const kA = `${Math.round(pA[0]*10)},${Math.round(pA[1]*10)},${Math.round(pA[2]*10)}`;
+          const kB = `${Math.round(pB[0]*10)},${Math.round(pB[1]*10)},${Math.round(pB[2]*10)}`;
+          const edgeKey = kA < kB ? `${kA}_${kB}` : `${kB}_${kA}`;
+
+          if (!seenEdgeSet.has(edgeKey)) {
+            seenEdgeSet.add(edgeKey);
+            const eRecord = {
+              objId,
+              eIdx: eGlobalIdx++,
+              p1: { px: 0, py: 0 },
+              p2: { px: 0, py: 0 },
+              v1Idx: vertStartIndex + i,
+              v2Idx: vertStartIndex + next,
+              camZ: 0,
+              isSel: false
+            };
+            this.persistentEdges.push(eRecord);
+          }
 
           const midWorld = [
             (worldPts[i][0] + worldPts[next][0]) / 2.0,
@@ -1373,7 +1509,7 @@ export class ViewportController {
       return [px, py, camZ];
     };
 
-    // 1. Grid
+    // 1. Ground Grid
     if (prefs.showGrid !== false) {
       this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
       this.ctx.lineWidth = 1;
@@ -1391,7 +1527,7 @@ export class ViewportController {
       this.ctx.stroke();
     }
 
-    // 2. Axes
+    // 2. Coordinate Axes
     if (prefs.showAxes !== false) {
       const axisLen = 200.0;
       const [ox, oy] = project3D(0, 0, 0);
@@ -1414,7 +1550,6 @@ export class ViewportController {
 
     const tProjStart = performance.now();
 
-    // Update persistent vertices in-place
     const nVertices = this.persistentVertices.length;
     for (let i = 0; i < nVertices; i++) {
       const v = this.persistentVertices[i];
@@ -1426,7 +1561,6 @@ export class ViewportController {
       v.isSel = isObjSel && selVertIdx === v.vIdx;
     }
 
-    // Update persistent snaps in-place
     const nSnaps = this.persistentSnaps.length;
     for (let i = 0; i < nSnaps; i++) {
       const s = this.persistentSnaps[i];
@@ -1435,7 +1569,6 @@ export class ViewportController {
       s.py = py;
     }
 
-    // Update persistent faces in-place
     const nFaces = this.persistentFaces.length;
     for (let f = 0; f < nFaces; f++) {
       const faceRec = this.persistentFaces[f];
@@ -1466,7 +1599,6 @@ export class ViewportController {
       faceRec.isFrontFacing = signedArea2D > 0;
     }
 
-    // Update persistent edges in-place
     const nEdges = this.persistentEdges.length;
     for (let e = 0; e < nEdges; e++) {
       const edgeRec = this.persistentEdges[e];
@@ -1483,7 +1615,6 @@ export class ViewportController {
 
     const tProjEnd = performance.now();
 
-    // In-place sort on persistent face reference list
     const tSortStart = performance.now();
     this.persistentFaces.sort((a, b) => a.avgCamZ - b.avgCamZ);
     const tSortEnd = performance.now();
@@ -1541,7 +1672,7 @@ export class ViewportController {
       });
     }
 
-    // 4. CONSTRUCTION LINES FOR SCALE & ROTATE TOOLS
+    // 4. Construction Lines for Scale & Rotate Tools
     const activeTransTool = CADState.state.activeTransformTool;
     const selObjs = CADState.getSelectedObjects();
     if (activeTransTool && selObjs.length > 0) {
@@ -1656,8 +1787,6 @@ export class ViewportController {
       if (now - this.telemetryMetrics.lastReportTime >= 1000 || this.telemetryMetrics.renderCount >= 60) {
         const count = Math.max(1, this.telemetryMetrics.renderCount);
         const avgRender = (this.telemetryMetrics.totalRenderTimeMs / count).toFixed(2);
-        const avgProj = (this.telemetryMetrics.totalProjTimeMs / count).toFixed(2);
-        const avgSort = (this.telemetryMetrics.totalSortTimeMs / count).toFixed(2);
         const fps = ((count * 1000) / Math.max(1, now - this.telemetryMetrics.lastReportTime)).toFixed(1);
 
         CADState.state.telemetry.fps = fps;
