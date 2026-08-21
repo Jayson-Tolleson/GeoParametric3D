@@ -81,6 +81,7 @@ class CommandDispatcher {
   async deleteSelected() {
     const { selectedIds } = CADState.state;
     if (!selectedIds.length) return;
+    selectedIds.forEach(id => CADState.clearBuffer(id));
     return this.execute('delete_object', { ids: selectedIds });
   }
 
@@ -102,6 +103,7 @@ class CommandDispatcher {
     const sel = CADState.getSelectedObject();
     if (!sel) return;
     const id = sel.manifest_id ?? sel.id ?? sel.object_id;
+    CADState.clearBuffer(id);
     return this.execute('set_property', { id, [prop]: value });
   }
 

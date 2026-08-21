@@ -284,7 +284,33 @@ class APIClient {
     });
   }
 
-  async fetchGeometryBinary(objectId = null) {
+  async fetchGeometryBinary(objectId = null, forceRefresh = false) {
+    const cacheKey = objectId || '__default__';
+    if (!forceRefresh && window.CADState && typeof window.CADState.getBuffer === 'function') {
+      const cachedBuffer = window.CADState.getBuffer(cacheKey);
+      if (cachedBuffer && cachedBuffer.byteLength >= 8) {
+        const headerView = new Uint32Array(cachedBuffer, 0, 2);
+        const vertexCount = headerView[0];
+        const indexCount = headerView[1];
+        const posByteOffset = 8;
+        const posByteLength = vertexCount * 3 * 4;
+        const idxByteOffset = posByteOffset + posByteLength;
+
+        const positions = new Float32Array(cachedBuffer, posByteOffset, vertexCount * 3);
+        const indices = new Uint32Array(cachedBuffer, idxByteOffset, indexCount);
+
+        return {
+          ok: true,
+          vertexCount,
+          indexCount,
+          positions,
+          indices,
+          arrayBuffer: cachedBuffer,
+          fromCache: true
+        };
+      }
+    }
+
     const url = `${this.baseUrl}/geometry/binary${objectId ? `?id=${encodeURIComponent(objectId)}` : ''}`;
     try {
       const response = await fetch(url);
@@ -295,6 +321,11 @@ class APIClient {
       if (buffer.byteLength < 8) {
         return { ok: false, error: 'Binary buffer underflow' };
       }
+
+      if (window.CADState && typeof window.CADState.setBuffer === 'function') {
+        window.CADState.setBuffer(cacheKey, buffer);
+      }
+
       const headerView = new Uint32Array(buffer, 0, 2);
       const vertexCount = headerView[0];
       const indexCount = headerView[1];
@@ -311,7 +342,8 @@ class APIClient {
         indexCount,
         positions,
         indices,
-        arrayBuffer: buffer
+        arrayBuffer: buffer,
+        fromCache: false
       };
     } catch (err) {
       console.error('[API] fetchGeometryBinary error:', err);

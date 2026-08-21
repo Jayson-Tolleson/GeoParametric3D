@@ -54,6 +54,8 @@ class StateStore {
     const savedCsnap = localStorage.getItem('cascadecad-csnap') !== 'false';
     const savedInfinite = localStorage.getItem('cascadecad-infinite-canvas') !== 'false';
 
+    this.arrayBufferCache = new Map();
+
     this.state = {
       projectId: savedUuid,
       projectName: 'CascadeCAD Document',
@@ -125,6 +127,7 @@ class StateStore {
 
   setDocument(doc) {
     if (!doc) return;
+    this.clearBuffer();
     if (doc.project_id) {
       this.state.projectId = doc.project_id;
       localStorage.setItem('cascadecad-active-uuid', doc.project_id);
@@ -316,6 +319,26 @@ class StateStore {
     if (prefs.csnap !== undefined) localStorage.setItem('cascadecad-csnap', prefs.csnap.toString());
     if (prefs.infiniteCanvas !== undefined) localStorage.setItem('cascadecad-infinite-canvas', prefs.infiniteCanvas.toString());
     this.notify();
+  }
+
+  getBuffer(objectId = null) {
+    const key = objectId || '__default__';
+    return this.arrayBufferCache.get(key) || null;
+  }
+
+  setBuffer(objectId = null, arrayBufferData = null) {
+    const key = objectId || '__default__';
+    if (arrayBufferData) {
+      this.arrayBufferCache.set(key, arrayBufferData);
+    }
+  }
+
+  clearBuffer(objectId = null) {
+    if (objectId) {
+      this.arrayBufferCache.delete(objectId);
+    } else {
+      this.arrayBufferCache.clear();
+    }
   }
 }
 
