@@ -466,6 +466,7 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         ]
         context_snippet = f"\nCurrent Active Assembly Scene ({len(objs)} bodies, canonical unit: {CANONICAL_INTERNAL_UNIT}): " + "; ".join(parts_summary)
 
+    # Vertex AI REST invocation with project broadcasterfishmap and location global
     token = None
     try:
         import google.auth
@@ -518,9 +519,12 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
 
 @app.route('/api/assistant/chat', methods=['POST'])
 @app.route('/api/assistant', methods=['POST'])
+@app.route('/api/generate', methods=['POST'])
 @app.route('/GeoParametric3D/api/assistant/chat', methods=['POST'])
+@app.route('/GeoParametric3D/api/generate', methods=['POST'])
 @app.route('/cad/api/assistant/chat', methods=['POST'])
 @app.route('/cad/api/assistant', methods=['POST'])
+@app.route('/cad/api/generate', methods=['POST'])
 async def assistant_chat():
     data = (await request.get_json()) or {}
     user_message = (data.get('message', '') or data.get('prompt', '') or '').strip()
@@ -539,6 +543,7 @@ async def assistant_chat():
         "message": final_message,
         "reply": final_message,
         "response": final_message,
+        "action_intent": chat_response.action_intent if chat_response.requires_action else {},
         "vertex_ai_project": PROJECT_ID,
         "location": LOCATION,
         "document": global_cad_state.to_dict()
