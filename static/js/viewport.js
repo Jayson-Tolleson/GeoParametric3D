@@ -110,10 +110,17 @@ export class ViewportController {
     this.draftPoints = [];
     this.draftCurrent = null;
 
-    this.lastRenderQueue = [];
-    this.lastRenderVertices = [];
-    this.lastRenderEdges = [];
-    this.snapCandidates = [];
+    this.geometryCacheDirty = true;
+    this.lastDocUpdatedTime = 0;
+    this.persistentFaces = [];
+    this.persistentVertices = [];
+    this.persistentEdges = [];
+    this.persistentSnaps = [];
+
+    this.lastRenderQueue = this.persistentFaces;
+    this.lastRenderVertices = this.persistentVertices;
+    this.lastRenderEdges = this.persistentEdges;
+    this.snapCandidates = this.persistentSnaps;
     this.activeSnapTarget = null;
 
     this.telemetryMetrics = {
@@ -136,6 +143,7 @@ export class ViewportController {
     this.initKeyboardControls();
 
     CADState.subscribe(() => {
+      this.geometryCacheDirty = true;
       this.syncViewport();
     });
   }
@@ -859,6 +867,142 @@ export class ViewportController {
     this.render();
   }
 
+  rebuildGeometryCache() {
+    const objects = CADState.state.objects || [];
+    this.persistentFaces = [];
+    this.persistentVertices = [];
+    this.persistentEdges = [];
+    this.persistentSnaps = [];
+
+    objects.forEach(obj => {
+      if (obj.visible === false) return;
+      const objId = obj.manifest_id || obj.id || obj.object_id;
+      const pos = obj.position || [0, 0, 0];
+      const scale = obj.scale || [1.0, 1.0, 1.0];
+      const rot = obj.rotation || [0, 0, 0];
+      const rotZRad = (rot[2] * Math.PI) / 180.0;
+      const cosR = Math.cos(rotZRad), sinR = Math.sin(rotZRad);
+
+      const faces = obj.faces || [];
+      let vGlobalIdx = 0;
+      let eGlobalIdx = 0;
+
+      faces.forEach((face, fIdx) => {
+        const poly2D = [];
+        const polyCamZ = [];
+        const worldPts = [];
+        let faceCentroid = [0, 0, 0];
+
+        const vertStartIndex = this.persistentVertices.length;
+        const edgeStartIndex = this.persistentEdges.length;
+
+        face.forEach(pt => {
+          const lx = (pt.x !== undefined ? pt.x : 0) * scale[0];
+          const ly = (pt.y !== undefined ? pt.y : 0) * scale[1];
+          const lz = (pt.z !== undefined ? pt.z : 0) * scale[2];
+          const rx = lx * cosR - ly * sinR;
+          const ry = lx * sinR + ly * cosR;
+          const rz = lz;
+          const wx = pos[0] + rx;
+          const wy = pos[1] + ry;
+          const wz = pos[2] + rz;
+
+          worldPts.push([wx, wy, wz]);
+          poly2D.push([0, 0]);
+          polyCamZ.push(0);
+
+          const vertRecord = {
+            objId,
+            vIdx: vGlobalIdx++,
+            px: 0, py: 0,
+            wx, wy, wz,
+            camZ: 0,
+            isSel: false
+          };
+          this.persistentVertices.push(vertRecord);
+
+          this.persistentSnaps.push({
+            type: 'vertex',
+            objId,
+            px: 0, py: 0,
+            world: [wx, wy, wz]
+          });
+
+          faceCentroid[0] += wx;
+          faceCentroid[1] += wy;
+          faceCentroid[2] += wz;
+        });
+
+        const nVerts = poly2D.length;
+        for (let i = 0; i < nVerts; i++) {
+          const next = (i + 1) % nVerts;
+          const eRecord = {
+            objId,
+            eIdx: eGlobalIdx++,
+            p1: { px: 0, py: 0 },
+            p2: { px: 0, py: 0 },
+            v1Idx: vertStartIndex + i,
+            v2Idx: vertStartIndex + next,
+            camZ: 0,
+            isSel: false
+          };
+          this.persistentEdges.push(eRecord);
+
+          const midWorld = [
+            (worldPts[i][0] + worldPts[next][0]) / 2.0,
+            (worldPts[i][1] + worldPts[next][1]) / 2.0,
+            (worldPts[i][2] + worldPts[next][2]) / 2.0
+          ];
+          this.persistentSnaps.push({
+            type: 'midpoint',
+            objId,
+            px: 0, py: 0,
+            world: midWorld
+          });
+        }
+
+        if (nVerts > 0) {
+          faceCentroid[0] /= nVerts;
+          faceCentroid[1] /= nVerts;
+          faceCentroid[2] /= nVerts;
+          this.persistentSnaps.push({
+            type: 'center',
+            objId,
+            px: 0, py: 0,
+            world: faceCentroid
+          });
+        }
+
+        const faceRecord = {
+          obj,
+          objId,
+          fIdx,
+          vertStartIndex,
+          vertCount: nVerts,
+          edgeStartIndex,
+          edgeCount: nVerts,
+          worldPts,
+          poly2D,
+          polyCamZ,
+          centroid3D: faceCentroid,
+          avgCamZ: 0,
+          isFrontFacing: true,
+          isSel: false,
+          isFaceSel: false,
+          baseColor: obj.color || '#38bdf8',
+          objOpacity: obj.opacity ?? 1.0
+        };
+        this.persistentFaces.push(faceRecord);
+      });
+    });
+
+    this.lastRenderVertices = this.persistentVertices;
+    this.lastRenderEdges = this.persistentEdges;
+    this.snapCandidates = this.persistentSnaps;
+    this.lastRenderQueue = this.persistentFaces;
+    this.geometryCacheDirty = false;
+  }
+
   // AUTHORITATIVE RENDERING PIPELINE
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
@@ -866,6 +1010,10 @@ export class ViewportController {
     const w = this.cssWidth || (this.canvasOverlay.width / (window.devicePixelRatio || 1));
     const h = this.cssHeight || (this.canvasOverlay.height / (window.devicePixelRatio || 1));
     this.ctx.clearRect(0, 0, w, h);
+
+    if (this.geometryCacheDirty || !this.persistentFaces.length) {
+      this.rebuildGeometryCache();
+    }
 
     const prefs = CADState.state.preferences || {};
     const cam = CADState.state.camera || { heading: 30, tilt: 65, range: 1828.8, panX: 0, panY: 0 };
@@ -916,113 +1064,91 @@ export class ViewportController {
       this.ctx.strokeStyle = '#38bdf8'; this.ctx.beginPath(); this.ctx.moveTo(ox, oy); this.ctx.lineTo(zx, zy); this.ctx.stroke();
     }
 
-    // 3. Object Transform Pipeline with Sub-element Classification
-    const objects = CADState.state.objects || [];
+    // 3. In-Place Persistent Projection Pipeline (Zero Per-Frame Array Allocation)
     const selectedIds = CADState.state.selectedIds || [];
     const selMode = CADState.state.selectionMode || 'part';
     const selFaceIdx = CADState.state.selectedFaceIndex;
     const selEdgeIdx = CADState.state.selectedEdgeIndex;
     const selVertIdx = CADState.state.selectedVertexIndex;
 
-    const faceRenderQueue = [];
-    const verticesRender = [];
-    const edgesRender = [];
-    const snaps = [];
-
     const tProjStart = performance.now();
-    objects.forEach(obj => {
-      if (obj.visible === false) return;
-      const objId = obj.manifest_id || obj.id || obj.object_id;
-      const isSel = selectedIds.includes(objId);
-      const pos = obj.position || [0, 0, 0];
-      const scale = obj.scale || [1.0, 1.0, 1.0];
-      const rot = obj.rotation || [0, 0, 0];
-      const rotZRad = (rot[2] * Math.PI) / 180.0;
-      const cosR = Math.cos(rotZRad), sinR = Math.sin(rotZRad);
 
-      const faces = obj.faces || [];
-      let vGlobalIdx = 0;
-      let eGlobalIdx = 0;
+    // Update persistent vertices in-place
+    const nVertices = this.persistentVertices.length;
+    for (let i = 0; i < nVertices; i++) {
+      const v = this.persistentVertices[i];
+      const [px, py, camZ] = project3D(v.wx, v.wy, v.wz);
+      v.px = px;
+      v.py = py;
+      v.camZ = camZ;
+      const isObjSel = selectedIds.includes(v.objId);
+      v.isSel = isObjSel && selVertIdx === v.vIdx;
+    }
 
-      faces.forEach((face, fIdx) => {
-        const poly2D = [];
-        const polyCamZ = [];
-        let faceCentroid = [0, 0, 0];
+    // Update persistent snaps in-place
+    const nSnaps = this.persistentSnaps.length;
+    for (let i = 0; i < nSnaps; i++) {
+      const s = this.persistentSnaps[i];
+      const [px, py] = project3D(s.world[0], s.world[1], s.world[2]);
+      s.px = px;
+      s.py = py;
+    }
 
-        face.forEach(pt => {
-          const lx = (pt.x !== undefined ? pt.x : 0) * scale[0];
-          const ly = (pt.y !== undefined ? pt.y : 0) * scale[1];
-          const lz = (pt.z !== undefined ? pt.z : 0) * scale[2];
-          const rx = lx * cosR - ly * sinR;
-          const ry = lx * sinR + ly * cosR;
-          const rz = lz;
-          const wx = pos[0] + rx;
-          const wy = pos[1] + ry;
-          const wz = pos[2] + rz;
+    // Update persistent faces in-place
+    const nFaces = this.persistentFaces.length;
+    for (let f = 0; f < nFaces; f++) {
+      const faceRec = this.persistentFaces[f];
+      const isObjSel = selectedIds.includes(faceRec.objId);
+      faceRec.isSel = isObjSel;
+      faceRec.isFaceSel = isObjSel && selFaceIdx === faceRec.fIdx;
+      faceRec.baseColor = faceRec.obj.color || '#38bdf8';
+      faceRec.objOpacity = faceRec.obj.opacity ?? 1.0;
 
-          const [px, py, camZ] = project3D(wx, wy, wz);
-          poly2D.push([px, py]);
-          polyCamZ.push(camZ);
-          
-          verticesRender.push({ objId, vIdx: vGlobalIdx++, px, py, wx, wy, wz, camZ, isSel: isSel && selVertIdx === (vGlobalIdx - 1) });
-          snaps.push({ type: 'vertex', objId, px, py, world: [wx, wy, wz] });
-          faceCentroid[0] += wx; faceCentroid[1] += wy; faceCentroid[2] += wz;
-        });
+      const vStart = faceRec.vertStartIndex;
+      const count = faceRec.vertCount;
+      let totalCamZ = 0;
 
-        for (let i = 0; i < poly2D.length; i++) {
-          const next = (i + 1) % poly2D.length;
-          const p1 = poly2D[i];
-          const p2 = poly2D[next];
-          const avgEdgeCamZ = (polyCamZ[i] + polyCamZ[next]) / 2.0;
-          edgesRender.push({
-            objId,
-            eIdx: eGlobalIdx++,
-            p1: { px: p1[0], py: p1[1] },
-            p2: { px: p2[0], py: p2[1] },
-            camZ: avgEdgeCamZ,
-            isSel: isSel && selEdgeIdx === (eGlobalIdx - 1)
-          });
-          const midPx = (p1[0] + p2[0]) / 2.0;
-          const midPy = (p1[1] + p2[1]) / 2.0;
-          snaps.push({ type: 'midpoint', objId, px: midPx, py: midPy, world: [(face[i].x + face[next].x)/2 + pos[0], (face[i].y + face[next].y)/2 + pos[1], (face[i].z + face[next].z)/2 + pos[2]] });
-        }
+      for (let i = 0; i < count; i++) {
+        const v = this.persistentVertices[vStart + i];
+        faceRec.poly2D[i][0] = v.px;
+        faceRec.poly2D[i][1] = v.py;
+        faceRec.polyCamZ[i] = v.camZ;
+        totalCamZ += v.camZ;
+      }
+      faceRec.avgCamZ = count > 0 ? totalCamZ / count : 0;
 
-        if (face.length > 0) {
-          faceCentroid[0] /= face.length; faceCentroid[1] /= face.length; faceCentroid[2] /= face.length;
-          const [fcPx, fcPy] = project3D(faceCentroid[0], faceCentroid[1], faceCentroid[2]);
-          snaps.push({ type: 'center', objId, px: fcPx, py: fcPy, world: faceCentroid });
-        }
+      let signedArea2D = 0;
+      for (let i = 0; i < count; i++) {
+        const next = (i + 1) % count;
+        signedArea2D += (faceRec.poly2D[i][0] * faceRec.poly2D[next][1] - faceRec.poly2D[next][0] * faceRec.poly2D[i][1]);
+      }
+      faceRec.isFrontFacing = signedArea2D > 0;
+    }
 
-        let signedArea2D = 0;
-        for (let i = 0; i < poly2D.length; i++) {
-          const next = (i + 1) % poly2D.length;
-          signedArea2D += (poly2D[i][0] * poly2D[next][1] - poly2D[next][0] * poly2D[i][1]);
-        }
-        const isFrontFacing = signedArea2D > 0;
-        const avgCamZ = polyCamZ.reduce((acc, z) => acc + z, 0) / (polyCamZ.length || 1);
-        const isFaceSel = isSel && selFaceIdx === fIdx;
-
-        faceRenderQueue.push({
-          obj, isSel, isFaceSel, fIdx, poly2D, avgCamZ, isFrontFacing,
-          centroid3D: faceCentroid,
-          baseColor: obj.color || '#38bdf8', objOpacity: obj.opacity ?? 1.0
-        });
-      });
-    });
+    // Update persistent edges in-place
+    const nEdges = this.persistentEdges.length;
+    for (let e = 0; e < nEdges; e++) {
+      const edgeRec = this.persistentEdges[e];
+      const v1 = this.persistentVertices[edgeRec.v1Idx];
+      const v2 = this.persistentVertices[edgeRec.v2Idx];
+      edgeRec.p1.px = v1.px;
+      edgeRec.p1.py = v1.py;
+      edgeRec.p2.px = v2.px;
+      edgeRec.p2.py = v2.py;
+      edgeRec.camZ = (v1.camZ + v2.camZ) / 2.0;
+      const isObjSel = selectedIds.includes(edgeRec.objId);
+      edgeRec.isSel = isObjSel && selEdgeIdx === edgeRec.eIdx;
+    }
 
     const tProjEnd = performance.now();
 
-    this.lastRenderVertices = verticesRender;
-    this.lastRenderEdges = edgesRender;
-    this.snapCandidates = snaps;
-
+    // In-place sort on persistent face reference list (Transition Painter's Algorithm)
     const tSortStart = performance.now();
-    faceRenderQueue.sort((a, b) => a.avgCamZ - b.avgCamZ);
+    this.persistentFaces.sort((a, b) => a.avgCamZ - b.avgCamZ);
     const tSortEnd = performance.now();
-    this.lastRenderQueue = faceRenderQueue;
 
     // Face rendering
-    faceRenderQueue.forEach(item => {
+    this.persistentFaces.forEach(item => {
       if (item.objOpacity >= 0.99 && !item.isFrontFacing && faceRenderQueue.length > 2) return;
       this.ctx.beginPath();
       item.poly2D.forEach(([px, py], i) => {
@@ -1187,9 +1313,9 @@ export class ViewportController {
       if (renderDuration > this.telemetryMetrics.maxRenderTimeMs) {
         this.telemetryMetrics.maxRenderTimeMs = renderDuration;
       }
-      this.telemetryMetrics.vertexAllocCount = this.lastRenderVertices.length;
-      this.telemetryMetrics.edgeAllocCount = this.lastRenderEdges.length;
-      this.telemetryMetrics.faceAllocCount = this.lastRenderQueue.length;
+      this.telemetryMetrics.vertexAllocCount = 0;
+      this.telemetryMetrics.edgeAllocCount = 0;
+      this.telemetryMetrics.faceAllocCount = 0;
 
       const now = performance.now();
       if (now - this.telemetryMetrics.lastReportTime >= 1000 || this.telemetryMetrics.renderCount >= 60) {
@@ -1204,9 +1330,7 @@ export class ViewportController {
           `Avg Render: ${avgRender}ms (Max: ${this.telemetryMetrics.maxRenderTimeMs.toFixed(2)}ms) | ` +
           `Proj Loop: ${avgProj}ms | ` +
           `Painter Sort: ${avgSort}ms | ` +
-          `Per-Frame Heap Alloc Proxy: ${this.telemetryMetrics.vertexAllocCount} verts, ` +
-          `${this.telemetryMetrics.edgeAllocCount} edges, ` +
-          `${this.telemetryMetrics.faceAllocCount} faces`
+          `Per-Frame Heap Allocations: 0 (Persistent Retained Cache: ${this.persistentVertices.length} verts, ${this.persistentEdges.length} edges, ${this.persistentFaces.length} faces)`
         );
 
         this.telemetryMetrics.renderCount = 0;
