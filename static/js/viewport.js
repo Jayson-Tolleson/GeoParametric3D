@@ -914,7 +914,7 @@ export class ViewportController {
     const polygonPool = new Map();
 
     existingPolygons.forEach(polygon => {
-      const key = `${polygon.dataset.objectId}-${polygon.dataset.faceIndex}`;
+      const key = polygon.dataset.key || `${polygon.dataset.objectId}-${polygon.dataset.faceIndex}`;
       polygonPool.set(key, polygon);
     });
 
@@ -931,7 +931,7 @@ export class ViewportController {
       const planarPolys = object.planar_polygons || [];
       if (planarPolys.length > 0) {
         planarPolys.forEach((poly, polyIndex) => {
-          const key = `${objId}-ngon-${polyIndex}`;
+          const key = `ngon-${objId}-${poly.face_id || polyIndex}`;
           const isFaceSel = isObjSel && (selFaceIdx === polyIndex || (CADState.state.selectedFaceInfo && CADState.state.selectedFaceInfo.face_id === poly.face_id));
           const baseColor = poly.color || object.color || '#38bdf8';
           const fillColor = isFaceSel ? 'rgba(251, 191, 36, 0.95)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 0.85)' : baseColor);
@@ -950,6 +950,7 @@ export class ViewportController {
             polygonPool.delete(key);
           } else {
             polygon = document.createElement('gmp-polygon-3d');
+            polygon.dataset.key = key;
             polygon.dataset.objectId = objId;
             polygon.dataset.faceIndex = polyIndex;
             polygon.dataset.faceId = poly.face_id || `Face_${polyIndex + 1}`;
@@ -969,7 +970,7 @@ export class ViewportController {
 
       const faces = object.faces || [];
       faces.forEach((face, faceIndex) => {
-        const key = `${objId}-${faceIndex}`;
+        const key = `face-${objId}-${faceIndex}`;
         const pts = Array.isArray(face) ? face : (face.vertices || []);
         if (pts.length < 3) return;
 
@@ -997,8 +998,10 @@ export class ViewportController {
           polygonPool.delete(key);
         } else {
           polygon = document.createElement('gmp-polygon-3d');
+          polygon.dataset.key = key;
           polygon.dataset.objectId = objId;
           polygon.dataset.faceIndex = faceIndex;
+          polygon.dataset.faceId = (pts[0] && pts[0].face_id) || `Face_${faceIndex + 1}`;
           polygon.altitudeMode = 'absolute';
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
@@ -1101,9 +1104,19 @@ export class ViewportController {
       if (clickedPolygon) {
         const objId = clickedPolygon.dataset.objectId;
         const faceIndex = parseInt(clickedPolygon.dataset.faceIndex, 10);
+        const faceId = clickedPolygon.dataset.faceId;
 
         if (selMode === 'face') {
-          CADState.setSelectedId(objId, isCtrl, isShift, { type: 'face', index: faceIndex });
+          CADState.setSelectedId(objId, isCtrl, isShift, {
+            type: 'face',
+            index: isNaN(faceIndex) ? 0 : faceIndex,
+            info: {
+              face_id: faceId || `Face_${(isNaN(faceIndex) ? 0 : faceIndex) + 1}`,
+              surface_type: 'Plane',
+              area_mm2: 0,
+              normal: [0, 0, 1]
+            }
+          });
         } else {
           CADState.setSelectedId(objId, isCtrl, isShift, null);
         }
