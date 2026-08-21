@@ -83,16 +83,16 @@ export class SphericalTrackball {
 export class ViewportController {
     renderNgons(geometryData) {
         if (geometryData && geometryData.ngon_loops) {
-            const container = document.getElementById(viewport-container) || document.body;
+            const container = document.getElementById("viewport-container") || document.body;
             geometryData.ngon_loops.forEach(loop => {
-                let poly = document.createElement(gmp-polygon-3d);
-                poly.setAttribute(outer-boundary, JSON.stringify(loop.outer));
+                let poly = document.createElement("gmp-polygon-3d");
+                poly.setAttribute("outer-boundary", JSON.stringify(loop.outer));
                 container.appendChild(poly);
             });
             return true;
         }
         return false;
-    } {
+    }
   constructor() {
     this.canvasOverlay = document.getElementById('viewport-overlay-canvas');
     this.ctx = this.canvasOverlay ? this.canvasOverlay.getContext('2d') : null;
@@ -1283,6 +1283,21 @@ export class ViewportController {
   // AUTHORITATIVE RENDERING PIPELINE
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
+    
+    // Native gmp-polygon-3d injection for ngon_loops
+    if (CADState.state.currentGeometry && CADState.state.currentGeometry.ngon_loops) {
+        const container = document.getElementById("viewport-container") || document.body;
+        // Check if we already rendered these to avoid spamming DOM creation
+        if (!this._nativeNgonsRendered) {
+            CADState.state.currentGeometry.ngon_loops.forEach(loop => {
+                let poly = document.createElement("gmp-polygon-3d");
+                poly.setAttribute("outer-boundary", JSON.stringify(loop.outer));
+                container.appendChild(poly);
+            });
+            this._nativeNgonsRendered = true;
+        }
+    }
+
     const tRenderStart = performance.now();
     const w = this.cssWidth || (this.canvasOverlay.width / (window.devicePixelRatio || 1));
     const h = this.cssHeight || (this.canvasOverlay.height / (window.devicePixelRatio || 1));
