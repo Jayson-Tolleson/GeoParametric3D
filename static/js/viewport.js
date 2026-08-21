@@ -81,6 +81,18 @@ export class SphericalTrackball {
 }
 
 export class ViewportController {
+    renderNgons(geometryData) {
+        if (geometryData && geometryData.ngon_loops) {
+            const container = document.getElementById(viewport-container) || document.body;
+            geometryData.ngon_loops.forEach(loop => {
+                let poly = document.createElement(gmp-polygon-3d);
+                poly.setAttribute(outer-boundary, JSON.stringify(loop.outer));
+                container.appendChild(poly);
+            });
+            return true;
+        }
+        return false;
+    } {
   constructor() {
     this.canvasOverlay = document.getElementById('viewport-overlay-canvas');
     this.ctx = this.canvasOverlay ? this.canvasOverlay.getContext('2d') : null;
