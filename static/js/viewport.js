@@ -112,15 +112,20 @@ export class ViewportController {
 
     this.geometryCacheDirty = true;
     this.lastDocUpdatedTime = 0;
-    this.persistentFaces = [];
-    this.persistentVertices = [];
-    this.persistentEdges = [];
-    this.persistentSnaps = [];
+    this.faceRenderQueue = [];
+    this.verticesRender = [];
+    this.edgesRender = [];
+    this.snaps = [];
 
-    this.lastRenderQueue = this.persistentFaces;
-    this.lastRenderVertices = this.persistentVertices;
-    this.lastRenderEdges = this.persistentEdges;
-    this.snapCandidates = this.persistentSnaps;
+    this.persistentFaces = this.faceRenderQueue;
+    this.persistentVertices = this.verticesRender;
+    this.persistentEdges = this.edgesRender;
+    this.persistentSnaps = this.snaps;
+
+    this.lastRenderQueue = this.faceRenderQueue;
+    this.lastRenderVertices = this.verticesRender;
+    this.lastRenderEdges = this.edgesRender;
+    this.snapCandidates = this.snaps;
     this.activeSnapTarget = null;
 
     this.telemetryMetrics = {
@@ -869,10 +874,10 @@ export class ViewportController {
 
   rebuildGeometryCache() {
     const objects = CADState.state.objects || [];
-    this.persistentFaces = [];
-    this.persistentVertices = [];
-    this.persistentEdges = [];
-    this.persistentSnaps = [];
+    this.faceRenderQueue.length = 0;
+    this.verticesRender.length = 0;
+    this.edgesRender.length = 0;
+    this.snaps.length = 0;
 
     objects.forEach(obj => {
       if (obj.visible === false) return;
@@ -1148,8 +1153,8 @@ export class ViewportController {
     const tSortEnd = performance.now();
 
     // Face rendering
-    this.persistentFaces.forEach(item => {
-      if (item.objOpacity >= 0.99 && !item.isFrontFacing && faceRenderQueue.length > 2) return;
+    this.faceRenderQueue.forEach(item => {
+      if (item.objOpacity >= 0.99 && !item.isFrontFacing && this.faceRenderQueue.length > 2) return;
       this.ctx.beginPath();
       item.poly2D.forEach(([px, py], i) => {
         if (i === 0) this.ctx.moveTo(px, py);
@@ -1175,7 +1180,7 @@ export class ViewportController {
 
     // Highlight edges in edge selection mode
     if (selMode === 'edge') {
-      edgesRender.forEach(e => {
+      this.edgesRender.forEach(e => {
         if (e.isSel) {
           this.ctx.beginPath();
           this.ctx.moveTo(e.p1.px, e.p1.py);
@@ -1189,7 +1194,7 @@ export class ViewportController {
 
     // Highlight vertices in vertex selection mode
     if (selMode === 'vertex') {
-      verticesRender.forEach(v => {
+      this.verticesRender.forEach(v => {
         this.ctx.beginPath();
         this.ctx.arc(v.px, v.py, v.isSel ? 6 : 3, 0, Math.PI * 2);
         this.ctx.fillStyle = v.isSel ? '#ef4444' : '#38bdf8';
