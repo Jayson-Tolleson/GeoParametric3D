@@ -290,7 +290,7 @@ When the AI Assistant responds with CAD mutations or CadQuery scripts, the `ai_a
 ```javascript
 if (res && res.action_intent && res.action_intent.action) {
   const intent = res.action_intent;
-  await CADCommands.execute(intent.action, intent.parameters || {});
+  await CADCommands.execute(intent.action, intent.parameters || intent.params || {});
 }
 ```
 

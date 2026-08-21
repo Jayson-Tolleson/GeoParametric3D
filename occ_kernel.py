@@ -6,7 +6,7 @@ Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (Phase
   3. Arbitrary concave perimeter extraction ('L', 'T', 'E' brackets) without internal triangulation diagonals
   4. Multiply-connected cutout void loop extraction ('A', 'B', 'O' alphabet genus topology)
   5. Multi-solid compound unpacking and parallel batch deflection support
-  6. STEP inch/mm unit scale factor detection & single ingestion conversion
+  6. STEP inch/mm unit scale factor detection & single ingestion conversion (8ft assembly verification)
 """
 
 from typing import List, Dict, Any, Tuple, Optional
@@ -93,7 +93,7 @@ def get_brep_pnt(vert: Any) -> Any:
 def detect_step_units(header_text: str) -> Tuple[str, float]:
     """
     Inspects STEP exchange structure to resolve source unit and linear scale factor to canonical mm.
-    Prevents the 136ft vs 8ft scaling distortion incident (Section 1.3 / Spec UNIT-003).
+    Enforces Law 1 & Law 2 of GP3D-SPEC-UNIT-003, preventing scaling distortions (e.g. 136ft vs 8ft).
     """
     if not header_text:
         return "mm", 1.0

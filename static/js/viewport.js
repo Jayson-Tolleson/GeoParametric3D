@@ -1631,7 +1631,7 @@ export class ViewportController {
     this.persistentFaces.sort((a, b) => a.avgCamZ - b.avgCamZ);
     const tSortEnd = performance.now();
 
-    // Face rendering without internal triangulation diagonals
+    // Face rendering without internal triangulation diagonals on planar perimeters
     this.faceRenderQueue.forEach(item => {
       if (item.objOpacity >= 0.99 && !item.isFrontFacing && this.faceRenderQueue.length > 2) return;
       this.ctx.beginPath();
