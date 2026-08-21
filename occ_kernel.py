@@ -1,6 +1,6 @@
 """
 GeoParametric3D OpenCASCADE (OCCT / OCP) Kernel & Dual-Route Surface Extractor
-Enforces Section 1 & 2 of the Governing Architecture Specification:
+Enforces Sections 1 & 2 of the Governing Architecture Specification:
   1. Exact B-Rep as authoritative geometric truth
   2. Dual-route classification: GeomAbs_Plane -> Planar N-Gon Loops vs Non-Planar -> Adaptive Tessellator
   3. Boundary wire extraction with inner cutout hole preservation
@@ -166,6 +166,8 @@ def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0
                     "origin": origin,
                     "outer_wire": wire_data["outer"],
                     "inner_wires": wire_data.get("inner", []),
+                    "outer": wire_data["outer"],
+                    "inner": wire_data.get("inner", []),
                     "occ_face": occ_face
                 })
         else:

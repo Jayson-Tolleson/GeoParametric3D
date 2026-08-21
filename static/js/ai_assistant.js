@@ -2,8 +2,8 @@
 
 /**
  * GeoParametric3D AI Engineering Assistant Controller
- * Connects user input to Vertex AI (/cad/api/assistant/chat) and executes
- * returned CadQuery parametric operations or mutations against the active B-Rep model.
+ * Connects user input to Vertex AI (/cad/api/assistant/chat and /api/generate)
+ * and executes returned CadQuery parametric operations or mutations against the active B-Rep model.
  */
 
 import { CADState } from './state.js';
@@ -88,7 +88,7 @@ export class AIAssistantController {
 
     try {
       const activeSel = CADState.getSelectedObject();
-      const res = await CADApi.sendAssistantPrompt(promptText);
+      let res = await CADApi.sendAssistantPrompt(promptText);
 
       if (res && res.document) {
         CADState.setDocument(res.document);
