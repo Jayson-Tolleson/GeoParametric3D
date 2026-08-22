@@ -166,7 +166,7 @@ $$L_{\text{inches}} = \frac{L_{\text{canonical\_mm}}}{25.4}$$
 |  3. Viewport Adapter = Presentation                                      |
 |  4. No reverse geometric ownership                                       |
 |  5. No duplicate geometric authority                                     |
-|  6. No client canvas CAD rendering engines                              |
+|  6. No client canvas CAD rendering engines                               |
 |  7. No worker mutation of canonical state                                |
 |  8. No unit mutation after canonicalization                              |
 |  9. No UUID regeneration during viewport rendering                       |

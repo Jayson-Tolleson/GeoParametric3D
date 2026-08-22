@@ -1283,37 +1283,75 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
         tri_indices = tri_indices[non_deg_mask]
         if len(tri_indices) == 0: return None
             
-        part_id = f"part_stl_{uuid.uuid4().hex[:6]}"
-        geo_part = GeoPart(part_id, filename)
+        # Connected Component Assembly Reconstruction for multi-solid STL
+        adj = [[] for _ in range(len(tri_indices))]
+        edge_map = {}
+        for t_i, tri in enumerate(tri_indices):
+            for e_k in range(3):
+                u, v = sorted([int(tri[e_k]), int(tri[(e_k+1)%3])])
+                edge_map.setdefault((u, v), []).append(t_i)
+        for t_list in edge_map.values():
+            if len(t_list) > 1:
+                for a in t_list:
+                    for b in t_list:
+                        if a != b: adj[a].append(b)
+                        
+        visited = set()
+        components = []
+        for t_i in range(len(tri_indices)):
+            if t_i not in visited:
+                comp = []
+                q = [t_i]
+                visited.add(t_i)
+                while q:
+                    curr = q.pop()
+                    comp.append(curr)
+                    for neighbor in adj[curr]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            q.append(neighbor)
+                components.append(comp)
+                
         assembly = GeoAssembly(f"asm_stl_{uuid.uuid4().hex[:6]}", filename)
+        bodies = []
+        all_faces = []
         
-        comp_faces_wgs = [enu_to_wgs84(unique_vertices[tri], face_id=part_id) for tri in tri_indices]
-        for pt in unique_vertices:
-            geo_part.add_vertex(pt)
+        for c_idx, comp_tri_idxs in enumerate(components):
+            part_id = f"part_stl_{c_idx+1}_{uuid.uuid4().hex[:4]}"
+            comp_name = f"{filename} - Component {c_idx+1}" if len(components) > 1 else filename
+            geo_part = GeoPart(part_id, comp_name)
+            comp_tris = tri_indices[comp_tri_idxs]
+            comp_faces_wgs = [enu_to_wgs84(unique_vertices[tri], face_id=part_id) for tri in comp_tris]
             
-        shell = GeoShell(f"shell_{uuid.uuid4().hex[:4]}", [], is_closed=True)
-        geo_part.shells[shell.id] = shell
-        solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
-        geo_part.solids[solid.id] = solid
-        
-        assembly.add_part(geo_part)
-        assembly.create_instance(geo_part.id, name=filename)
-        assembly_tree = build_assembly_tree_from_canonical(assembly)
-        
-        cad_obj = {
-            "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": filename,
-            "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
-            "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
-            "faces": comp_faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-            "bounding_box": compute_bounding_box(unique_vertices), "canonical_unit": CANONICAL_INTERNAL_UNIT,
-            "parameters": {"facets": len(comp_faces_wgs)}
-        }
+            for pt in unique_vertices:
+                geo_part.add_vertex(pt)
+                
+            shell = GeoShell(f"shell_{uuid.uuid4().hex[:4]}", [], is_closed=True)
+            geo_part.shells[shell.id] = shell
+            solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
+            geo_part.solids[solid.id] = solid
+            
+            assembly.add_part(geo_part)
+            assembly.create_instance(geo_part.id, name=comp_name)
+            all_faces.extend(comp_faces_wgs)
+            
+            comp_verts = unique_vertices[np.unique(comp_tris)]
+            bodies.append({
+                "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": comp_name,
+                "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
+                "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
+                "faces": comp_faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
+                "bounding_box": compute_bounding_box(comp_verts), "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "parameters": {"facets": len(comp_faces_wgs)}
+            })
+            
+        assembly_tree = build_assembly_tree_from_canonical(assembly, is_multi_comp=len(components) > 1)
         return {
-            "headers": {"format": "STL", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT, "diagnostics": {"total_raw_triangles": len(tri_indices)}},
+            "headers": {"format": "STL", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT, "diagnostics": {"total_raw_triangles": len(tri_indices), "components": len(components)}},
             "canonical_assembly": assembly.to_dict(),
-            "objects": [cad_obj],
+            "objects": bodies,
             "assembly_tree": assembly_tree,
-            "faces": comp_faces_wgs
+            "faces": all_faces
         }
     except Exception as e:
         logger.exception("STL Parser Exception")
