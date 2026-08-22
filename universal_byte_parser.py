@@ -1730,6 +1730,11 @@ def parse_universal_model(content_bytes: bytes, filename: str = "model.stl") -> 
     descriptor = detect_format_descriptor(content_bytes, filename)
     fmt = descriptor.format
     
+    # Fast OCCT multi-solid parallel route if available for STEP
+    if fmt == 'STEP' and _OCCT_AVAILABLE:
+        res = parse_step_with_occt(content_bytes, filename, descriptor)
+        if res and res.get('objects'): return res
+    
     if fmt == 'STEP' or descriptor.has_product_structure:
         res = parse_step_brep_structured(content_bytes, filename, descriptor)
         if res: return res

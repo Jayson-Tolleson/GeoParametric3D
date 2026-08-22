@@ -93,7 +93,8 @@ export class AIAssistantController {
         id: activeSel.manifest_id || activeSel.id,
         name: activeSel.name,
         material: activeSel.material,
-        volume_cm3: activeSel.volume_cm3
+        volume_cm3: activeSel.volume_cm3,
+        bounding_box: activeSel.bounding_box
       } : null;
 
       let res = null;
