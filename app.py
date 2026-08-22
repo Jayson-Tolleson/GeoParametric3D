@@ -5,7 +5,7 @@ import pathlib
 import urllib.request
 import uuid
 import numpy as np
-from quart import Quart, render_template, request, jsonify, send_from_directory
+from quart import Quart, render_template, request, jsonify, send_from_directory, Response
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 
@@ -81,7 +81,12 @@ async def health():
 @app.route('/GeoParametric3D/api/site')
 @app.route('/cad/api/site')
 async def site_info():
-    return json_response({'success': True, 'anchor': SITE_ANCHOR, 'map3d_enabled': True, 'canonical_unit': CANONICAL_INTERNAL_UNIT})
+    return json_response({
+        'success': True,
+        'anchor': SITE_ANCHOR,
+        'map3d_enabled': True,
+        'canonical_unit': CANONICAL_INTERNAL_UNIT
+    })
 
 @app.route('/api/project/new', methods=['POST'])
 @app.route('/GeoParametric3D/api/project/new', methods=['POST'])
@@ -178,7 +183,6 @@ async def handle_geometry_binary():
     Transports packed float32 vertex coordinates and uint32 index arrays.
     """
     import struct
-    from quart import Response
     data = (await request.get_json(silent=True)) or {}
     obj_id = data.get('id') or request.args.get('id')
     

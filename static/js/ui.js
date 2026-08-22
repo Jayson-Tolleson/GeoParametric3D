@@ -373,15 +373,7 @@ export class UIController {
         const sel = CADState.getSelectedObject();
         const selectedId = sel ? (sel.manifest_id || sel.id || sel.object_id) : null;
         if (['extrude','cross-sections','hole','fillet','chamfer','revolve'].includes(action.type)) {
-          const edgeIdx = CADState.state.selectedEdgeIndex;
-          const faceIdx = CADState.state.selectedFaceIndex;
-          await CADCommands.execute(`feature_${action.type.replaceAll('-', '_')}`, {
-            ...params,
-            target_id: selectedId,
-            edge_index: edgeIdx,
-            face_index: faceIdx
-          });
-          if (selectedId) CADState.clearBuffer(selectedId);
+          await CADCommands.execute(`feature_${action.type.replaceAll('-', '_')}`, { ...params, target_id: selectedId });
         } else if (action.type === 'transform_move' || action.type === 'transform_rotate' || action.type === 'transform_scale' || action.type === 'transform_duplicate') {
           await CADCommands.transform(action.transformAction, { ...params, target_id: selectedId });
         } else if (action.type === 'align') {
@@ -588,9 +580,9 @@ export class UIController {
     }
 
     const renderTreeNode = (node, container, depth = 0) => {
-      if (depth > 5) return;
+      if (depth > 4) return;
       const li = document.createElement('li');
-      const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+      const isGroup = node.children && node.children.length > 0;
       const objId = node.manifest_id || node.objectId || node.id;
       const matchedObj = objects.find(o => (o.manifest_id === objId || o.id === objId || o.object_id === objId));
       const isSel = objId ? selectedIds.includes(objId) : false;
@@ -598,38 +590,10 @@ export class UIController {
 
       li.className = `tree-item ${isSel ? 'selected' : ''} ${isHidden ? 'hidden-part' : ''}`;
       li.style.paddingLeft = `${Math.max(8, depth * 14 + 8)}px`;
-
-      const chevron = hasChildren ? `<span class="tree-toggle" style="cursor:pointer; user-select:none; margin-right:4px;">▶</span>` : `<span style="display:inline-block; width:12px;"></span>`;
-      const icon = hasChildren ? '📦' : (node.structure_type === 'FACE' ? '▱' : (node.structure_type === 'EDGE' ? '╱' : '⚙️'));
-      
       li.innerHTML = `
-        ${chevron}
-        <span class="tree-icon">${icon}</span>
+        <span class="tree-icon">${isGroup ? '📁' : '⚙️'}</span>
         <span class="tree-name">${node.name || 'Component'} ${isHidden ? '(Hidden)' : ''}</span>
       `;
-
-      let subUl = null;
-      if (hasChildren && depth < 5) {
-        subUl = document.createElement('ul');
-        subUl.className = 'tree-subgroup hidden';
-        subUl.style.listStyle = 'none';
-        node.children.forEach(child => renderTreeNode(child, subUl, depth + 1));
-      }
-
-      const toggleBtn = li.querySelector('.tree-toggle');
-      if (toggleBtn && subUl) {
-        toggleBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const isCollapsed = subUl.classList.contains('hidden');
-          if (isCollapsed) {
-            subUl.classList.remove('hidden');
-            toggleBtn.textContent = '▼';
-          } else {
-            subUl.classList.add('hidden');
-            toggleBtn.textContent = '▶';
-          }
-        });
-      }
 
       li.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -639,7 +603,12 @@ export class UIController {
       });
 
       container.appendChild(li);
-      if (subUl) {
+
+      if (isGroup && depth < 4) {
+        const subUl = document.createElement('ul');
+        subUl.className = 'tree-subgroup';
+        subUl.style.listStyle = 'none';
+        node.children.forEach(child => renderTreeNode(child, subUl, depth + 1));
         container.appendChild(subUl);
       }
     };

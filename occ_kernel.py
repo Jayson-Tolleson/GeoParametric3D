@@ -116,7 +116,6 @@ def detect_step_units(header_text: str) -> Tuple[str, float]:
         return "meter", 1000.0
     return "mm", 1.0
 
-
 def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Dict[str, Any]:
     """
     Extracts outer and inner boundary loops from an authoritative TopoDS_Face.
@@ -192,7 +191,6 @@ def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflect
         "inner": loops[1:] if len(loops) > 1 else []
     }
 
-
 def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Classifies every TopoDS_Face into either:
@@ -256,7 +254,6 @@ def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0
         explorer.Next()
 
     return planar_faces, curved_faces
-
 
 def parallel_process_step_solids(shape: Any, scale: float = 1.0, worker_count: int = 4) -> List[Dict[str, Any]]:
     """

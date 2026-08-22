@@ -14,7 +14,7 @@ During ingestion of complex multi-solid STEP assemblies (such as `jetdrive.step`
 1. **Severe Pipeline Latency (49.0s ingestion):** Sequential monolithic execution of `BRepMesh_IncrementalMesh` across compound solids on a single Python thread.
 2. **Viewport FPS Collapse (1.9–3.2 FPS):** CPU-bound 2D canvas polygon rasterization, per-frame heap allocations (>35,000 objects), and unindexed polygon arrays.
 3. **Planar Face Triangulation Artifacts:** Indiscriminate conversion of flat CAD faces (`GeomAbs_Plane`) into triangle soups, creating distracting visual diagonal seams across baseplates and structural flanges.
-4. **Dimensional Inflation Defect (136.8 ft vs. 8.0 ft Actual):** Raw millimeter dimensions (e.g., $1642.218\,\text{mm}$) were labeled as inches without applying the linear scale conversion factor ($1/25.4$), inflating the bounding box by $25.4\times$ ($136.85\,\text{ft}$ vs. $5.38\,\text{ft}$ intake collector, $8.0\,\text{ft}$ total assembly).
+4. **Dimensional Inflation Defect (136.8 ft vs. 8.0 ft Actual):** Raw millimeter dimensions (e.g., 1642.218 mm) were labeled as inches without applying the linear scale conversion factor (1/25.4), inflating the bounding box by 25.4x (136.85 ft vs. 5.38 ft intake collector, 8.0 ft total assembly).
 
 This specification establishes the refactored, modular v4.2 architecture that enforces sub-2.5s ingestion, sustained 60 FPS viewport rendering, zero internal diagonals on planar faces, and unit invariance.
 
@@ -23,9 +23,9 @@ This specification establishes the refactored, modular v4.2 architecture that en
 ## 2. Decoupled Modular Architecture
 
 ```
-+---------------------------------------------------------------------------------------------------------+
-|                                 GEOPARAMETRIC3D MODULAR CAD ARCHITECTURE                                 |
-+---------------------------------------------------------------------------------------------------------+
++-----------------------------------------------------------------------------------------+
+|                                 GEOPARAMETRIC3D MODULAR CAD ARCHITECTURE                |
++-----------------------------------------------------------------------------------------+
 
     [ 1. INGESTION & FORMAT GATEWAY ]
     ├── universal_byte_parser.py : Universal 3-Category Router (Binary, Mesh, Solid B-Rep)
@@ -56,12 +56,12 @@ This specification establishes the refactored, modular v4.2 architecture that en
 ## 3. Specialized Ingestion Across Three 3D Categories
 
 ### 3.1 Category 1: Packed Binary Formats (XBF, GLTF/GLB)
-- **Zero-Copy Byte Parsing:** Ingests raw packed contiguous `Float32` vertex arrays and `Uint32` index buffers with an 8-byte header (`uint32 vertex_count`, `uint32 index_count`).
+- **Zero-Copy Byte Parsing:** Ingests raw packed contiguous Float32 vertex arrays and Uint32 index buffers with an 8-byte header (uint32 vertex_count, uint32 index_count).
 - **Direct Geodetic Projection:** Applies geodetic local tangent plane conversion directly via vectorized NumPy / typed array operations.
 
 ### 3.2 Category 2: Discretized Meshes (STL, OBJ, 3MF, PLY, DAE, WRL)
 - **C-Level Vectorized Decoding:** Vectorized `np.frombuffer` decoding for binary STL, eliminating line-by-line interpreter parsing.
-- **Spatial Quantization & Vertex Welding:** Coordinate hashing into a discrete grid ($10^{-4}\,\text{mm}$ tolerance) merges duplicate vertices, eliminates zero-area triangles, and reconstructs connected component manifolds.
+- **Spatial Quantization & Vertex Welding:** Coordinate hashing into a discrete grid (1e-4 mm tolerance) merges duplicate vertices, eliminates zero-area triangles, and reconstructs connected component manifolds.
 
 ### 3.3 Category 3: Solid B-Rep Geometry (STEP AP203/AP214/AP242, FCStd)
 - **Multi-Solid Compound Unpacking:** Traverses top-level compounds into discrete `TopoDS_Solid` and `TopoDS_Shell` units.
@@ -118,7 +118,7 @@ Imperial values displayed in the UI (e.g., Properties inspector, measurement ale
 
 $$L_{\text{display\_inches}} = \frac{L_{\text{canonical\_mm}}}{25.4}$$
 
-This eliminates the $25.4\times$ scale inflation defect, ensuring the `Collector` body reports its true $64.654\,\text{in} \times 20.000\,\text{in} \times 16.312\,\text{in}$ dimensions within the $8.0\,\text{ft}$ physical assembly.
+This eliminates the 25.4x scale inflation defect, ensuring the `Collector` body reports its true 64.654 in x 20.000 in x 16.312 in dimensions within the 8.0 ft physical assembly.
 
 ---
 

@@ -703,7 +703,6 @@ def detect_step_units(text: str) -> Tuple[str, float]:
        re.search(r"'INCH'", text, re.IGNORECASE):
         return "inch", 25.4
     if re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'FOOT'", text, re.IGNORECASE) or \
-       re.search(r"'FOOT'", header_text if 'header_text' in locals() else text, re.IGNORECASE) or \
        re.search(r"'FOOT'", text, re.IGNORECASE):
         return "foot", 304.8
     if re.search(r"\.METRE\.", text, re.IGNORECASE) and not re.search(r"\.MILLI\.|\.CENTI\.", text, re.IGNORECASE):
