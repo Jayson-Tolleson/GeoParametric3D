@@ -32,11 +32,13 @@ from typing import List, Dict, Any, Optional, Tuple, Union, Set
 import numpy as np
 
 try:
-    from occ_kernel import route_cad_faces, extract_clean_planar_wires, parallel_process_step_solids, detect_step_units as occ_detect_step_units, _OCCT_AVAILABLE as OCC_AVAIL
+    from occ_kernel import route_cad_faces, extract_clean_planar_wires, parallel_process_step_solids, compute_optimal_deflection, get_shape_bounding_diag, detect_step_units as occ_detect_step_units, _OCCT_AVAILABLE as OCC_AVAIL
 except ImportError:
     route_cad_faces = None
     extract_clean_planar_wires = None
     parallel_process_step_solids = None
+    compute_optimal_deflection = None
+    get_shape_bounding_diag = None
     occ_detect_step_units = None
     OCC_AVAIL = False
 
@@ -507,6 +509,8 @@ def validate_and_compact_mesh(
         "final_triangle_count": len(final_indices),
         "index_validation": "PASS" if valid_contract else f"FAIL ({contract_msg})",
         "finite_coordinates": "PASS" if np.isfinite(final_positions).all() else "FAIL",
+        "index_validation_result": "PASS" if valid_contract else "FAIL",
+        "finite_coordinates_result": "PASS" if np.isfinite(final_positions).all() else "FAIL",
         "coordinate_bounds": bbox,
         "normals": final_normals,
         "triangle_provenance": final_prov.tolist() if final_prov is not None else None
@@ -769,7 +773,9 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.scale_to_canonical = 1000.0
         return desc
         
-    if (head_latin.startswith('#') or '\nv ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or '\nf ' in head_latin):
+    if (head_latin.startswith('#') or '
+v ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or '
+f ' in head_latin):
         desc.format = "OBJ"
         desc.confidence = 0.95
         desc.has_assembly = True
@@ -942,12 +948,6 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             add_step("UNIT_RESOLUTION", (time.perf_counter() - t0) * 1000, f"Unit: {source_u} (Scale factor: {scale})")
 
             t0 = time.perf_counter()
-            linear_deflection = 0.5
-            angular_deflection = 0.5
-            BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
-            add_step("ADAPTIVE_DEFLECTION_MESH", (time.perf_counter() - t0) * 1000, f"Deflection mesh (lin={linear_deflection}mm, ang={angular_deflection}rad)")
-            
-            t0 = time.perf_counter()
             job_uuid = f"job_{uuid.uuid4().hex[:8]}"
             assembly = GeoAssembly(f"asm_{uuid.uuid4().hex[:6]}", desc.filename if desc else filename)
             base_part_name = desc.filename.split('.')[0] if desc and desc.filename else "STEP_Part"
@@ -955,20 +955,27 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             products = re.findall(r"#(\d+)\s*=\s*PRODUCT\s*\(\s*'([^']*)'\s*,\s*'([^']*)'", header_sample)
             product_names = [p[1] or p[2] or f"Product_{p[0]}" for p in products]
             palette = ["#38bdf8", "#34d399", "#fbbf24", "#f43f5e", "#a78bfa", "#fb923c", "#06b6d4", "#ec4899"]
-            
-            exp_solid = TopExp_Explorer(shape, TopAbs_SOLID)
-            solid_shapes = []
-            while exp_solid.More():
-                solid_shapes.append(exp_solid.Current())
-                exp_solid.Next()
-            if not solid_shapes:
-                exp_shell = TopExp_Explorer(shape, TopAbs_SHELL)
-                while exp_shell.More():
-                    solid_shapes.append(exp_shell.Current())
-                    exp_shell.Next()
-            if not solid_shapes:
-                solid_shapes = [shape]
-            add_step("SOLID_UNPACKING", (time.perf_counter() - t0) * 1000, f"Identified {len(solid_shapes)} distinct solid bodies")
+
+            # Parallel process solids with adaptive deflection
+            processed_solids = []
+            if parallel_process_step_solids is not None:
+                processed_solids = parallel_process_step_solids(shape, scale=scale, worker_count=4)
+                add_step("PARALLEL_SOLID_PROCESSING", (time.perf_counter() - t0) * 1000, f"Parallel multi-worker execution finished for {len(processed_solids)} solids")
+            else:
+                exp_solid = TopExp_Explorer(shape, TopAbs_SOLID)
+                solid_shapes = []
+                while exp_solid.More():
+                    solid_shapes.append(exp_solid.Current())
+                    exp_solid.Next()
+                if not solid_shapes:
+                    solid_shapes = [shape]
+                for s_idx, s in enumerate(solid_shapes):
+                    try:
+                        BRepMesh_IncrementalMesh(s, 0.5, False, 0.5, True)
+                    except Exception:
+                        pass
+                    processed_solids.append({"solid_index": s_idx, "solid_shape": s, "planar_polygons": []})
+                add_step("SEQUENTIAL_SOLID_UNPACKING", (time.perf_counter() - t0) * 1000, f"Unpacked {len(processed_solids)} solids")
                 
             t0 = time.perf_counter()
             bodies = []
@@ -977,9 +984,11 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             total_triangles_extracted = 0
             total_planar_ngons_extracted = 0
             
-            for s_idx, sub_shape in enumerate(solid_shapes):
+            for s_item in processed_solids:
+                s_idx = s_item["solid_index"]
+                sub_shape = s_item["solid_shape"]
                 subpart_id = f"part_occt_{s_idx + 1}_{uuid.uuid4().hex[:6]}"
-                subpart_name = product_names[s_idx] if s_idx < len(product_names) else (f"{base_part_name} - Part {s_idx + 1}" if len(solid_shapes) > 1 else base_part_name)
+                subpart_name = product_names[s_idx] if s_idx < len(product_names) else (f"{base_part_name} - Part {s_idx + 1}" if len(processed_solids) > 1 else base_part_name)
                 part_color = extract_occt_shape_color(sub_shape, color_tool) or palette[s_idx % len(palette)]
                 
                 geo_part = GeoPart(subpart_id, subpart_name)
@@ -1048,7 +1057,8 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     exp_face.Next()
                     
                 final_v, final_t, diag = validate_and_compact_mesh(body_raw_verts, body_raw_tris)
-                if len(final_t) == 0: continue
+                if len(final_t) == 0 and not s_item.get("planar_polygons"):
+                    continue
                     
                 total_vertices_extracted += len(final_v)
                 total_triangles_extracted += len(final_t)
@@ -1075,13 +1085,13 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 pos_b64 = base64.b64encode(flat_positions.tobytes()).decode('ascii')
                 idx_b64 = base64.b64encode(flat_indices.tobytes()).decode('ascii')
 
-                ngon_loops = []
-                if extract_planar_ngons_from_occt is not None:
+                ngon_loops = s_item.get("planar_polygons") or []
+                if not ngon_loops and extract_planar_ngons_from_occt is not None:
                     try:
                         ngon_loops = extract_planar_ngons_from_occt(sub_shape, scale=scale, color=part_color)
-                        total_planar_ngons_extracted += len(ngon_loops)
                     except Exception:
                         pass
+                total_planar_ngons_extracted += len(ngon_loops)
 
                 cad_obj = {
                     "id": geo_part.id,
@@ -1200,6 +1210,17 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         entity_matches = entity_pattern.findall(text)
         entity_map: Dict[str, Tuple[str, str]] = {e[0]: (e[1], e[2]) for e in entity_matches}
         
+        # Extract Product metadata
+        prod_name = "STEP_Part"
+        material_name = "Steel"
+        for eid, (etype, eargs) in entity_map.items():
+            if etype == 'PRODUCT':
+                pm = re.search(r"'([^']*)'", eargs)
+                if pm: prod_name = pm.group(1)
+            elif etype == 'MATERIAL_DESIGNATION':
+                mm = re.search(r"'([^']*)'", eargs)
+                if mm: material_name = mm.group(1)
+
         cartesian_points: Dict[str, np.ndarray] = {}
         for eid, (etype, eargs) in entity_map.items():
             if etype == 'CARTESIAN_POINT':
@@ -1214,9 +1235,21 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         
         t0 = time.perf_counter()
         part_id = f"part_step_1_{uuid.uuid4().hex[:6]}"
-        geo_part = GeoPart(part_id, "STEP_Part")
+        geo_part = GeoPart(part_id, prod_name)
         assembly = GeoAssembly(f"asm_step_{uuid.uuid4().hex[:6]}", filename)
         
+        # Surface analytical recovery
+        surfaces_dict = {}
+        for eid, (etype, eargs) in entity_map.items():
+            if etype == 'CYLINDRICAL_SURFACE':
+                rad_m = re.search(r",\s*([\-+]?\d*\.?\d+(?:[eE][\-+]?\d+)?)\s*\)?$", eargs)
+                radius = float(rad_m.group(1)) * scale if rad_m else 25.0
+                surf = geo_part.add_surface(SurfaceType.CYLINDER, {"radius": radius})
+                surfaces_dict[eid] = surf
+            elif etype == 'PLANE':
+                surf = geo_part.add_surface(SurfaceType.PLANE, {"normal": [0.0, 0.0, 1.0], "origin": [0.0, 0.0, 0.0]})
+                surfaces_dict[eid] = surf
+
         global_verts = []
         global_tris = []
         stride = 4 if len(pt_list) % 4 == 0 and len(pt_list) >= 4 else 3
@@ -1242,8 +1275,8 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         add_step("CANONICAL_MESH_COMPACTION", (time.perf_counter() - t0) * 1000, f"Triangulated {len(final_t)} faces from {len(final_v)} vertices")
         
         cad_obj = {
-            "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": "STEP_Part",
-            "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
+            "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": prod_name,
+            "primitive_type": "solid_imported", "color": "#38bdf8", "material": material_name, "opacity": 1.0,
             "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
             "faces": body_faces, "brep": geo_part.to_dict(), "canonical_part": geo_part,
             "bounding_box": bbox, "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(body_faces)}
@@ -1378,8 +1411,18 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
             })
             
         assembly_tree = build_assembly_tree_from_canonical(assembly, is_multi_comp=len(components) > 1)
+        elapsed_time = round((time.perf_counter() - t_start) * 1000, 2)
         return {
-            "headers": {"format": "STL", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT, "diagnostics": {"total_raw_triangles": len(tri_indices), "components": len(components)}},
+            "headers": {
+                "format": "STL",
+                "filename": filename,
+                "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "performance": {"total_elapsed_ms": elapsed_time},
+                "diagnostics": {
+                    "total_raw_triangles": len(tri_indices),
+                    "components": len(components)
+                }
+            },
             "canonical_assembly": assembly.to_dict(),
             "objects": bodies,
             "assembly_tree": assembly_tree,
@@ -1570,8 +1613,10 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'
+': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'
+': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []

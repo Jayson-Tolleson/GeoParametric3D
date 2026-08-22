@@ -355,7 +355,11 @@ def parallel_process_step_solids(
                 results.append(res)
                 completed_count += 1
                 if progress_callback:
-                    progress_callback(completed_count, total_solids, f"Solid #{res['solid_index'] + 1} processed ({res['elapsed_ms']}ms)")
+                    pct = int((completed_count / total_solids) * 100)
+                    bar_len = 30
+                    filled = int(bar_len * completed_count // total_solids)
+                    bar_str = "=" * max(0, filled - 1) + (">" if filled < bar_len else "=") + "-" * (bar_len - filled)
+                    progress_callback(completed_count, total_solids, f"[{bar_str}] {pct}% ({completed_count}/{total_solids} solids processed)")
         results.sort(key=lambda r: r["solid_index"])
     else:
         for idx, s in enumerate(solids):
@@ -363,6 +367,10 @@ def parallel_process_step_solids(
             results.append(res)
             completed_count += 1
             if progress_callback:
-                progress_callback(completed_count, total_solids, f"Solid #{idx + 1} processed ({res['elapsed_ms']}ms)")
+                pct = int((completed_count / total_solids) * 100)
+                bar_len = 30
+                filled = int(bar_len * completed_count // total_solids)
+                bar_str = "=" * max(0, filled - 1) + (">" if filled < bar_len else "=") + "-" * (bar_len - filled)
+                progress_callback(completed_count, total_solids, f"[{bar_str}] {pct}% ({completed_count}/{total_solids} solids processed)")
 
     return results
