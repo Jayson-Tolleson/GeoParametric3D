@@ -769,8 +769,7 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.scale_to_canonical = 1000.0
         return desc
         
-    if (head_latin.startswith('#') or '
-v ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or 'f ' in head_latin):
+    if (head_latin.startswith('#') or '\nv ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or '\nf ' in head_latin):
         desc.format = "OBJ"
         desc.confidence = 0.95
         desc.has_assembly = True
