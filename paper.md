@@ -1,148 +1,130 @@
-# MASTER ARCHITECTURAL SPECIFICATION: MODULAR CAD SYSTEM REFACTORING, HIGH-THROUGHPUT PARALLEL B-REP INGESTION, AND N-GON TOPOLOGICAL ROUTING (V4.2)
+# MASTER ARCHITECTURAL SPECIFICATION: CAD SEMANTIC ENGINE, DERIVED REPRESENTATION SYSTEM & VIEWPORT ADAPTER (V4.3)
 
 **Author:** Principal CAD Systems Architect & Computational Geometry Governor  
 **System:** GeoParametric3D / CascadeCAD Production Workstation  
 **Target Ecosystem:** Google Maps 3D Web Component (`<gmp-map-3d>`) / Open CASCADE Technology (OCCT / OCP 7.9) / CadQuery 2.8 / Vertex AI Engine (`broadcasterfishmap`/`global`)  
-**Classification:** Core System Architecture, Numerical Invariance & Production Engineering  
-**Document Version:** 4.2.0 (High-Throughput Modular Architecture Release)  
+**Classification:** Core System Architecture, Semantic Invariance & Numerical Governance  
+**Document Version:** 4.3.0 (Semantic Engine & Viewport Adapter Architecture Release)  
 
 ---
 
-## 1. Executive Summary & Problem Diagnosis
+## 1. System Conception: The Tripartite Model
 
-During ingestion of complex multi-solid STEP assemblies (such as `jetdrive.step`, 9.2 MB, 61 discrete solids, 181,956 vertices), legacy single-threaded pipelines suffered from four catastrophic failure modes:
-1. **Severe Pipeline Latency (49.0s ingestion):** Sequential monolithic execution of `BRepMesh_IncrementalMesh` across compound solids on a single Python thread.
-2. **Viewport FPS Collapse (1.9–3.2 FPS):** CPU-bound 2D canvas polygon rasterization, per-frame heap allocations (>35,000 objects), and unindexed polygon arrays.
-3. **Planar Face Triangulation Artifacts:** Indiscriminate conversion of flat CAD faces (`GeomAbs_Plane`) into triangle soups, creating distracting visual diagonal seams across baseplates and structural flanges.
-4. **Dimensional Inflation Defect (136.8 ft vs. 8.0 ft Actual):** Raw millimeter dimensions (e.g., 1642.218 mm) were labeled as inches without applying the linear scale conversion factor (1/25.4), inflating the bounding box by 25.4x (136.85 ft vs. 5.38 ft intake collector, 8.0 ft total assembly).
+GeoParametric3D is fundamentally structured not as a monolithic CAD-renderer hybrid, but as three strictly decoupled subsystems:
 
-This specification establishes the refactored, modular v4.2 architecture that enforces sub-2.5s ingestion, sustained 60 FPS viewport rendering, zero internal diagonals on planar faces, and unit invariance.
-
----
-
-## 2. Decoupled Modular Architecture
-
-```
-+-----------------------------------------------------------------------------------------+
-|                                 GEOPARAMETRIC3D MODULAR CAD ARCHITECTURE                |
-+-----------------------------------------------------------------------------------------+
-
-    [ 1. INGESTION & FORMAT GATEWAY ]
-    ├── universal_byte_parser.py : Universal 3-Category Router (Binary, Mesh, Solid B-Rep)
-    ├── occ_kernel.py            : Parallel Multi-Solid OCCT Unpacker & Dual-Route Classifier
-    └── ngon_adapter.py          : Coplanar Wire Dissolver & N-Gon Loop Builder
-
-    [ 2. CANONICAL TRUTH & MATHEMATICAL KERNEL ]
-    ├── canonical_geometry.py    : Semantic B-Rep Schema (GeoAssembly -> GeoPart -> GeoSolid -> GeoFace)
-    ├── geometry.py              : Exact Signed Distance Fields (SDF) & Golden Reference Primitives
-    └── state.py                 : Authoritative State Store, Undo/Redo Snapshots, Spatial Metadata
-
-    [ 3. EXECUTION & AI REASONING GATEWAY ]
-    ├── command_engine.py        : Command Router, Parametric Mutations & CAD Aliases
-    ├── app.py                   : Quart ASGI Server & Vertex AI Integration (broadcasterfishmap/global)
-    └── config.py                : Storage & Workstation Configuration
-
-    [ 4. CLIENT RUNTIME & VIEWPORT ADAPTERS ]
-    ├── static/js/viewport.js    : Native <gmp-map-3d> Polygon Pooler, Trackball & Dual-Route Renderer
-    ├── static/js/wasm_kernel.js : Client-Side WebAssembly OCCT Bridge & Memory Slicer
-    ├── static/js/ui.js          : Sliding Panels, Inspector, Dynamic Action Bars, Telemetry Log
-    ├── static/js/toolbar.js     : 79 Interactive CAD Workstation Actions & Tool State
-    ├── static/js/share.js       : PNG Snapshot & 60-Second Video MP4 Capture
-    └── static/js/ai_assistant.js: Embedded Vertex AI Engineering Assistant Dock
+```text
+                             GEOPARAMETRIC3D
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        ▼                           ▼                           ▼
+┌───────────────────┐     ┌───────────────────┐     ┌───────────────────┐
+│   CAD SEMANTIC    │     │      DERIVED      │     │ VIEWPORT ADAPTER  │
+│      ENGINE       │ ──► │  REPRESENTATION   │ ──► │                   │
+│ (Authoritative    │     │      SYSTEM       │     │   <gmp-map-3d>    │
+│  B-Rep Truth)     │     │ (Transient Data)  │     │  (Presentation)   │
+└───────────────────┘     └───────────────────┘     └───────────────────┘
 ```
 
----
-
-## 3. Specialized Ingestion Across Three 3D Categories
-
-### 3.1 Category 1: Packed Binary Formats (XBF, GLTF/GLB)
-- **Zero-Copy Byte Parsing:** Ingests raw packed contiguous Float32 vertex arrays and Uint32 index buffers with an 8-byte header (uint32 vertex_count, uint32 index_count).
-- **Direct Geodetic Projection:** Applies geodetic local tangent plane conversion directly via vectorized NumPy / typed array operations.
-
-### 3.2 Category 2: Discretized Meshes (STL, OBJ, 3MF, PLY, DAE, WRL)
-- **C-Level Vectorized Decoding:** Vectorized `np.frombuffer` decoding for binary STL, eliminating line-by-line interpreter parsing.
-- **Spatial Quantization & Vertex Welding:** Coordinate hashing into a discrete grid (1e-4 mm tolerance) merges duplicate vertices, eliminates zero-area triangles, and reconstructs connected component manifolds.
-
-### 3.3 Category 3: Solid B-Rep Geometry (STEP AP203/AP214/AP242, FCStd)
-- **Multi-Solid Compound Unpacking:** Traverses top-level compounds into discrete `TopoDS_Solid` and `TopoDS_Shell` units.
-- **Parallel Worker Deflection:** Concurrently distributes deflection meshing and wire exploration across a multi-threaded worker pool.
-- **Dual-Route Surface Classification:** Routes planar faces to exact outer/inner wire loops and curved faces to adaptive deflection meshing.
+### 1.1 The Invariant Hierarchy
+1. **CAD Semantic Engine:** Authoritative geometric truth lives exclusively in exact B-Rep entities (`GeoAssembly` → `GeoInstance` → `GeoPart` → `GeoSolid` → `GeoShell` → `GeoFace` → `GeoLoop` → `GeoEdge` → `GeoVertex`) and exact mathematical definitions (Planes, Cylinders, Spheres, Cones, Toroids, NURBS, Signed Distance Fields).
+2. **Derived Representation System:** Render meshes, triangulations, and spatial bounding boxes are *derived, transient artifacts*. Render triangles NEVER become authoritative CAD geometry.
+3. **Viewport Adapter:** The renderer is an adapter over derived representations, delegating geospatial rendering, 3D tiles, and camera frustum management directly to the native Google Maps 3D Web Component (`<gmp-map-3d>`).
 
 ---
 
-## 4. Dual-Route Surface Classification & N-Gon Rendering
+## 2. Specialization: Planar Boundary Loops vs. Curved Surfaces
 
-```
-                             AUTHORITATIVE CAD SOLID
-                                        │
-                           [Surface Adaptor Classifier]
-                                        │
-                 ┌──────────────────────┴──────────────────────┐
-                 ▼ (GeomAbs_Plane)                             ▼ (Curved / Freeform)
-    [Planar Wire Extractor]                       [Adaptive Deflection Pool]
-    • Extract Outer Closed Wire                   • Multi-threaded BRepMesh
-    • Extract Inner Cutout Loops                  • Chordal & Angular Deflection
-    • Remove Triangulation Diagonals              • Normal Vector Preservation
-                 │                                             │
-                 ▼                                             ▼
-      <gmp-polygon-3d>                            Continuous Render Buffers
-  (Native Outer/Inner Rings)                      (GPU Depth Buffer Occluded)
+To eradicate visual triangulation diagonals across flat engineering faces without compromising smooth surface curvature:
+
+```text
+                            AUTHORITATIVE CAD FACE
+                                      │
+                     [Surface Classification Adaptor]
+                                      │
+             ┌────────────────────────┴────────────────────────┐
+             ▼ (GeomAbs_Plane)                                 ▼ (Curved / Freeform)
+┌─────────────────────────────┐                  ┌─────────────────────────────┐
+│ TOPOLOGICAL PLANAR BOUNDARY │                  │     ADAPTIVE DEFLECTION     │
+│            LOOPS            │                  │        TESSELLATION         │
+│ ├─ Outer Wire (CCW)         │                  │ ├─ BRepMesh Incremental     │
+│ └─ Inner Cutout Wires (CW)  │                  │ ├─ Chordal / Angular Defl.  │
+│ (Zero Internal Diagonals)   │                  │ └─ Analytic Vertex Normals  │
+└──────────────┬──────────────┘                  └──────────────┬──────────────┘
+               │                                                │
+               ▼                                                ▼
+      <gmp-polygon-3d>                             Continuous Render Buffers
+  (Native Outer/Inner Rings)                       (Hardware Depth-Occluded)
 ```
 
-### 4.1 Planar Face Handling (`GeomAbs_Plane`)
-1. Topological boundary wires are extracted using `BRepTools_WireExplorer` without invoking triangulators.
-2. Vertices along curved edges are sampled using chordal deflection tolerance (`GCPnts_QuasiUniformDeflection`).
-3. Rendered as native `<gmp-polygon-3d>` elements with `outerCoordinates` and optional `innerCoordinates` (cutout voids for alphabet topologies 'A', 'B', 'O').
-4. Results in zero visual diagonals across flat faces.
+### 2.1 Planar Boundary Loop Formulation (`GeomAbs_Plane`)
+Planar faces preserve boundary loop topology $(\mathcal{W}_{\text{outer}}, \mathcal{W}_{\text{inner}}^{(1)}, \dots, \mathcal{W}_{\text{inner}}^{(K)})$ directly from `BRepTools_WireExplorer`. Wires are sampled using chordal deflection for curved edge segments, but the interior planar face receives zero internal triangulation diagonals, rendering cleanly via `<gmp-polygon-3d>`.
 
-### 4.2 Curved Surface Handling (Cylinders, Cones, Spheres, Toroids, NURBS)
-1. Tessellated using multi-threaded adaptive incremental meshing.
-2. Preserves analytic surface normals and face-provenance tags for continuous shading and selection.
+### 2.2 Curved Surface Formulation
+Curved analytical surfaces (cylinders, spheres, cones, NURBS) are tessellated via adaptive deflection parameters (`linear_deflection = 0.2 mm`, `angular_deflection = 0.5 rad`), retaining explicit face provenance IDs (`data-face-id`) for unbroken selection hit-testing.
 
 ---
 
-## 5. Unit Invariance Laws & Physical Scale Standardization
+## 3. Parallel Ingestion Architecture & Worker Isolation
 
-### Law 1: Canonical Internal Millimeter Invariance
-All internal coordinates, vertex buffers, edge curves, and bounding boxes must reside in authoritative linear millimeters (`mm`):
+To ingest complex assemblies (such as `jetdrive.step`, 61 solids, 181,956 vertices) cleanly without race conditions or shared state corruption:
+
+```text
+                    STEP EXCHANGE BYTES
+                             │
+                     [STEP Reader (OCCT)]
+                             │
+                   Compound Shape Unpacker
+                             │
+             ┌───────────────┼───────────────┐
+             ▼               ▼               ▼
+       [Solid Task 1]  [Solid Task 2]  [Solid Task N]
+       (Immutable)     (Immutable)     (Immutable)
+             │               │               │
+             ▼               ▼               ▼
+      Worker Pool     Worker Pool     Worker Pool
+       (Derived        (Derived        (Derived
+        Buffers)        Buffers)        Buffers)
+             │               │               │
+             └───────────────┼───────────────┘
+                             ▼
+                 Canonical Assembly Aggregator
+                 (Single-Threaded State Commit)
+```
+
+### Invariant Rule for Parallel Execution:
+> **Workers process immutable geometric descriptors and produce derived representation buffers. Workers NEVER mutate shared canonical CAD state.**
+
+---
+
+## 4. Authoritative Unit Invariance & Physical Scale Standard
+
+### Law 1: Canonical Internal Millimeter Standard
+All internal coordinates, vertex buffers, edge boundaries, and spatial indices are stored in linear millimeters (`mm`):
 
 $$\mathcal{U}_{\text{internal}} \equiv \text{mm}$$
 
-### Law 2: Single Ingestion Conversion
-Geometry is scaled exactly once upon ingestion based on the detected source unit:
+### Law 2: Single Ingestion Scale Conversion
+Source CAD dimensions are scaled exactly once upon ingestion based on detected header units:
 
 $$\mathbf{p}_{\text{canonical}} = \mathbf{p}_{\text{source}} \times S_{\text{source} \to \text{mm}}$$
 
-### Law 3: Dynamic Presentation Conversion
-Imperial values displayed in the UI (e.g., Properties inspector, measurement alerts) are computed dynamically from canonical millimeters:
+### Law 3: Dynamic Presentation Formatting
+Imperial display values in inspectors and measurement dialogues are dynamically derived for presentation only:
 
-$$L_{\text{display\_inches}} = \frac{L_{\text{canonical\_mm}}}{25.4}$$
+$$L_{\text{inches}} = \frac{L_{\text{canonical\_mm}}}{25.4}$$
 
-This eliminates the 25.4x scale inflation defect, ensuring the `Collector` body reports its true 64.654 in x 20.000 in x 16.312 in dimensions within the 8.0 ft physical assembly.
-
----
-
-## 6. Telemetry & Performance Benchmarks
-
-```
-+--------------------------------------+--------------------------+-----------------------+-------------------+
-| Pipeline Stage / Metric              | Legacy Sequential Trace  | Refactored Modular v4 | Improvement Ratio |
-+--------------------------------------+--------------------------+-----------------------+-------------------+
-| 9.2 MB STEP Assembly (61 Solids)     | 49.0 s                   | 2.1 s                 | 23.3x Faster      |
-| Viewport Navigation Frame Rate       | 1.9–3.2 FPS (Canvas CPU) | 60.0 FPS (GPU Native) | 25.0x Gain        |
-| Planar Face Triangulation Diagonals  | Present (Visual Seams)   | 0 (Clean N-Gon Loop)  | 100% Elimination  |
-| Collector Flange Dimensions          | 1642.2 in (Bugged 136ft) | 64.65 in (8ft Assm)   | Exact Match       |
-| Network JSON Serialization Payload   | 48.2 MB                  | 1.8 MB (Contiguous)   | 26.7x Smaller     |
-| Selection Hit-Test Latency           | 450 ms (Triangle Scan)   | 0.8 ms (DOM Event)    | 562x Faster       |
-+--------------------------------------+--------------------------+-----------------------+-------------------+
-```
+*Defect Resolution:* Eliminates the 25.4x scale inflation bug (preventing the `Collector` flange from displaying as 136.8 ft instead of its actual 64.654 in ≈ 5.38 ft intake within the 8.0 ft assembly).
 
 ---
 
-## 7. Quality Gates & Non-Regressive Invariants
+## 5. Stable Semantic Identity System
 
-1. **B-Rep Primacy:** Exact CAD boundary representations (GeoAssembly, GeoPart, GeoSolid, GeoFace) remain the authoritative truth; render meshes are derived representations.
-2. **Clean Planar Wire Loops:** Planar faces mount directly to `<gmp-polygon-3d>` with discrete outer and inner boundary loops, eliminating diagonal triangulation artifacts.
-3. **Unit Invariance:** All mathematical operations operate in canonical millimeters, with presentation formatting handled in the UI layer.
-4. **Bidirectional Selection:** Selection events in the `<gmp-map-3d>` viewport map directly to assembly tree nodes and properties inspector elements through `data-object-id` and `data-face-id` tags.
-5. **Vertex AI Context Injection:** Prompts sent to Vertex AI (`broadcasterfishmap`/`global`) carry the active CAD scene topology, material properties, volume, and bounding metrics.
+Every entity across the CAD hierarchy maintains an invariant UUID:
+- `GeoAssembly` $\to$ Stable Assembly ID
+- `GeoInstance` $\to$ Lightweight transform matrix (4×4) + reference to `GeoPart`
+- `GeoPart` $\to$ Part definition ID
+- `GeoSolid` $\to$ Manifold Solid ID
+- `GeoShell` $\to$ Outer/Inner Shell ID
+- `GeoFace` $\to$ Exact Face ID (`data-face-id` in DOM)
+
+Selection in the `<gmp-map-3d>` viewport directly targets `data-face-id` or `data-object-id`, providing 1:1 bidirectional synchronization with the Workspace Assembly Tree, Properties Inspector, and Vertex AI Engineering Assistant.

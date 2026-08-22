@@ -1,141 +1,108 @@
-# TECHNICAL SPECIFICATION: HIGH-THROUGHPUT PARALLEL B-REP ROUTING & INGESTION ENGINE
+# TECHNICAL SPECIFICATION: HIGH-THROUGHPUT PARALLEL B-REP ROUTING & INGESTION ENGINE (V4.3)
 
 **Document ID:** GP3D-SPEC-PERF-001  
 **Classification:** Core CAD Kernel & Pipeline Specification  
 **Status:** Approved for Production Implementation  
-**Version:** 3.2.0  
+**Version:** 4.3.0  
 
 ---
 
-## 1. Problem Statement & Telemetry Audit
+## 1. Problem Statement & Architecture Redesign
 
-During ingestion of large multi-solid STEP assemblies (such as `jetdrive.step`, 9.2 MB, 61 discrete solids, 181,956 vertices), legacy single-threaded processing resulted in an unacceptable **49-second latency** and dropped the client viewport frame rate to **1.9–3.2 FPS**.
+During ingestion of large multi-solid STEP assemblies (such as `jetdrive.step`, 9.2 MB, 61 discrete solids, 181,956 vertices), legacy sequential processing produced bottleneck latencies and dropped client viewport performance.
 
-### 1.1 Ingestion Bottleneck Analysis
-1. **Monolithic Sequential Mesh Deflection (28.45s, 58.1%):** `BRepMesh_IncrementalMesh` was invoked on the top-level compound solid sequentially on a single thread with overly tight angular deflection parameters.
-2. **Serial Face-by-Face Wire Exploration (6.90s, 14.1%):** Traversing thousands of topological edges one by one in Python created substantial interpreter overhead.
-3. **JSON Serialization of 181,956 Geodetic Float Dicts (6.85s, 14.0%):** Serializing hundreds of thousands of small coordinate dictionaries (`{'lat': ..., 'lng': ..., 'altitude': ...}`) produced a bloated 48.2 MB JSON string.
-4. **Client-Side Parsing & Garbage Collection (1.80s, 3.6%):** Allocating 180k+ JavaScript objects on the main browser thread caused extensive GC pauses and viewport stutter.
-
-$$\text{Target Performance: } T_{\text{total}} \le 2.2\,\text{s} \quad (\text{Speedup: } 22.3\times)$$
+### 1.1 Acceptance Benchmarks (Performance Goals)
+- **Ingestion Target:** $T_{\text{ingestion}} \le 2.5\,\text{s}$
+- **Client Viewport Frame Rate:** Sustained $60.0\,\text{FPS}$ native rendering
+- **Planar Face Quality:** $100\%$ zero internal diagonals on planar boundaries
+- **Memory & Bandwidth:** Contiguous packed typed array buffers
 
 ---
 
-## 2. Multi-Solid Compound Unpacking & Worker Pool Architecture
+## 2. Immutable Work Units & Worker Scheduler Isolation
 
-Instead of applying deflection to the root compound, the engine unpacks the shape hierarchy into individual `TopoDS_Solid` or `TopoDS_Shell` instances and routes them to a parallel thread pool.
+To prevent threading conflicts and eliminate shared mutable state, the STEP shape compound is unpacked into discrete immutable work units:
 
-```
-                     +-------------------------------+
-                     |      INPUT STEP BYTES         |
-                     +---------------+---------------+
-                                     |
-                                     v
-                     +-------------------------------+
-                     |     STEPControl_Reader        |
-                     |    OneShape() -> Compound     |
-                     +---------------+---------------+
-                                     |
-                                     v
-                     +-------------------------------+
-                     | Multi-Solid Compound Explorer |
-                     | (TopExp_Explorer: TopAbs_SOLID)|
-                     +---------------+---------------+
-                                     |
-           +-------------------------+-------------------------+
-           |                         |                         |
-           v                         v                         v
-     [Solid Worker 1]          [Solid Worker 2]          [Solid Worker N]
-   - Adaptive Deflection     - Adaptive Deflection     - Adaptive Deflection
-   - Dual-Route Surface      - Dual-Route Surface      - Dual-Route Surface
-   - Wire Extraction         - Wire Extraction         - Wire Extraction
-           |                         |                         |
-           +-------------------------+-------------------------+
-                                     |
-                                     v
-                     +-------------------------------+
-                     |  Contiguous Zero-Copy Packing |
-                     |  Float32 Verts / Uint32 Idxs  |
-                     +---------------+---------------+
-                                     |
-                                     v
-                     +-------------------------------+
-                     | Client WebGL / Maps 3D Viewport|
-                     +-------------------------------+
+```text
+                     INPUT STEP BYTES
+                            │
+                    [STEP Parser (OCCT)]
+                            │
+              Topological Compound Unpacker
+                            │
+         ┌──────────────────┼──────────────────┐
+         ▼                  ▼                  ▼
+  [Immutable Solid A] [Immutable Solid B] [Immutable Solid N]
+         │                  │                  │
+         ▼                  ▼                  ▼
+   Worker Pool        Worker Pool        Worker Pool
+   (Deflection &      (Deflection &      (Deflection & 
+   Classification)    Classification)    Classification)
+         │                  │                  │
+         ▼                  ▼                  ▼
+   Derived Buffers    Derived Buffers    Derived Buffers
+         │                  │                  │
+         └──────────────────┼──────────────────┘
+                            ▼
+               Canonical Assembly Aggregator
+              (Single-Threaded State Commit)
 ```
 
-### 2.1 Parallel Solid Deflection Routine
+### 2.1 Parallel Execution Invariant
+> **Workers are strictly producers of derived representations (planar wire coordinates, deflection meshes, bounding boxes). Workers NEVER mutate the authoritative canonical state.**
+
+---
+
+## 3. Surface Classification Adaptor Routine
 
 ```python
-import concurrent.futures
-from typing import List, Dict, Any
-from OCP.TopExp import TopExp_Explorer
-from OCP.TopAbs import TopAbs_SOLID, TopAbs_SHELL
-from OCP.BRepMesh import BRepMesh_IncrementalMesh
-
-def parallel_process_step_solids(shape: Any, scale: float = 1.0, worker_count: int = 4) -> List[Dict[str, Any]]:
+def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
-    Unpacks compound solids and executes deflection, wire extraction, and
-    face classification concurrently across a thread pool.
+    Routes every TopoDS_Face into either:
+      - Planar boundary loops (GeomAbs_Plane, zero internal diagonals, outer & inner cutout loops)
+      - Curved analytical surfaces requiring adaptive chordal deflection.
     """
-    exp = TopExp_Explorer(shape, TopAbs_SOLID)
-    solids = []
-    while exp.More():
-        solids.append(exp.Current())
-        exp.Next()
-    if not solids:
-        exp_s = TopExp_Explorer(shape, TopAbs_SHELL)
-        while exp_s.More():
-            solids.append(exp_s.Current())
-            exp_s.Next()
-    if not solids:
-        solids = [shape]
+    planar_faces = []
+    curved_faces = []
+    explorer = TopExp_Explorer(shape, TopAbs_FACE)
+    face_idx = 0
 
-    def process_single_solid(sub_shape: Any, solid_idx: int) -> Dict[str, Any]:
-        linear_deflection = 0.2
-        angular_deflection = 0.5
+    while explorer.More():
+        face_idx += 1
+        occ_face = TopoDS_Face_Cast(explorer.Current())
         try:
-            BRepMesh_IncrementalMesh(sub_shape, linear_deflection, False, angular_deflection, True)
+            adaptor = BRepAdaptor_Surface(occ_face)
+            surface_type = adaptor.GetType()
         except Exception:
-            pass
-        
-        from occ_kernel import route_cad_faces
-        planar_polys, curved_faces = route_cad_faces(sub_shape, scale=scale, linear_deflection=linear_deflection)
-        return {
-            "solid_index": solid_idx,
-            "solid_shape": sub_shape,
-            "planar_polygons": planar_polys,
-            "curved_faces": curved_faces
-        }
+            surface_type = GeomAbs_Plane
 
-    results = []
-    if len(solids) > 1 and worker_count > 1:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
-            future_to_idx = {executor.submit(process_single_solid, s, idx): idx for idx, s in enumerate(solids)}
-            for fut in concurrent.futures.as_completed(future_to_idx):
-                results.append(fut.result())
-        results.sort(key=lambda r: r["solid_index"])
-    else:
-        for idx, s in enumerate(solids):
-            results.append(process_single_solid(s, idx))
-            
-    return results
+        if surface_type == GeomAbs_Plane:
+            wire_data = extract_clean_planar_wires(occ_face, scale=scale, linear_deflection=linear_deflection)
+            if wire_data.get("outer"):
+                planar_faces.append({
+                    "face_index": face_idx,
+                    "face_id": f"Face_Planar_{face_idx}",
+                    "surface_type": "Plane",
+                    "outer_coordinates": wire_data["outer"],
+                    "inner_coordinates": wire_data.get("inner", []),
+                    "vertex_count": len(wire_data["outer"]),
+                    "has_holes": len(wire_data.get("inner", [])) > 0
+                })
+        else:
+            curved_faces.append({
+                "face_index": face_idx,
+                "face_id": f"Face_Curved_{face_idx}",
+                "surface_type": str(surface_type)
+            })
+        explorer.Next()
+
+    return planar_faces, curved_faces
 ```
 
 ---
 
-## 3. Zero-Copy Contiguous Binary Buffer Serialization
+## 4. Zero-Copy Binary Buffer Packaging
 
-To bypass JSON stringification penalties, 3D coordinate and index buffers are packed into contiguous C-ordered typed arrays before network transmission:
-
-1. **Vertex Coordinates:** `Float32Array` containing interleaved $[X_1, Y_1, Z_1, X_2, Y_2, Z_2, \dots]$.
-2. **Triangle Indices:** `Uint32Array` containing index triples $[i_1, i_2, i_3, \dots]$.
-3. **Binary Packaging:** Endpoints serve raw `application/octet-stream` buffers prepended with an 8-byte header (`uint32 vertex_count`, `uint32 index_count`) or base64-encoded binary chunks.
-
-### 3.1 Network and Memory Comparison
-
-| Pipeline Stage | Legacy JSON Floats | Contiguous Binary Buffer | Improvement Factor |
-| :--- | :--- | :--- | :--- |
-| **Payload Size (181k Vertices)** | 48.2 MB | **1.8 MB** | **26.7x Reduction** |
-| **Serialization Time** | 6.85 s | **0.04 s** | **171x Faster** |
-| **Client Hydration Time** | 1.80 s | **0.01 s (Direct Buffer)** | **180x Faster** |
+1. Interleaved `Float32Array` vertex buffers $[X_1, Y_1, Z_1, X_2, Y_2, Z_2, \dots]$
+2. Packed `Uint32Array` index triples $[i_1, i_2, i_3, \dots]$
+3. Pre-allocated continuous memory transferred via `application/octet-stream` endpoint `/api/geometry/binary`.

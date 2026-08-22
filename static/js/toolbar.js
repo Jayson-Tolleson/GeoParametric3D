@@ -335,9 +335,13 @@ document.addEventListener('DOMContentLoaded', () => {
       Math.abs((bb.max?.[1] ?? 0) - (bb.min?.[1] ?? 0)),
       Math.abs((bb.max?.[2] ?? 0) - (bb.min?.[2] ?? 0))
     ];
-    const u = CADState.isImperial() ? 'in' : 'mm';
-    const conv = CADState.isImperial() ? 1 / 25.4 : 1;
-    alert(`MEASURE\n${sel.name}\nBounding size: ${dims.map(v => (v * conv).toFixed(3)).join(' × ')} ${u}\nVolume: ${(Number(sel.volume_cm3) || 0).toFixed(2)} cm³`);
+    const isImp = CADState.isImperial();
+    const unitStr = isImp ? 'in' : 'mm';
+    const scaleFactor = isImp ? (1.0 / 25.4) : 1.0;
+    const formattedDims = dims.map(v => (v * scaleFactor).toFixed(3)).join(' × ');
+    const volDisplay = (Number(sel.volume_cm3) || 0).toFixed(2);
+    
+    alert(`MEASURE\n${sel.name}\nBounding size: ${formattedDims} ${unitStr}\nVolume: ${volDisplay} cm³`);
   });
 
   bindBtn('btn-insp-mass', () => {

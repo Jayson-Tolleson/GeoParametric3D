@@ -172,6 +172,25 @@ except ImportError:
         _XCAF_AVAILABLE = False
 
 
+class BRepBody:
+    """Authoritative B-Rep Body representation."""
+    def __init__(self, body_id: str, name: str = "BRepBody", faces: Optional[List[Any]] = None, brep: Optional[Dict[str, Any]] = None):
+        self.id = body_id
+        self.name = name
+        self.faces = faces or []
+        self.brep = brep or {}
+        self.primitive_type = "solid_imported"
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "faces": self.faces,
+            "brep": self.brep,
+            "primitive_type": self.primitive_type
+        }
+
+
 def get_brep_triangulation(face, loc):
     if not _OCCT_AVAILABLE or face is None:
         return None
