@@ -31,7 +31,7 @@ EPSILON_NORMAL = 1e-6
 
 
 # ============================================================
-# 1. PIPELINE ERROR CLASSIFICATIONS (Section 24, 29)
+# 1. PIPELINE ERROR CLASSIFICATIONS
 # ============================================================
 
 class GeometryPipelineStage(str, enum.Enum):
@@ -64,7 +64,7 @@ class GeometryPipelineException(Exception):
 
 
 # ============================================================
-# 2. JSON/API BOUNDARY NORMALIZATION (Section 25)
+# 2. JSON/API BOUNDARY NORMALIZATION
 # ============================================================
 
 def sanitize_for_json(obj: Any) -> Any:
@@ -106,7 +106,7 @@ def sanitize_for_json(obj: Any) -> Any:
 
 
 # ============================================================
-# 3. CANONICAL TRANSFORMATIONS & INSTANCING (Sections 8, 9)
+# 3. CANONICAL TRANSFORMATIONS & INSTANCING
 # ============================================================
 
 class GeoTransform:
@@ -175,7 +175,7 @@ class GeoTransform:
 
 
 # ============================================================
-# 4. CANONICAL GEOMETRIC ENTITIES (Sections 4, 5, 6)
+# 4. CANONICAL GEOMETRIC ENTITIES
 # ============================================================
 
 class GeoVertex:
@@ -587,7 +587,7 @@ class GeoAssembly:
 
 
 # ============================================================
-# 5. ADAPTIVE TESSELLATION & LOD ENGINE (Sections 10, 11, 15)
+# 5. ADAPTIVE TESSELLATION & LOD ENGINE
 # ============================================================
 
 class LODLevel(int, enum.Enum):
@@ -595,6 +595,33 @@ class LODLevel(int, enum.Enum):
     LOW_LOD1 = 1
     MEDIUM_LOD2 = 2
     HIGH_LOD3 = 3
+
+
+class MeshPolicy:
+    """Configurable mesh policy abstraction governing tessellation deflection."""
+    def __init__(
+        self,
+        linear_deflection: float = 0.1,
+        angular_deflection_deg: float = 12.0,
+        minimum_edge_length: float = 0.01,
+        maximum_chord_error: float = 0.05,
+        quality_mode: str = "standard"
+    ):
+        self.linear_deflection = float(linear_deflection)
+        self.angular_deflection = math.radians(float(angular_deflection_deg))
+        self.angular_deflection_deg = float(angular_deflection_deg)
+        self.minimum_edge_length = float(minimum_edge_length)
+        self.maximum_chord_error = float(maximum_chord_error)
+        self.quality_mode = quality_mode
+
+    def to_dict(self) -> dict:
+        return {
+            "linear_deflection": self.linear_deflection,
+            "angular_deflection_deg": self.angular_deflection_deg,
+            "minimum_edge_length": self.minimum_edge_length,
+            "maximum_chord_error": self.maximum_chord_error,
+            "quality_mode": self.quality_mode
+        }
 
 
 class RenderMesh:
@@ -706,7 +733,6 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
                 area += 0.5 * np.linalg.norm(cross)
             if area < 1e-9 or not np.isfinite(area):
                 surface = part.surfaces.get(face.surface_id)
-                # Keep curved surface faces even if polygon projection is co-linear (e.g. seam edge loop)
                 if not surface or surface.surface_type == SurfaceType.PLANE:
                     invalid_fids.add(fid)
                     del part.faces[fid]
@@ -739,9 +765,15 @@ class AdaptiveTessellator:
     using curvature, feature size, and desired level-of-detail.
     Supports both exact planar polygons and smooth composite parametric surfaces.
     """
-    def __init__(self, chordal_tolerance: float = 0.05, angular_tolerance_deg: float = 12.0):
-        self.chordal_tolerance = float(chordal_tolerance)
-        self.angular_tolerance_deg = float(angular_tolerance_deg)
+    def __init__(self, chordal_tolerance: float = 0.05, angular_tolerance_deg: float = 12.0, policy: Optional[MeshPolicy] = None):
+        if policy is not None:
+            self.policy = policy
+            self.chordal_tolerance = policy.maximum_chord_error
+            self.angular_tolerance_deg = policy.angular_deflection_deg
+        else:
+            self.chordal_tolerance = float(chordal_tolerance)
+            self.angular_tolerance_deg = float(angular_tolerance_deg)
+            self.policy = MeshPolicy(angular_deflection_deg=angular_tolerance_deg, maximum_chord_error=chordal_tolerance)
 
     def tessellate_face(self, part: GeoPart, face: GeoFace, lod: LODLevel = LODLevel.HIGH_LOD3) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Tessellates a single GeoFace adaptively."""
@@ -860,7 +892,7 @@ class AdaptiveTessellator:
 
 
 # ============================================================
-# 6. RENDER REPRESENTATION SELECTION (Sections 13, 14, 27)
+# 6. RENDER REPRESENTATION SELECTION
 # ============================================================
 
 class NativeRenderRepresentationType(str, enum.Enum):

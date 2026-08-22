@@ -17,6 +17,7 @@ from canonical_geometry import (
     create_canonical_box_part,
     AdaptiveTessellator,
     LODLevel,
+    MeshPolicy,
     CANONICAL_INTERNAL_UNIT,
     sanitize_for_json,
     GeometryPipelineException
@@ -478,7 +479,7 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         auth_req = google.auth.transport.requests.Request()
         creds.refresh(auth_req)
         token = creds.token
-    except Exception as auth_err:
+    except Exception:
         token = os.environ.get("VERTEX_AI_BEARER_TOKEN") or None
 
     headers = {'Content-Type': 'application/json'}
