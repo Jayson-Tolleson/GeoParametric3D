@@ -1,12 +1,12 @@
 """
 GeoParametric3D OpenCASCADE (OCCT / OCP) Kernel & Parallel Dual-Route Extractor
-Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification:
+Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (V4.4.0):
   1. Exact B-Rep as authoritative geometric truth (GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace)
-  2. Adaptive deflection: balances curved surfaces to prevent over-tessellation while expanding planar angles
-  3. Arbitrary concave perimeter extraction ('L', 'T', 'E' brackets) without internal triangulation diagonals
-  4. Multiply-connected cutout void loop extraction ('A', 'B', 'O' alphabet genus topology)
-  5. Multi-solid compound unpacking with multi-worker ThreadPool execution & real-time telemetry
-  6. STEP linear unit scale factor detection & single ingestion conversion
+  2. Adaptive deflection: dynamic linear and angular deflection scaling to prevent over-tessellation while expanding planar angles
+  3. Complete solid face coverage: extracts both clean outer/inner N-Gon perimeter loops and complete watertight tessellation triangles (matching FreeCAD standard)
+  4. Concave perimeters ('L', 'T', 'E' brackets) and multiply-connected cutout holes ('A', 'B', 'O' genus topology)
+  5. Multi-solid compound unpacking with multi-worker ThreadPool execution and telemetry progress reporting
+  6. STEP linear unit scale factor detection & canonical internal linear millimeter normalization
 """
 
 from typing import List, Dict, Any, Tuple, Optional, Callable
@@ -124,7 +124,7 @@ def detect_step_units(header_text: str) -> Tuple[str, float]:
 def get_shape_bounding_diag(shape: Any) -> float:
     """Computes diagonal extent of TopoDS_Shape for adaptive deflection calculation."""
     if not _OCCT_AVAILABLE or shape is None:
-        return 300.0
+        return 304.8
     try:
         bbox = Bnd_Box()
         if hasattr(BRepBndLib, 'Add_s'):
@@ -134,12 +134,12 @@ def get_shape_bounding_diag(shape: Any) -> float:
         elif hasattr(BRepBndLib, 'add'):
             BRepBndLib.add(shape, bbox)
         else:
-            return 300.0
+            return 304.8
         xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
         diag = math.sqrt((xmax - xmin)**2 + (ymax - ymin)**2 + (zmax - zmin)**2)
         return max(1.0, float(diag))
     except Exception:
-        return 300.0
+        return 304.8
 
 
 def compute_optimal_deflection(diag_mm: float) -> Tuple[float, float]:
@@ -230,8 +230,9 @@ def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflect
 def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.5) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Classifies every TopoDS_Face into either:
-      - Planar N-Gon polygons (GeomAbs_Plane, zero internal diagonals, outer & inner cutout loops)
+      - Planar N-Gon polygons (GeomAbs_Plane, outer & inner cutout loops, zero internal diagonals)
       - Curved / freeform analytical surfaces requiring deflection tessellation.
+    Guarantees complete Face coverage so no solid surface is left unrendered.
     """
     if not _OCCT_AVAILABLE or shape is None:
         return [], []
@@ -244,6 +245,8 @@ def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0
     while explorer.More():
         face_idx += 1
         occ_face = TopoDS_Face_Cast(explorer.Current())
+        surface_type = GeomAbs_Plane
+        adaptor = None
         try:
             adaptor = BRepAdaptor_Surface(occ_face)
             surface_type = adaptor.GetType()
@@ -299,8 +302,8 @@ def parallel_process_step_solids(
     progress_callback: Optional[Callable[[int, int, str], None]] = None
 ) -> List[Dict[str, Any]]:
     """
-    Parallelizes multi-solid compound unpacking, shape classification, and mesh deflection
-    across a multi-threaded pool with granular progress step reporting.
+    Parallelizes multi-solid compound unpacking, shape classification, and adaptive mesh deflection
+    across a multi-threaded pool with real-time progress reporting.
     """
     if not _OCCT_AVAILABLE or shape is None:
         return []

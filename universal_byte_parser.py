@@ -32,7 +32,15 @@ from typing import List, Dict, Any, Optional, Tuple, Union, Set
 import numpy as np
 
 try:
-    from occ_kernel import route_cad_faces, extract_clean_planar_wires, parallel_process_step_solids, compute_optimal_deflection, get_shape_bounding_diag, detect_step_units as occ_detect_step_units, _OCCT_AVAILABLE as OCC_AVAIL
+    from occ_kernel import (
+        route_cad_faces,
+        extract_clean_planar_wires,
+        parallel_process_step_solids,
+        compute_optimal_deflection,
+        get_shape_bounding_diag,
+        detect_step_units as occ_detect_step_units,
+        _OCCT_AVAILABLE as OCC_AVAIL
+    )
 except ImportError:
     route_cad_faces = None
     extract_clean_planar_wires = None
@@ -1613,10 +1621,8 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'
-': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'
-': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
