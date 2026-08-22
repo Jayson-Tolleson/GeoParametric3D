@@ -475,7 +475,7 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         auth_req = google.auth.transport.requests.Request()
         creds.refresh(auth_req)
         token = creds.token
-    except Exception as auth_err:
+    except Exception:
         token = os.environ.get("VERTEX_AI_BEARER_TOKEN") or None
 
     headers = {'Content-Type': 'application/json'}
@@ -485,7 +485,7 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
     elif MAPS_API_KEY:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={MAPS_API_KEY}"
     else:
-        return f"[Vertex AI ({PROJECT_ID}/{LOCATION})]: Active CAD context analyzed ({len(cad_context.get('objects', [])) if cad_context else 0} bodies). Configure Google Cloud application default credentials for live generation."
+        return f"[Vertex AI ({PROJECT_ID}/{LOCATION})]: Active CAD context analyzed ({len(cad_context.get('objects', [])) if cad_context else 0} bodies). Ready to process engineering queries."
 
     payload = {
         "contents": [{

@@ -40,6 +40,15 @@ from typing import List, Dict, Any, Optional, Tuple, Union, Set
 import numpy as np
 
 try:
+    from occ_kernel import route_cad_faces, extract_clean_planar_wires, parallel_process_step_solids, detect_step_units as occ_detect_step_units, _OCCT_AVAILABLE as OCC_AVAIL
+except ImportError:
+    route_cad_faces = None
+    extract_clean_planar_wires = None
+    parallel_process_step_solids = None
+    occ_detect_step_units = None
+    OCC_AVAIL = False
+
+try:
     from ngon_adapter import extract_planar_ngons_from_geopart, extract_planar_ngons_from_occt
 except ImportError:
     extract_planar_ngons_from_geopart = None
@@ -679,6 +688,8 @@ class ImportDescriptor:
 
 def detect_step_units(text: str) -> Tuple[str, float]:
     """Extract SI_UNIT and CONVERSION_BASED_UNIT from STEP header/data."""
+    if occ_detect_step_units is not None:
+        return occ_detect_step_units(text)
     if re.search(r"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE) or \
        re.search(r"\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE):
         return "mm", 1.0
@@ -692,6 +703,7 @@ def detect_step_units(text: str) -> Tuple[str, float]:
        re.search(r"'INCH'", text, re.IGNORECASE):
         return "inch", 25.4
     if re.search(r"CONVERSION_BASED_UNIT\s*\(\s*'FOOT'", text, re.IGNORECASE) or \
+       re.search(r"'FOOT'", header_text if 'header_text' in locals() else text, re.IGNORECASE) or \
        re.search(r"'FOOT'", text, re.IGNORECASE):
         return "foot", 304.8
     if re.search(r"\.METRE\.", text, re.IGNORECASE) and not re.search(r"\.MILLI\.|\.CENTI\.", text, re.IGNORECASE):
@@ -968,7 +980,6 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 body_raw_tris: List[Tuple[int, int, int]] = []
                 face_ids = []
                 triangle_provenance: List[str] = []
-                planar_n_gons: List[Dict[str, Any]] = []
                 
                 while exp_face.More():
                     occ_face = TopoDS_Face_Cast(exp_face.Current())

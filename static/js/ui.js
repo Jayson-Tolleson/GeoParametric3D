@@ -713,6 +713,9 @@ export class UIController {
     const propColorHex = document.getElementById('prop-color-hex');
     const propOpacity = document.getElementById('prop-opacity');
     const opacityVal = document.getElementById('opacity-val');
+    const btnDelete = document.getElementById('btn-delete-selected');
+    const btnHide = document.getElementById('btn-hide-selected');
+    const btnApplyParameters = document.getElementById('btn-apply-parameters');
 
     if (propName) propName.value = sel.name || '';
     if (propMaterial) propMaterial.value = sel.material || 'Steel';

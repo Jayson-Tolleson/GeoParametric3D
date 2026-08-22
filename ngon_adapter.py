@@ -42,7 +42,7 @@ def extract_planar_ngons_from_occt(shape: Any, scale: float = 1.0, color: str = 
                     "has_holes": pf.get("has_holes", False)
                 })
             return ngon_loops
-        except Exception as e:
+        except Exception:
             pass
             
     return []
@@ -67,6 +67,6 @@ def extract_planar_ngons_from_geopart(mesh_data: Any, color: str = "#38bdf8") ->
                     ],
                     "inner": []
                 })
-    except Exception as e:
+    except Exception:
         pass
     return loops
