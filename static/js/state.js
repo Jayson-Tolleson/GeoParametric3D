@@ -48,11 +48,10 @@ class StateStore {
   constructor() {
     const savedUuid = localStorage.getItem('cascadecad-active-uuid') || null;
     const savedTheme = localStorage.getItem('cascadecad-theme') || 'night';
-    const savedUnits = localStorage.getItem('cascadecad-units') || 'mm';
+    const savedUnits = localStorage.getItem('cascadecad-units') || 'in';
     const savedGrid = localStorage.getItem('cascadecad-show-grid') !== 'false';
     const savedAxes = localStorage.getItem('cascadecad-show-axes') !== 'false';
     const savedCsnap = localStorage.getItem('cascadecad-csnap') !== 'false';
-    const savedInfinite = localStorage.getItem('cascadecad-infinite-canvas') !== 'false';
 
     this.arrayBufferCache = new Map();
 
@@ -78,8 +77,7 @@ class StateStore {
         theme: savedTheme,
         showGrid: savedGrid,
         showAxes: savedAxes,
-        csnap: savedCsnap,
-        infiniteCanvas: savedInfinite
+        csnap: savedCsnap
       },
       camera: {
         heading: 30,
@@ -344,7 +342,6 @@ class StateStore {
     if (prefs.showGrid !== undefined) localStorage.setItem('cascadecad-show-grid', prefs.showGrid.toString());
     if (prefs.showAxes !== undefined) localStorage.setItem('cascadecad-show-axes', prefs.showAxes.toString());
     if (prefs.csnap !== undefined) localStorage.setItem('cascadecad-csnap', prefs.csnap.toString());
-    if (prefs.infiniteCanvas !== undefined) localStorage.setItem('cascadecad-infinite-canvas', prefs.infiniteCanvas.toString());
     this.notify();
   }
 

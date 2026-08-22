@@ -71,7 +71,6 @@ export class UIController {
     const chkGrid = document.getElementById('pref-toggle-grid');
     const chkAxes = document.getElementById('pref-toggle-axes');
     const chkCsnap = document.getElementById('pref-toggle-csnap');
-    const chkInfinite = document.getElementById('pref-toggle-infinite');
     const sessionUuidInp = document.getElementById('pref-session-uuid');
 
     const prefs = CADState.state.preferences;
@@ -80,7 +79,6 @@ export class UIController {
     if (chkGrid) chkGrid.checked = prefs.showGrid !== false;
     if (chkAxes) chkAxes.checked = prefs.showAxes !== false;
     if (chkCsnap) chkCsnap.checked = prefs.csnap !== false;
-    if (chkInfinite) chkInfinite.checked = prefs.infiniteCanvas !== false;
     if (sessionUuidInp) sessionUuidInp.value = CADState.state.projectId || 'None';
 
     modal.classList.remove('hidden');
@@ -104,22 +102,19 @@ export class UIController {
         const chkGrid = document.getElementById('pref-toggle-grid');
         const chkAxes = document.getElementById('pref-toggle-axes');
         const chkCsnap = document.getElementById('pref-toggle-csnap');
-        const chkInfinite = document.getElementById('pref-toggle-infinite');
 
         const themeVal = themeSel ? themeSel.value : 'night';
         const unitVal = unitSel && unitSel.value === 'imperial' ? 'in' : 'mm';
         const gridVal = chkGrid ? chkGrid.checked : true;
         const axesVal = chkAxes ? chkAxes.checked : true;
         const csnapVal = chkCsnap ? chkCsnap.checked : true;
-        const infiniteVal = chkInfinite ? chkInfinite.checked : true;
 
         CADState.setPreferences({
           theme: themeVal,
           units: unitVal,
           showGrid: gridVal,
           showAxes: axesVal,
-          csnap: csnapVal,
-          infiniteCanvas: infiniteVal
+          csnap: csnapVal
         });
         applyTheme(themeVal);
         this.logServerEvent(`[PREFERENCES] Saved (Theme: ${themeVal}, Units: ${unitVal}, Csnap: ${csnapVal})`);
