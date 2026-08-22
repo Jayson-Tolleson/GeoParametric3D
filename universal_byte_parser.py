@@ -294,7 +294,7 @@ def convert_value(val: float, source_unit: str, target_unit: str = CANONICAL_INT
 
 def rgb_to_hex(r: Union[int, float], g: Union[int, float], b: Union[int, float]) -> str:
     if isinstance(r, float) and r <= 1.0 and g <= 1.0 and b <= 1.0:
-        r, g, b = int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
+        r, g, b = int(round(r * 255)), int(round(g * 255)), int(round(g * 255))
     r = max(0, min(255, int(r)))
     g = max(0, min(255, int(g)))
     b = max(0, min(255, int(b)))
@@ -1571,10 +1571,8 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'
-': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'
-': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
@@ -1806,8 +1804,7 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "
-".join(step_lines).encode('utf-8')
+    return "\n".join(step_lines).encode('utf-8')
 
 
 # ============================================================
