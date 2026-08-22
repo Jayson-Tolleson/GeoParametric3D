@@ -1,17 +1,18 @@
 """
-GeoParametric3D OpenCASCADE (OCCT / OCP) Kernel & Dual-Route Surface Extractor
-Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (Phases 2 & 3):
-  1. Exact B-Rep as authoritative geometric truth (GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace -> GeoSurface / GeoLoop)
-  2. Dual-route classification: GeomAbs_Plane -> Planar N-Gon Loops vs Non-Planar -> Adaptive Deflection Tessellator
+GeoParametric3D OpenCASCADE (OCCT / OCP) Kernel & Parallel Dual-Route Extractor
+Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification:
+  1. Exact B-Rep as authoritative geometric truth (GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace)
+  2. Adaptive deflection: balances curved surfaces to prevent over-tessellation while expanding planar angles
   3. Arbitrary concave perimeter extraction ('L', 'T', 'E' brackets) without internal triangulation diagonals
   4. Multiply-connected cutout void loop extraction ('A', 'B', 'O' alphabet genus topology)
-  5. Multi-solid compound unpacking and parallel batch deflection support
-  6. STEP inch/mm unit scale factor detection & single ingestion conversion (8ft assembly verification)
+  5. Multi-solid compound unpacking with multi-worker ThreadPool execution & real-time telemetry
+  6. STEP linear unit scale factor detection & single ingestion conversion
 """
 
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Callable
 import math
 import re
+import time
 import concurrent.futures
 import numpy as np
 
@@ -31,6 +32,8 @@ try:
     )
     from OCP.BRepMesh import BRepMesh_IncrementalMesh
     from OCP.TopLoc import TopLoc_Location
+    from OCP.Bnd import Bnd_Box
+    from OCP.BRepBndLib import BRepBndLib
     _OCCT_AVAILABLE = True
     TopoDS_Face_Cast = getattr(TopoDS, "Face_s", getattr(TopoDS, "Face", None))
     TopoDS_Wire_Cast = getattr(TopoDS, "Wire_s", getattr(TopoDS, "Wire", None))
@@ -53,6 +56,8 @@ except ImportError:
         )
         from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
         from OCC.Core.TopLoc import TopLoc_Location
+        from OCC.Core.Bnd import Bnd_Box
+        from OCC.Core.BRepBndLib import brepbndlib as BRepBndLib
         _OCCT_AVAILABLE = True
         TopoDS_Face_Cast = getattr(TopoDS, "Face", None)
         TopoDS_Wire_Cast = getattr(TopoDS, "Wire", None)
@@ -93,7 +98,6 @@ def get_brep_pnt(vert: Any) -> Any:
 def detect_step_units(header_text: str) -> Tuple[str, float]:
     """
     Inspects STEP exchange structure to resolve source unit and linear scale factor to canonical mm.
-    Enforces Law 1 & Law 2 of GP3D-SPEC-UNIT-003, preventing scaling distortions (e.g. 136ft vs 8ft).
     """
     if not header_text:
         return "mm", 1.0
@@ -116,12 +120,53 @@ def detect_step_units(header_text: str) -> Tuple[str, float]:
         return "meter", 1000.0
     return "mm", 1.0
 
-def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Dict[str, Any]:
+
+def get_shape_bounding_diag(shape: Any) -> float:
+    """Computes diagonal extent of TopoDS_Shape for adaptive deflection calculation."""
+    if not _OCCT_AVAILABLE or shape is None:
+        return 300.0
+    try:
+        bbox = Bnd_Box()
+        if hasattr(BRepBndLib, 'Add_s'):
+            BRepBndLib.Add_s(shape, bbox)
+        elif hasattr(BRepBndLib, 'Add'):
+            BRepBndLib.Add(shape, bbox)
+        elif hasattr(BRepBndLib, 'add'):
+            BRepBndLib.add(shape, bbox)
+        else:
+            return 300.0
+        xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
+        diag = math.sqrt((xmax - xmin)**2 + (ymax - ymin)**2 + (zmax - zmin)**2)
+        return max(1.0, float(diag))
+    except Exception:
+        return 300.0
+
+
+def compute_optimal_deflection(diag_mm: float) -> Tuple[float, float]:
+    """
+    Calculates balanced linear & angular deflection to prevent polygon explosion on rounded surfaces
+    while preserving crisp geometric angles on planar and structural boundaries.
+    """
+    if diag_mm > 5000.0:
+        linear = max(2.5, diag_mm * 0.003)
+        angular = 0.65
+    elif diag_mm > 1000.0:
+        linear = max(1.0, diag_mm * 0.002)
+        angular = 0.52
+    elif diag_mm > 200.0:
+        linear = max(0.5, diag_mm * 0.002)
+        angular = 0.45
+    else:
+        linear = max(0.2, diag_mm * 0.003)
+        angular = 0.40
+    return float(linear), float(angular)
+
+
+def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflection: float = 0.5) -> Dict[str, Any]:
     """
     Extracts outer and inner boundary loops from an authoritative TopoDS_Face.
     Preserves exact topological winding, eliminates internal meshing diagonals,
-    and discretizes curved edge segments under strict chordal tolerance.
-    Handles multiply-connected void topologies ('A', 'B', 'O' alphabet cutouts).
+    and discretizes curved edge segments under controlled chordal deflection.
     """
     if not _OCCT_AVAILABLE or occ_face is None:
         return {"outer": [], "inner": []}
@@ -136,14 +181,13 @@ def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflect
 
         while wire_explorer.More():
             occ_edge = wire_explorer.Current()
-            curve_adaptor = BRepAdaptor_Curve(occ_edge)
-
-            # Adaptive chordal sampling for curved edge boundaries
             try:
+                curve_adaptor = BRepAdaptor_Curve(occ_edge)
                 sampler = GCPnts_QuasiUniformDeflection(curve_adaptor, linear_deflection)
                 if sampler.IsDone() and sampler.NbPoints() > 1:
                     nb_pts = sampler.NbPoints()
-                    for i in range(1, nb_pts + 1):
+                    stride = max(1, nb_pts // 48)
+                    for i in range(1, nb_pts + 1, stride):
                         pnt = sampler.Value(i)
                         loop_points.append([
                             float(pnt.X() * scale),
@@ -158,24 +202,15 @@ def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflect
                     loop_points.append([float(p_start.X() * scale), float(p_start.Y() * scale), float(p_start.Z() * scale)])
                     loop_points.append([float(p_end.X() * scale), float(p_end.Y() * scale), float(p_end.Z() * scale)])
             except Exception:
-                try:
-                    u_start = curve_adaptor.FirstParameter()
-                    u_end = curve_adaptor.LastParameter()
-                    p_start = curve_adaptor.Value(u_start)
-                    p_end = curve_adaptor.Value(u_end)
-                    loop_points.append([float(p_start.X() * scale), float(p_start.Y() * scale), float(p_start.Z() * scale)])
-                    loop_points.append([float(p_end.X() * scale), float(p_end.Y() * scale), float(p_end.Z() * scale)])
-                except Exception:
-                    pass
+                pass
 
             wire_explorer.Next()
 
-        # Numeric welding: eliminate duplicate adjacent vertices (distance < 1e-6 mm)
         clean_loop: List[List[float]] = []
         for pt in loop_points:
-            if not clean_loop or np.linalg.norm(np.array(pt) - np.array(clean_loop[-1])) > 1e-6:
+            if not clean_loop or np.linalg.norm(np.array(pt) - np.array(clean_loop[-1])) > 1e-4:
                 clean_loop.append(pt)
-        if len(clean_loop) >= 2 and np.linalg.norm(np.array(clean_loop[0]) - np.array(clean_loop[-1])) < 1e-6:
+        if len(clean_loop) >= 2 and np.linalg.norm(np.array(clean_loop[0]) - np.array(clean_loop[-1])) < 1e-4:
             clean_loop.pop()
 
         if len(clean_loop) >= 3:
@@ -191,11 +226,12 @@ def extract_clean_planar_wires(occ_face: Any, scale: float = 1.0, linear_deflect
         "inner": loops[1:] if len(loops) > 1 else []
     }
 
-def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.05) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+
+def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.5) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Classifies every TopoDS_Face into either:
       - Planar N-Gon polygons (GeomAbs_Plane, zero internal diagonals, outer & inner cutout loops)
-      - Curved / freeform analytical surfaces requiring adaptive deflection tessellation.
+      - Curved / freeform analytical surfaces requiring deflection tessellation.
     """
     if not _OCCT_AVAILABLE or shape is None:
         return [], []
@@ -255,10 +291,16 @@ def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0
 
     return planar_faces, curved_faces
 
-def parallel_process_step_solids(shape: Any, scale: float = 1.0, worker_count: int = 4) -> List[Dict[str, Any]]:
+
+def parallel_process_step_solids(
+    shape: Any,
+    scale: float = 1.0,
+    worker_count: int = 4,
+    progress_callback: Optional[Callable[[int, int, str], None]] = None
+) -> List[Dict[str, Any]]:
     """
-    Parallelizes multi-solid compound unpacking, shape classification,
-    and deflection across a worker pool for sub-2.5s large assembly ingestion.
+    Parallelizes multi-solid compound unpacking, shape classification, and mesh deflection
+    across a multi-threaded pool with granular progress step reporting.
     """
     if not _OCCT_AVAILABLE or shape is None:
         return []
@@ -278,31 +320,49 @@ def parallel_process_step_solids(shape: Any, scale: float = 1.0, worker_count: i
     if not solids:
         solids = [shape]
 
+    total_solids = len(solids)
+
     def process_single_solid(sub_shape: Any, solid_idx: int) -> Dict[str, Any]:
-        linear_deflection = 0.2
-        angular_deflection = 0.5
+        t_solid_start = time.perf_counter()
+        diag = get_shape_bounding_diag(sub_shape)
+        lin_def, ang_def = compute_optimal_deflection(diag)
         try:
-            BRepMesh_IncrementalMesh(sub_shape, linear_deflection, False, angular_deflection, True)
+            BRepMesh_IncrementalMesh(sub_shape, lin_def, False, ang_def, True)
         except Exception:
             pass
 
-        planar_polys, curved_faces = route_cad_faces(sub_shape, scale=scale, linear_deflection=linear_deflection)
+        planar_polys, curved_faces = route_cad_faces(sub_shape, scale=scale, linear_deflection=lin_def)
+        elapsed_ms = (time.perf_counter() - t_solid_start) * 1000.0
         return {
             "solid_index": solid_idx,
             "solid_shape": sub_shape,
             "planar_polygons": planar_polys,
-            "curved_faces": curved_faces
+            "curved_faces": curved_faces,
+            "bounding_diag": diag,
+            "linear_deflection": lin_def,
+            "angular_deflection": ang_def,
+            "elapsed_ms": round(elapsed_ms, 1)
         }
 
     results: List[Dict[str, Any]] = []
-    if len(solids) > 1 and worker_count > 1:
+    completed_count = 0
+
+    if total_solids > 1 and worker_count > 1:
         with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
             future_to_idx = {executor.submit(process_single_solid, s, idx): idx for idx, s in enumerate(solids)}
             for fut in concurrent.futures.as_completed(future_to_idx):
-                results.append(fut.result())
+                res = fut.result()
+                results.append(res)
+                completed_count += 1
+                if progress_callback:
+                    progress_callback(completed_count, total_solids, f"Solid #{res['solid_index'] + 1} processed ({res['elapsed_ms']}ms)")
         results.sort(key=lambda r: r["solid_index"])
     else:
         for idx, s in enumerate(solids):
-            results.append(process_single_solid(s, idx))
+            res = process_single_solid(s, idx)
+            results.append(res)
+            completed_count += 1
+            if progress_callback:
+                progress_callback(completed_count, total_solids, f"Solid #{idx + 1} processed ({res['elapsed_ms']}ms)")
 
     return results

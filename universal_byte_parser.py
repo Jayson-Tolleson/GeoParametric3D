@@ -708,7 +708,6 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
     head_utf8 = head1k.decode('utf-8', errors='ignore')
     magic4 = content_bytes[:4]
     
-    # 1. BINARY CONTAINERS
     if magic4 in (b'XBF1', b'XBF2', b'XBFA', b'BXBF') or ext == 'xbf':
         desc.format = "XBF"
         desc.confidence = 1.0
@@ -725,7 +724,6 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.scale_to_canonical = 1000.0
         return desc
 
-    # 2. SOLID B-REP FORMATS
     if magic4.startswith(b'PK') and (ext == 'fcstd' or b'Document.xml' in content_bytes[:4096]):
         desc.format = "FCSTD"
         desc.confidence = 1.0
@@ -756,7 +754,6 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.scale_to_canonical = detected_scale
         return desc
 
-    # 3. MESH FORMATS
     if magic4.startswith(b'PK') and (ext == '3mf' or b'3D/3dmodel.model' in content_bytes[:4096]):
         desc.format = "3MF"
         desc.confidence = 0.98
@@ -772,7 +769,7 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.scale_to_canonical = 1000.0
         return desc
         
-    if (head_latin.startswith('#') or '\
+    if (head_latin.startswith('#') or '
 v ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or 'f ' in head_latin):
         desc.format = "OBJ"
         desc.confidence = 0.95
@@ -946,7 +943,6 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             add_step("UNIT_RESOLUTION", (time.perf_counter() - t0) * 1000, f"Unit: {source_u} (Scale factor: {scale})")
 
             t0 = time.perf_counter()
-            # Adaptive linear deflection scaled to component size
             linear_deflection = 0.5
             angular_deflection = 0.5
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
@@ -1575,9 +1571,9 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\
+        if content_bytes[header_end_idx:header_end_idx+1] == b'
 ': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'
 ': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
@@ -1810,7 +1806,7 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "\
+    return "
 ".join(step_lines).encode('utf-8')
 
 
@@ -1827,7 +1823,6 @@ def parse_universal_model(content_bytes: bytes, filename: str = "model.stl") -> 
     descriptor = detect_format_descriptor(content_bytes, filename)
     fmt = descriptor.format
     
-    # Fast OCCT multi-solid parallel route if available for STEP
     if fmt == 'STEP' and _OCCT_AVAILABLE:
         res = parse_step_with_occt(content_bytes, filename, descriptor)
         if res and res.get('objects'): return res

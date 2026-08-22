@@ -1,3 +1,34 @@
+
+
+
+- lets add more debugging (steps) and printouts to telemetry concerning the import of files and the pipleline steps as we traverse them
+	--we want telemtry.log to be updated with how many parallel processes or pools are completing  with small upload bars
+- step does not render in current version of GeoParametric3D, very slow load too demanding and then no rendering
+as seen in newest image -by screenshot date - 
+	--we have a limited display for real faces in model(s)
+	--angles are not expanded on enough to allow drawing
+	--incontrast the rounded space is almost too well done 
+  -little bit demanding too...the rounded space too
+- add parallel/pooled processing improvements to the pipeline...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # MASTER ARCHITECTURAL SPECIFICATION: CAD SEMANTIC ENGINE, DERIVED REPRESENTATION SYSTEM & VIEWPORT ADAPTER (V4.3.1)
 
 **Author:** Principal CAD Systems Architect & Computational Geometry Governor  
