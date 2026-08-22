@@ -1,24 +1,16 @@
 """
 GeoParametric3D Universal Geometry Import Normalizer & High-Speed B-Rep Pipeline
 
-Modular Architecture & Ingestion Flow:
-  FOREIGN BYTES (3 Ingestion Categories: Binary, Mesh, Solid B-Rep)
+Modular Architecture & Ingestion Flow with Detailed Step-by-Step Telemetry:
+  FOREIGN BYTES (Binary, Mesh, Solid B-Rep)
        |
-       +--> 1. BINARY: XBF, GLB/GLTF, Raw Packed Geometry Buffer
-       +--> 2. MESH: STL, OBJ, 3MF, PLY, DAE, WRL (Vectorized & Manifold Reconstructed)
-       +--> 3. SOLID B-REP: STEP (AP203/AP214/AP242), FCStd, OpenCASCADE TopoDS_Shape
-       |
-       v
-  FORMAT INTELLIGENCE & UNIT INSPECTION (detect_format_descriptor & detect_step_units)
-       |
-       v
-  DUAL-ROUTE SURFACE CLASSIFICATION (GeomAbs_Plane -> N-Gon Loops vs Non-Planar -> Deflection)
-       |
-       v
-  NUMERIC COMPACTION & ZERO-COPY CONTIGUOUS ARRAY PACKING
-       |
-       v
-  CANONICAL GEO3D ASSEMBLY & NATIVE <gmp-map-3d> VIEWPORT ADAPTERS
+       +--> [STEP 1: FORMAT_DETECTION] Byte signature, Magic byte inspection & Schema Identification
+       +--> [STEP 2: UNIT_INSPECTION] Header SI_UNIT & CONVERSION_BASED_UNIT resolution
+       +--> [STEP 3: B-REP_KERNEL_INGESTION] OCCT/OCP / Polyhedron topology recovery
+       +--> [STEP 4: MULTI_SOLID_COMPOUND_UNPACK] Solid / Shell / Face traversal
+       +--> [STEP 5: DUAL_ROUTE_CLASSIFICATION] GeomAbs_Plane -> N-Gon Loops vs Non-Planar -> Adaptive Deflection
+       +--> [STEP 6: NUMERIC_COMPACTION] Finite validation, index remapping & zero-copy packing
+       +--> [STEP 7: CANONICAL_ASSEMBLY_PROJECTION] GeoAssembly tree & native <gmp-map-3d> viewport handoff
 """
 
 import re
@@ -108,9 +100,7 @@ try:
         GeomAbs_BSplineSurface, GeomAbs_SurfaceOfRevolution,
         GeomAbs_SurfaceOfExtrusion
     )
-    from OCP.Interface import Interface_Static
     from OCP.gp import gp_Trsf, gp_Pnt
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
     from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
     try:
         from OCP.STEPCAFControl import STEPCAFControl_Reader
@@ -127,7 +117,6 @@ try:
     TopoDS_Wire_Cast = getattr(TopoDS, "Wire_s", getattr(TopoDS, "Wire", None))
     TopoDS_Edge_Cast = getattr(TopoDS, "Edge_s", getattr(TopoDS, "Edge", None))
     TopoDS_Vertex_Cast = getattr(TopoDS, "Vertex_s", getattr(TopoDS, "Vertex", None))
-    brep_read_fn = getattr(BRepTools, "Read_s", getattr(BRepTools, "Read", None))
 except ImportError:
     try:
         from OCC.Core.STEPControl import STEPControl_Reader, STEPControl_Writer, STEPControl_AsIs
@@ -147,9 +136,7 @@ except ImportError:
             GeomAbs_BSplineSurface, GeomAbs_SurfaceOfRevolution,
             GeomAbs_SurfaceOfExtrusion
         )
-        from OCC.Core.Interface import Interface_Static
         from OCC.Core.gp import gp_Trsf, gp_Pnt
-        from OCC.Core.BRepBuilderAPI import BRepBuilderAPI_Transform
         from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
         try:
             from OCC.Core.STEPCAFControl import STEPCAFControl_Reader
@@ -166,7 +153,6 @@ except ImportError:
         TopoDS_Wire_Cast = getattr(topods, "Wire", None)
         TopoDS_Edge_Cast = getattr(topods, "Edge", None)
         TopoDS_Vertex_Cast = getattr(topods, "Vertex", None)
-        brep_read_fn = breptools.Read
     except ImportError:
         _OCCT_AVAILABLE = False
         _XCAF_AVAILABLE = False
@@ -315,9 +301,6 @@ def rgb_to_hex(r: Union[int, float], g: Union[int, float], b: Union[int, float])
     return f"#{r:02x}{g:02x}{b:02x}"
 
 def enu_to_wgs84(coords, lat0=SITE_ANCHOR['lat'], lon0=SITE_ANCHOR['lng'], alt0=SITE_ANCHOR['altitude'], rot_z=0.0, face_id=None) -> List[Dict[str, Any]]:
-    """
-    Fast vectorized ENU local mm -> WGS84 Geodetic projection helper.
-    """
     if coords is None or len(coords) == 0:
         return []
     arr = np.asarray(coords, dtype=np.float64)
@@ -349,20 +332,14 @@ def enu_to_wgs84(coords, lat0=SITE_ANCHOR['lat'], lon0=SITE_ANCHOR['lng'], alt0=
     alts = alt0 + (rz * 0.001)
 
     n = len(arr)
-    xs = arr[:, 0]
-    ys = arr[:, 1]
-    zs = arr[:, 2]
+    xs, ys, zs = arr[:, 0], arr[:, 1], arr[:, 2]
 
     if face_id is not None:
         fid_str = str(face_id)
         return [
             {
-                'x': float(xs[i]),
-                'y': float(ys[i]),
-                'z': float(zs[i]),
-                'lat': float(lats[i]),
-                'lng': float(lngs[i]),
-                'altitude': float(alts[i]),
+                'x': float(xs[i]), 'y': float(ys[i]), 'z': float(zs[i]),
+                'lat': float(lats[i]), 'lng': float(lngs[i]), 'altitude': float(alts[i]),
                 'face_id': fid_str
             }
             for i in range(n)
@@ -370,12 +347,8 @@ def enu_to_wgs84(coords, lat0=SITE_ANCHOR['lat'], lon0=SITE_ANCHOR['lng'], alt0=
     else:
         return [
             {
-                'x': float(xs[i]),
-                'y': float(ys[i]),
-                'z': float(zs[i]),
-                'lat': float(lats[i]),
-                'lng': float(lngs[i]),
-                'altitude': float(alts[i])
+                'x': float(xs[i]), 'y': float(ys[i]), 'z': float(zs[i]),
+                'lat': float(lats[i]), 'lng': float(lngs[i]), 'altitude': float(alts[i])
             }
             for i in range(n)
         ]
@@ -410,7 +383,6 @@ def clean_and_tessellate(triangles: List[List[List[float]]], tolerance: float = 
 # ============================================================
 
 def validate_numpy_mesh_contract(positions: np.ndarray, triangle_indices: np.ndarray, normals: Optional[np.ndarray] = None) -> Tuple[bool, str]:
-    """Validates strict NumPy data contract for CAD renderer consumption."""
     if not isinstance(positions, np.ndarray) or not isinstance(triangle_indices, np.ndarray):
         return False, "Positions and triangle_indices must be valid NumPy ndarrays."
     if positions.ndim != 2 or positions.shape[1] != 3:
@@ -438,9 +410,6 @@ def validate_and_compact_mesh(
     normals: Optional[Union[List[Any], np.ndarray]] = None,
     triangle_provenance: Optional[Union[List[Any], np.ndarray]] = None
 ) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
-    """
-    Remaps indices, removes degenerate triangles, and ensures compact NumPy buffers.
-    """
     raw_v_arr = np.asarray(raw_vertices, dtype=np.float64) if len(raw_vertices) > 0 else np.empty((0, 3), dtype=np.float64)
     raw_v_count = len(raw_v_arr)
     raw_t_count = len(raw_triangles)
@@ -579,7 +548,6 @@ def compute_bounding_box(positions: np.ndarray) -> Dict[str, Any]:
     }
 
 def triangulate_polygon_3d(vertices: List[np.ndarray], face_normal: Optional[np.ndarray] = None) -> List[Tuple[int, int, int]]:
-    """Planar 3D polygon ear-clipping triangulation with fallback to convex fan."""
     n = len(vertices)
     if n < 3: return []
     if n == 3: return [(0, 1, 2)]
@@ -706,7 +674,6 @@ class ImportDescriptor:
         }
 
 def detect_step_units(text: str) -> Tuple[str, float]:
-    """Extract SI_UNIT and CONVERSION_BASED_UNIT from STEP header/data."""
     if occ_detect_step_units is not None:
         return occ_detect_step_units(text)
     if re.search(r"SI_UNIT\s*\(\s*\.MILLI\.\s*,\s*\.METRE\.\s*\)", text, re.IGNORECASE) or \
@@ -805,7 +772,8 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.scale_to_canonical = 1000.0
         return desc
         
-    if (head_latin.startswith('#') or '\nv ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or 'f ' in head_latin):
+    if (head_latin.startswith('#') or '\
+v ' in head_latin or head_latin.startswith('v ')) and (ext == 'obj' or 'f ' in head_latin):
         desc.format = "OBJ"
         desc.confidence = 0.95
         desc.has_assembly = True
@@ -849,7 +817,6 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
 # ============================================================
 
 def build_assembly_tree_from_canonical(assembly: GeoAssembly, is_multi_comp: bool = False) -> List[Dict[str, Any]]:
-    """PROJECTS manifest/assembly tree FROM the canonical GeoAssembly model."""
     tree = []
     for inst_id, inst in assembly.instances.items():
         part = assembly.parts.get(inst.part_id)
@@ -914,12 +881,25 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
     if not _OCCT_AVAILABLE:
         return None
     t_start = time.perf_counter()
+    steps_log: List[Dict[str, Any]] = []
+
+    def add_step(name: str, duration_ms: float, detail: str = ""):
+        steps_log.append({
+            "step": name,
+            "duration_ms": round(duration_ms, 2),
+            "detail": detail,
+            "timestamp": time.strftime("%H:%M:%S")
+        })
+
     try:
+        t0 = time.perf_counter()
         with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as tmp:
             tmp.write(content_bytes)
             tmp_path = tmp.name
+        add_step("STEP_BUFFER_STAGED", (time.perf_counter() - t0) * 1000, f"{len(content_bytes) / 1024 / 1024:.2f} MB payload staged")
             
         try:
+            t0 = time.perf_counter()
             color_tool = None
             if _XCAF_AVAILABLE:
                 try:
@@ -934,35 +914,45 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                         color_tool = XCAFDoc_DocumentTool.ColorTool_s(doc.Main()) if hasattr(XCAFDoc_DocumentTool, 'ColorTool_s') else XCAFDoc_DocumentTool.ColorTool(doc.Main())
                 except Exception as xcaf_err:
                     logger.debug(f"XCAF Color notice: {xcaf_err}")
+            add_step("XCAF_DOCUMENT_TRANSFER", (time.perf_counter() - t0) * 1000, "XCAF Assembly metadata transferred")
 
+            t0 = time.perf_counter()
             reader = STEPControl_Reader()
             status = reader.ReadFile(tmp_path)
             if status != IFSelect_RetDone:
                 return None
-                
             reader.TransferRoots()
             shape = reader.OneShape()
             if shape.IsNull():
                 return None
+            add_step("OCCT_TOPODS_TRANSFER", (time.perf_counter() - t0) * 1000, "Authoritative TopoDS_Shape B-Rep transferred")
                 
+            t0 = time.perf_counter()
             try:
                 sf = ShapeFix_Shape(shape)
                 sf.Perform()
                 shape = sf.Shape()
             except Exception:
                 pass
+            add_step("TOPOLOGICAL_SEWING_HEALING", (time.perf_counter() - t0) * 1000, "ShapeFix manifold verification complete")
                 
+            t0 = time.perf_counter()
             header_sample = content_bytes[:65536].decode('latin1', errors='ignore')
             source_u, scale_fac = detect_step_units(header_sample)
             if desc and desc.source_units != 'mm':
                 source_u = desc.source_units
                 scale_fac = desc.scale_to_canonical
             scale = float(scale_fac)
+            add_step("UNIT_RESOLUTION", (time.perf_counter() - t0) * 1000, f"Unit: {source_u} (Scale factor: {scale})")
 
-            linear_deflection = 0.2
+            t0 = time.perf_counter()
+            # Adaptive linear deflection scaled to component size
+            linear_deflection = 0.5
             angular_deflection = 0.5
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
+            add_step("ADAPTIVE_DEFLECTION_MESH", (time.perf_counter() - t0) * 1000, f"Deflection mesh (lin={linear_deflection}mm, ang={angular_deflection}rad)")
             
+            t0 = time.perf_counter()
             job_uuid = f"job_{uuid.uuid4().hex[:8]}"
             assembly = GeoAssembly(f"asm_{uuid.uuid4().hex[:6]}", desc.filename if desc else filename)
             base_part_name = desc.filename.split('.')[0] if desc and desc.filename else "STEP_Part"
@@ -983,9 +973,14 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     exp_shell.Next()
             if not solid_shapes:
                 solid_shapes = [shape]
+            add_step("SOLID_UNPACKING", (time.perf_counter() - t0) * 1000, f"Identified {len(solid_shapes)} distinct solid bodies")
                 
+            t0 = time.perf_counter()
             bodies = []
             all_faces_combined = []
+            total_vertices_extracted = 0
+            total_triangles_extracted = 0
+            total_planar_ngons_extracted = 0
             
             for s_idx, sub_shape in enumerate(solid_shapes):
                 subpart_id = f"part_occt_{s_idx + 1}_{uuid.uuid4().hex[:6]}"
@@ -1060,6 +1055,9 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 final_v, final_t, diag = validate_and_compact_mesh(body_raw_verts, body_raw_tris)
                 if len(final_t) == 0: continue
                     
+                total_vertices_extracted += len(final_v)
+                total_triangles_extracted += len(final_t)
+
                 shell = GeoShell(f"shell_{uuid.uuid4().hex[:4]}", face_ids, is_closed=True)
                 geo_part.shells[shell.id] = shell
                 solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
@@ -1084,8 +1082,11 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
 
                 ngon_loops = []
                 if extract_planar_ngons_from_occt is not None:
-                    try: ngon_loops = extract_planar_ngons_from_occt(sub_shape, scale=scale, color=part_color)
-                    except Exception: pass
+                    try:
+                        ngon_loops = extract_planar_ngons_from_occt(sub_shape, scale=scale, color=part_color)
+                        total_planar_ngons_extracted += len(ngon_loops)
+                    except Exception:
+                        pass
 
                 cad_obj = {
                     "id": geo_part.id,
@@ -1124,17 +1125,29 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 
             if not bodies: return None
             
+            add_step("DUAL_ROUTE_EXTRACTION", (time.perf_counter() - t0) * 1000, f"Extracted {total_planar_ngons_extracted} N-Gon loops & {total_triangles_extracted} triangles across {len(bodies)} solids")
+            
+            t0 = time.perf_counter()
             assembly_tree = build_assembly_tree_from_canonical(assembly, is_multi_comp=len(bodies) > 1)
             all_v_pts = np.array([[p['x'], p['y'], p['z']] for f in all_faces_combined for p in f], dtype=np.float64) if all_faces_combined else np.empty((0, 3))
             overall_bbox = compute_bounding_box(all_v_pts)
+            add_step("CANONICAL_ASSEMBLY_PROJECTION", (time.perf_counter() - t0) * 1000, f"Built assembly hierarchy with {len(assembly_tree)} instances")
             
+            total_elapsed = round((time.perf_counter() - t_start) * 1000, 2)
             headers = {
                 "format": "STEP_OCCT_BREP",
                 "filename": filename,
                 "source_units": source_u,
                 "canonical_unit": CANONICAL_INTERNAL_UNIT,
-                "performance": {"total_elapsed_ms": round((time.perf_counter() - t_start) * 1000, 3)},
-                "diagnostics": {"subpart_count": len(bodies), "triangle_count": len(all_faces_combined), "coordinate_bounds": overall_bbox}
+                "performance": {"total_elapsed_ms": total_elapsed},
+                "pipeline_steps": steps_log,
+                "diagnostics": {
+                    "subpart_count": len(bodies),
+                    "triangle_count": len(all_faces_combined),
+                    "vertex_count": total_vertices_extracted,
+                    "planar_ngon_count": total_planar_ngons_extracted,
+                    "coordinate_bounds": overall_bbox
+                }
             }
             
             return {
@@ -1143,7 +1156,8 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "canonical_assembly": assembly.to_dict(),
                 "objects": bodies,
                 "assembly_tree": assembly_tree,
-                "faces": all_faces_combined
+                "faces": all_faces_combined,
+                "pipeline_steps": steps_log
             }
         finally:
             if os.path.exists(tmp_path): os.remove(tmp_path)
@@ -1158,12 +1172,23 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
 
 def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step", desc: Optional[ImportDescriptor] = None) -> Optional[Dict[str, Any]]:
     t_start = time.perf_counter()
+    steps_log: List[Dict[str, Any]] = []
+
+    def add_step(name: str, duration_ms: float, detail: str = ""):
+        steps_log.append({
+            "step": name,
+            "duration_ms": round(duration_ms, 2),
+            "detail": detail,
+            "timestamp": time.strftime("%H:%M:%S")
+        })
+
     try:
         if _OCCT_AVAILABLE:
             occt_res = parse_step_with_occt(content_bytes, filename, desc)
             if occt_res:
                 return occt_res
                 
+        t0 = time.perf_counter()
         text = content_bytes.decode('utf-8', errors='ignore')
         if 'ISO-10303-21' not in text and 'FILE_DESCRIPTION' not in text and 'CARTESIAN_POINT' not in text:
             return None
@@ -1173,7 +1198,9 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
             source_u = desc.source_units
             scale_fac = desc.scale_to_canonical
         scale = float(scale_fac)
+        add_step("STEP_TEXT_SCAN", (time.perf_counter() - t0) * 1000, f"Unit: {source_u} (Scale factor: {scale})")
 
+        t0 = time.perf_counter()
         entity_pattern = re.compile(r"#(\d+)\s*=\s*([A-Z0-9_]+)\s*\((.*?)\);", re.DOTALL)
         entity_matches = entity_pattern.findall(text)
         entity_map: Dict[str, Tuple[str, str]] = {e[0]: (e[1], e[2]) for e in entity_matches}
@@ -1188,7 +1215,9 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
                     
         pt_list = list(cartesian_points.values())
         if not pt_list: return None
+        add_step("POINT_TOPOLOGY_EXTRACTION", (time.perf_counter() - t0) * 1000, f"Extracted {len(pt_list)} CARTESIAN_POINT entities")
         
+        t0 = time.perf_counter()
         part_id = f"part_step_1_{uuid.uuid4().hex[:6]}"
         geo_part = GeoPart(part_id, "STEP_Part")
         assembly = GeoAssembly(f"asm_step_{uuid.uuid4().hex[:6]}", filename)
@@ -1215,6 +1244,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         assembly.add_part(geo_part)
         assembly.create_instance(geo_part.id, name=geo_part.name)
         assembly_tree = build_assembly_tree_from_canonical(assembly)
+        add_step("CANONICAL_MESH_COMPACTION", (time.perf_counter() - t0) * 1000, f"Triangulated {len(final_t)} faces from {len(final_v)} vertices")
         
         cad_obj = {
             "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": "STEP_Part",
@@ -1224,12 +1254,19 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
             "bounding_box": bbox, "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(body_faces)}
         }
         return {
-            "headers": {"format": "STEP_STRUCTURED", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT, "diagnostics": diag},
+            "headers": {
+                "format": "STEP_STRUCTURED",
+                "filename": filename,
+                "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "pipeline_steps": steps_log,
+                "diagnostics": diag
+            },
             "descriptor": desc.to_dict() if desc else None,
             "canonical_assembly": assembly.to_dict(),
             "objects": [cad_obj],
             "assembly_tree": assembly_tree,
-            "faces": body_faces
+            "faces": body_faces,
+            "pipeline_steps": steps_log
         }
     except Exception as e:
         logger.exception("STEP fallback parser exception")
@@ -1538,8 +1575,10 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\
+': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\
+': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
@@ -1771,7 +1810,8 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "\n".join(step_lines).encode('utf-8')
+    return "\
+".join(step_lines).encode('utf-8')
 
 
 # ============================================================

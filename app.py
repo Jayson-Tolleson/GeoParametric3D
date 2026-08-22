@@ -179,10 +179,6 @@ async def canonical_export():
 @app.route('/GeoParametric3D/api/geometry/binary', methods=['GET', 'POST'])
 @app.route('/cad/api/geometry/binary', methods=['GET', 'POST'])
 async def handle_geometry_binary():
-    """
-    Zero-copy binary transport endpoint.
-    Transports packed float32 vertex coordinates and uint32 index arrays.
-    """
     import struct
     data = (await request.get_json(silent=True)) or {}
     obj_id = data.get('id') or request.args.get('id')

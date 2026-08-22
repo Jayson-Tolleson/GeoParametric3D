@@ -98,7 +98,6 @@ export class AIAssistantController {
       } : null;
 
       let res = null;
-      // Connect to generation / assistant chat gateway
       try {
         res = await CADApi.requestJSON('/generate', {
           method: 'POST',
