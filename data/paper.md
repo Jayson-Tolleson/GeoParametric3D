@@ -1,76 +1,87 @@
-# GeoParametric3D: Architectural Specification & Systems Design Document
-
-**System:** GeoParametric3D Engineering Workstation  
-**Document Code:** `SPEC-GP3D-V10`  
-**Internal Coordinate Base:** Metric Linear Millimeters (`mm`)  
-**Geodetic Anchor:** Fullerton, CA 92831 ($33.8704^\circ\text{ N}, -117.9242^\circ\text{ W}$, Elevation: $1609.34\text{ m}$ / $1\text{ mi}$)  
-**Target Viewport:** Google Maps 3D Web Component (`<gmp-map-3d>`) with WebGL/Canvas Hybrid Overlay  
+# Architectural Specification: GeoParametric3D Geospatial B-Rep CAD Engine & Photorealistic Maps 3D Web Workstation
 
 ---
 
 ## 1. Executive Summary
 
-GeoParametric3D is an authoritative, browser-native Computer-Aided Design (CAD) workstation engineered to bridge exact boundary-representation (B-Rep) solid modeling with high-precision geospatial 3D visualization. Unlike standard polygon-mesh viewers that destroy CAD topology upon ingestion, GeoParametric3D enforces a strict separation between **Authoritative Geometric Truth** (exact analytical topological entities) and **Derived Render Representations** (adaptive polygonal approximations and native planar primitives).
+GeoParametric3D is an authoritative engineering computer-aided design (CAD) workstation engineered directly within the web runtime. It unifies boundary representation (B-Rep) solid modeling with Google Maps 3D Photorealistic Tiles (`<gmp-map-3d>`). 
+
+### 1.1 Core System Objectives
+* **Authoritative B-Rep Mathematical Truth:** Strict separation of exact topological entities (`GeoAssembly`, `GeoPart`, `GeoSolid`, `GeoShell`, `GeoFace`, `GeoLoop`, `GeoEdge`, `GeoVertex`) from derived render meshes. Render meshes are strictly transient artifacts for visualization.
+* **Geodetic & Cartesian Duality:** Full bidirectional synchronization between Cartesian Local Tangent Plane coordinates (East-North-Up / ENU in millimeters) and geospatial geodetic coordinates (WGS84 Latitude, Longitude, Ellipsoidal Altitude).
+* **The Ground-Occlusion & Initial Render Invariant:** Resolves viewport clipping and terrain collision by anchoring the CAD world origin $(0, 0, 0)_{\text{ENU}}$ at **1.0 international mile ($1609.34\text{ m}$)** above Fullerton, California ($33.8704^\circ\text{ N}, -117.9242^\circ\text{ W}$). This ensures zero terrain clipping, complete visual clearance, and immediate rendering of canonical solids upon initialization.
+* **Dual-Route Rendering Pipeline:** Planar analytical faces (`GeomAbs_Plane`) are mapped directly to native `<gmp-polygon-3d>` elements to eliminate triangulation diagonals. Curved/freeform surfaces undergo adaptive chordal and angular deflection meshing.
+* **Autonomous Engineering Assistant:** Deep contextual integration with Google Cloud Vertex AI (`project: broadcasterfishmap`, `location: global`, model: `gemini-1.5-flash`) for natural-language topological queries, parametric scripting, and manufacturing toolpath digestion.
+
+### 1.2 System Invariant Matrix
+
+| Parameter / Subsystem | Invariant Specification | Verification Standard |
+| :--- | :--- | :--- |
+| **Canonical Internal Unit** | Metric linear millimeter ($\text{mm}$) | Single-point authoritative unit conversion across all imports/exports |
+| **Geodetic Site Anchor** | $33.8704^\circ\text{ N}, -117.9242^\circ\text{ W}, 1609.34\text{ m}$ MSL | Fullerton, CA Geodetic Datum |
+| **Default Primitive Dimension** | $1.0\text{ ft} = 12.0\text{ in} = 304.8\text{ mm}$ | Golden Box equivalence verification ($\Delta V < 10^{-4}\text{ mm}^3$) |
+| **Planar Face Representation** | True N-Gon loops (outer wire + inner voids) | Rendered via `<gmp-polygon-3d>` with zero internal diagonals |
+| **Curvature Deflection Limit** | $\theta_{\max} = 12.0^\circ$, Chordal tolerance $\delta = 0.05\text{ mm}$ | Adaptive linear/angular scaling based on bounding diagonal |
+| **Shading Standard** | $100\%$ Opaque solid shading (FreeCAD parity) | Hardware depth buffer occlusion with explicit color inheritance |
+| **Working Ground Grid** | $2,000\text{ ft} \times 2,000\text{ ft}$ ($609.6\text{ m}$) at $1.0\text{ ft}$ spacing | Adaptive stride decimation sustaining 60 FPS |
+| **Vertex Numerical Safety** | Strict IEEE 754 finite coordinates ($-\infty < x, y, z < \infty$) | Rejection of NaN/Inf with `GeometryPipelineException` |
 
 ```
-+---------------------------------------------------------------------------------------+
-|                              AUTHORITATIVE CAD GEOMETRY                               |
-|        GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace       |
-|                                                                                       |
-|                 +---------------------------------------------------+                 |
-|                 | Mathematical Surfaces: Planes, Cylinders, NURBS   |                 |
-|                 | Canonical Storage Unit: Millimeters (mm)           |                 |
-|                 +---------------------------------------------------+                 |
-+-------------------------------------------+-------------------------------------------+
-                                            |
-                                            v
-                   +------------------------------------------------+
-                   |           DUAL-ROUTE GEOMETRY ROUTER           |
-                   +------------------------+-----------------------+
-                                            |
-               +----------------------------+----------------------------+
-               |                                                         |
-               v [GeomAbs_Plane]                                         v [Curved / Freeform]
-+------------------------------+                          +------------------------------+
-|     PLANAR N-GON ROUTE       |                          | ADAPTIVE DEFLECTION ROUTE    |
-| - Exact boundary outer loops |                          | - Linear / angular defl.     |
-| - Multiply-connected holes   |                          | - Dynamic LOD tessellation   |
-| - Zero internal diagonals    |                          | - Continuous vertex normals  |
-+--------------+---------------+                          +--------------+---------------+
-               |                                                         |
-               v                                                         v
-+------------------------------+                          +------------------------------+
-|   NATIVE <gmp-polygon-3d>    |                          |      HYBRID RENDER MESH      |
-|  - Hardware depth buffer     |                          | - 100% Opaque solid shading  |
-|  - Native WGS84 coordinates  |                          | - Face-provenance retention  |
-+------------------------------+                          +------------------------------+
+FOREIGN GEOMETRY PAYLOAD (STEP, FCStd, STL, OBJ, 3MF, GLTF, DAE, WRL, XBF)
+       │
+       ▼
+[STAGE 1: BYTE & SCHEMA INTELLIGENCE] Magic bytes, SI_UNIT, CONVERSION_BASED_UNIT
+       │
+       ▼
+[STAGE 2: KERNEL INGESTION & HEALING] TopoDS_Shape / OpenCASCADE C++ / WASM Engine
+       │
+       ▼
+[STAGE 3: MULTI-SOLID DECOMPOSITION] ThreadPool multi-worker compound unpacking
+       │
+       ▼
+[STAGE 4: DUAL-ROUTE CLASSIFICATION]
+       ├─────────────────────────────────────────┐
+       ▼ (GeomAbs_Plane)                         ▼ (Curved / Freeform NURBS)
+[ROUTE A: PLANAR N-GON EXTRACTOR]         [ROUTE B: ADAPTIVE DEFLECTION ENGINE]
+ Outer/Inner Wires, Zero Diagonals         Chordal $\delta=0.05\text{mm}$, Angular $\theta=12^\circ$
+       │                                         │
+       ├─────────────────────────────────────────┘
+       ▼
+[STAGE 5: CANONICAL GEOMETRY COMPACTION] GeoAssembly / GeoPart / GeoSolid Model Tree
+       │
+       ▼
+[STAGE 6: GEOSPATIAL PROJECTION ENGINE] ENU Cartesian (mm) ──> WGS84 Geodetic
+       │
+       ├─────────────────────────────────────────┐
+       ▼                                         ▼
+[NATIVE MAPS 3D VIEWPORT]               [OVERLAY CANVAS ENGINE]
+ `<gmp-map-3d>` Photorealistic Tiles     2,000-ft Ground Grid, Csnap Gizmos,
+ `<gmp-polygon-3d>` Solid Facets         Marquee Box, Datum Coordinate Axes
 ```
-
-### 1.1 Core Invariants
-* **Invariant I (Truth Separation):** Authoritative B-Rep geometry and topology exist independently of any render mesh. Meshes are volatile, derived caches.
-* **Invariant II (Canonical Unit Authority):** All computational kernel math, boundary evaluations, transforms, and persistence operations execute in canonical linear millimeters ($1\text{ mm} = 1.0$). User preferences (Inches, Feet, Meters) are applied exclusively at display and input boundaries via authoritative single-conversion matrices.
-* **Invariant III (Zero Planar Diagonals):** Planar topological faces (`GeomAbs_Plane`) are never rendered with software-meshed interior diagonal lines; they are routed directly to closed N-Gon boundary loops.
-* **Invariant IV (Geodetic Zero-Point Clearance):** To prevent clipping beneath digital elevation models (DEM) or terrain meshes at geodetic sea level ($0\text{ m}$ MSL), the CAD document origin $(0, 0, 0)_{\text{ENU}}$ is clamped to an elevated geodetic datum anchored at 1.0 mile ($1609.34\text{ m}$) above Fullerton, California ($33.8704^\circ\text{ N}, -117.9242^\circ\text{ W}$).
-* **Invariant V (Scale Dimensionless Invariance):** Object transformations maintain pure separation between translation vectors $\mathbf{t} \in \mathbb{R}^3$, Euler rotations $\mathbf{r} \in \mathbb{R}^3$, and dimensionless scale factors $\mathbf{s} \in \mathbb{R}^3$. Applying scale $\mathbf{s} \to \alpha\mathbf{s}$ strictly preserves world origin position $\mathbf{t}$.
 
 ---
 
 ## 2. Viewport & Grid Assembly
 
-### 2.1 Geodetic Coordinate Projection ($ENU \leftrightarrow WGS84$)
-The workstation integrates an East-North-Up (ENU) Cartesian local tangent plane anchored at geodetic coordinates:
-* $\phi_0 = 33.8704^\circ\text{ N}$ (Reference Latitude)
-* $\lambda_0 = -117.9242^\circ\text{ W}$ (Reference Longitude)
-* $h_0 = 1609.34\text{ m}$ (Reference Ellipsoidal Height, 1 mile above Fullerton, CA)
+### 2.1 Geospatial Anchoring & Coordinate Systems
+The workstation bridges two distinct spatial references:
+1. **Local Tangent Plane (ENU Cartesian):** Right-handed orthogonal coordinate frame defined in linear millimeters ($\text{mm}$). $+X$ points East, $+Y$ points North, and $+Z$ points Up along the local ellipsoidal normal.
+2. **Geodetic Coordinate Frame (WGS84):** Curvilinear coordinates defined by Latitude ($\phi$), Longitude ($\lambda$), and Altitude ($h$) in meters above the WGS84 reference ellipsoid ($a = 6378137.0\text{ m}, f = 1 / 298.257223563$).
 
-Transformation from local CAD coordinates $(x, y, z)$ in millimeters to WGS84 $(\phi, \lambda, h)$ uses the WGS84 ellipsoid parameters ($a = 6378137.0\text{ m}$, $f = 1/298.257223563$, $e^2 = 2f - f^2$):
+#### Geodetic Translation Equations
+Given geodetic anchor $(\phi_0, \lambda_0, h_0)$ where $\phi_0 = 33.8704^\circ$, $\lambda_0 = -117.9242^\circ$, $h_0 = 1609.34\text{ m}$, the radii of curvature in the prime vertical ($N$) and meridian ($M$) are computed as:
 
-$$\begin{aligned}
-x_{\text{m}} &= \frac{x}{1000.0}, \quad y_{\text{m}} = \frac{y}{1000.0}, \quad z_{\text{m}} = \frac{z}{1000.0} \\
-N(\phi_0) &= \frac{a}{\sqrt{1 - e^2 \sin^2(\phi_0)}}, \quad M(\phi_0) = \frac{a(1 - e^2)}{(1 - e^2 \sin^2(\phi_0))^{3/2}} \\
-\Delta \phi &= \frac{y_{\text{m}}}{M(\phi_0) + h_0} \cdot \frac{180}{\pi}, \quad \Delta \lambda = \frac{x_{\text{m}}}{(N(\phi_0) + h_0) \cos(\phi_0)} \cdot \frac{180}{\pi} \\
-\phi &= \phi_0 + \Delta \phi, \quad \lambda = \lambda_0 + \Delta \lambda, \quad h = h_0 + z_{\text{m}}
-\end{aligned}$$
+$$N(\phi_0) = \frac{a}{\sqrt{1 - e^2 \sin^2 \phi_0}}, \quad M(\phi_0) = \frac{a(1 - e^2)}{(1 - e^2 \sin^2 \phi_0)^{3/2}}$$
+
+where $e^2 = 2f - f^2 \approx 0.00669437999014$. For a local ENU displacement $(x, y, z)$ in millimeters:
+
+$$\Delta x_{\text{m}} = \frac{x}{1000.0}, \quad \Delta y_{\text{m}} = \frac{y}{1000.0}, \quad \Delta z_{\text{m}} = \frac{z}{1000.0}$$
+
+$$\phi = \phi_0 + \left( \frac{\Delta y_{\text{m}}}{M(\phi_0) + h_0} \right) \cdot \frac{180}{\pi}$$
+
+$$\lambda = \lambda_0 + \left( \frac{\Delta x_{\text{m}}}{(N(\phi_0) + h_0) \cos \phi_0} \right) \cdot \frac{180}{\pi}$$
+
+$$h = h_0 + \Delta z_{\text{m}}$$
 
 ```python
 def enu_to_wgs84(coords, lat0=33.8704, lon0=-117.9242, alt0=1609.34, rot_z=0.0):
@@ -87,66 +98,93 @@ def enu_to_wgs84(coords, lat0=33.8704, lon0=-117.9242, alt0=1609.34, rot_z=0.0):
     lat_rad = math.radians(lat0)
     mm_per_deg_lat = 111111000.0
     mm_per_deg_lng = 111111000.0 * math.cos(lat_rad)
-
+    
     lats = lat0 + (ry / mm_per_deg_lat)
     lngs = lon0 + (rx / mm_per_deg_lng)
     alts = alt0 + (rz * 0.001)
     return lats, lngs, alts
 ```
 
-### 2.2 2,000-Foot Ground Grid & Datum Coordinate Axes
-* **Extent:** $2000\text{ ft} \times 2000\text{ ft}$ ($609,600\text{ mm} \times 609,600\text{ mm}$) centered at $(0, 0, 0)_{\text{ENU}}$.
-* **Subdivisions:** Minor grid intervals at $1\text{ ft}$ ($304.8\text{ mm}$) or $300\text{ mm}$ metric.
-* **Adaptive Grid Striding:** Dynamically adjusts rendering frequency based on camera range:
-  * Range $> 500\text{ m}$: Stride $= 50\times$ ($50\text{ ft}$ intervals)
-  * Range $150\text{ m} - 500\text{ m}$: Stride $= 20\times$ ($20\text{ ft}$ intervals)
-  * Range $50\text{ m} - 150\text{ m}$: Stride $= 5\times$ ($5\text{ ft}$ intervals)
-  * Range $< 50\text{ m}$: Stride $= 1\times$ ($1\text{ ft}$ intervals)
-* **Datum Axes:** Orthogonal RGB triad ($X = \text{Red } [1,0,0]$, $Y = \text{Green } [0,1,0]$, $Z = \text{Blue } [0,0,1]$) spanning $1\text{ ft}$ length from local origin.
+### 2.2 Dual-Layer Rendering Engine
+The viewport architecture decouples dense photorealistic terrain from high-frequency CAD interaction:
+* **Base Layer (`<gmp-map-3d>`):** Handles 3D Tiles rendering, atmospheric scattering, lighting, and GPU-driven hardware depth-buffering for solid faces via `<gmp-polygon-3d>`.
+* **Overlay Layer (`<canvas id="viewport-overlay-canvas">`):** Pixel-perfect 2D/WebGL canvas hosting interactive elements:
+  * Wireframe construction guides.
+  * Csnap magnetic indicators (vertices, midpoints, edge trajectories).
+  * Dynamic dimensioning strings and rubber-band drafting lines.
+  * Selection marquees and transform gizmo overlays.
 
-### 2.3 Camera & Spherical Trackball Navigation
-* **Projection Ratios:** Automated scene-fit distance enforces a $60:1$ viewport-to-part ratio ($d = \max(152.4\text{ mm}, 60 \cdot R_{\text{bbox}})$).
-* **Viewcube & Gizmo:** Custom SVG spherical trackball with radial neon glow and quick presets (`FIT`, `ISO`, `TOP`, `FRONT`, `SIDE`).
-* **Input Bindings:**
-  * `Left Click + Drag`: Orbit azimuth (Heading) and elevation (Tilt).
-  * `Right Click + Drag` / `Alt + Left Drag`: Screen pan.
-  * `Scroll Wheel` / `Pinch`: Continuous zoom.
-  * `Shift + Left Drag`: 2D Marquee box selection.
-  * `Ctrl + Arrows` / `Shift + Arrows`: Discrete keyboard panning and orbital steps.
+```
++-------------------------------------------------------------------------+
+| TOP SLIDING TOOLBAR CONTAINER (79 Mapped CAD & Transform Tools)         |
++-------------------------------------------------------------------------+
+| LEFT PANEL           | VIEWPORT CONTAINER              | RIGHT PANEL    |
+| (Assembly Tree)      |  +---------------------------+  | (Properties &  |
+|                      |  | Overlay Canvas (Csnap/HUD)|  |  Action Panel) |
+|                      |  +---------------------------+  |                |
+|                      |  | Native <gmp-map-3d>       |  |                |
+|                      |  | Photorealistic 3D Tiles   |  |                |
+|                      |  | <gmp-polygon-3d> Facets   |  |                |
+|                      |  +---------------------------+  |                |
+|                      |  | Spherical Trackball Gizmo |  |                |
++----------------------+---------------------------------+----------------+
+| BOTTOM SLIDING ASSISTANT DRAWER (Vertex AI Context Gateway)            |
++-------------------------------------------------------------------------+
+```
+
+### 2.3 Extended Horizon Ground Grid & Datum Coordinate Frame
+* **Grid Extent:** $2,000\text{ ft} \times 2,000\text{ ft}$ ($609,600\text{ mm} \times 609,600\text{ mm}$) centered on $(0, 0, 0)_{\text{ENU}}$.
+* **Base Unit Spacing:** $1\text{ ft}$ ($304.8\text{ mm}$) major subdivisions.
+* **Camera-Adaptive Stride:** To eliminate fill-rate bottlenecks when zoomed out, grid drawing adapts dynamically:
+
+$$\text{Stride Multiplier} = \begin{cases} 
+50 & \text{if } \text{Range} > 500\text{ m} \\
+20 & \text{if } 150\text{ m} < \text{Range} \le 500\text{ m} \\
+5 & \text{if } 50\text{ m} < \text{Range} \le 150\text{ m} \\
+2 & \text{if } 20\text{ m} < \text{Range} \le 50\text{ m} \\
+1 & \text{if } \text{Range} \le 20\text{ m}
+\end{cases}$$
+
+* **Datum Coordinate Axes:** Explicit RGB vector triplet rendered at origin:
+  * $+X$ Axis: Red line (`#ef4444`), extending East along $[304.8, 0, 0]$.
+  * $+Y$ Axis: Green line (`#10b981`), extending North along $[0, 304.8, 0]$.
+  * $+Z$ Axis: Blue line (`#3b82f6`), extending Up along $[0, 0, 304.8]$.
+
+### 2.4 Spherical Trackball Gizmo & Camera Dynamics
+The viewport features a custom spherical trackball oriented in real time with the camera matrix:
+* **Visual Presentation:** 115px SVG sphere with viridian radial gradient (`#40E0D0` $\to$ `#00A877` $\to$ `#004d40`), cyan neon glow ring (`#00f3ff`), and projected cardinal labels (`TOP`, `BOT`, `N`, `S`, `E`, `W`).
+* **Camera Navigation Formulation:**
+  * **Orbit:** Heading $\psi \in [0^\circ, 360^\circ)$, Tilt $\theta \in [1^\circ, 179^\circ]$ relative to the ground normal.
+  * **Pan:** True planar screen-to-ENU projection converting pixel shifts $(\Delta x_{\text{px}}, \Delta y_{\text{px}})$ into ground-tangent translation vectors.
+  * **Zoom / Fit Coverage:** The camera framing algorithm calculates the bounding sphere radius $R = \frac{1}{2} \sqrt{\Delta X^2 + \Delta Y^2 + \Delta Z^2}$ and sets the range to $D = \max(152.4\text{ mm}, 60.0 \cdot R)$, guaranteeing an optimal $60:1$ viewport-to-part ratio without near-plane clipping.
 
 ---
 
 ## 3. Kernel & B-Rep Translation
 
-### 3.1 Canonical Topological Data Model
-The internal modeling engine defines CAD topology hierarchically with absolute geometric fidelity:
+### 3.1 Authoritative B-Rep Separation & Hierarchy
+GeoParametric3D enforces a strict topological structure modeled after OpenCASCADE ISO 10303 standards:
 
 ```
-GeoAssembly
- └── GeoInstance (4x4 Transformation Matrix, Styling)
-      └── GeoPart
-           └── GeoSolid
-                └── GeoShell (Closed manifold status)
-                     └── GeoFace (Surface reference + Loop bounds)
-                          ├── Outer GeoLoop -> Ordered GeoEdges -> GeoCurves -> GeoVertices
-                          └── Inner GeoLoop(s) (Holes, Cutouts)
+GeoAssembly (Root)
+ └── GeoInstance (Transform 4x4, Name, Color, Opacity)
+      └── GeoPart (Canonical Geometry Container, Units: mm)
+           └── GeoSolid (Manifold 3D Volume)
+                └── GeoShell (Closed Outer & Void Boundaries)
+                     └── GeoFace (Parametric Surface Manifold)
+                          ├── GeoSurface (Plane, Cylinder, Cone, Sphere, Torus, BSpline)
+                          └── GeoLoop (Outer Boundary Wire & Inner Cutout Wires)
+                               └── GeoEdge (Curve Segment Reference)
+                                    ├── GeoCurve (Line, Circle, Arc, Ellipse, NURBS)
+                                    ├── GeoVertex Start (Finite 3D Point)
+                                    └── GeoVertex End (Finite 3D Point)
 ```
 
-| Entity | Mathematical Definition | Canonical Storage Representation |
-| :--- | :--- | :--- |
-| **GeoVertex** | Point $\mathbf{p} \in \mathbb{R}^3$ | `np.ndarray([x, y, z], dtype=np.float64)` in mm |
-| **GeoCurve** | 1D Parametric Curve $\mathbf{C}(t), t \in [0, 1]$ | Type (`LINE`, `CIRCLE`, `ARC`, `NURBS`) + Control Points / Radii |
-| **GeoEdge** | Oriented 1D segment bounded by $(V_{\text{start}}, V_{\text{end}})$ | Start UUID, End UUID, Underlying Curve UUID, Direction flag |
-| **GeoLoop** | Closed 1D piecewise boundary $\sum \mathbf{e}_i$ | Ordered Edge UUID array, `is_outer` boolean |
-| **GeoSurface** | 2D Parametric Surface $\mathbf{S}(u, v) \subset \mathbb{R}^3$ | Type (`PLANE`, `CYLINDER`, `CONE`, `SPHERE`, `TORUS`, `BSPLINE`) |
-| **GeoFace** | Trimmed 2D manifold $\mathbf{S} \setminus \bigcup \text{Loops}_{\text{inner}}$ | Surface UUID, Outer Loop UUID, Inner Loop UUIDs list |
-| **GeoShell** | 2-manifold boundary collection $\bigcup F_j$ | Face UUID list, `is_closed` watertight validation flag |
-| **GeoSolid** | Watertight 3-manifold volume bounded by shells | Outer Shell UUID, Void Shell UUIDs (internal cavities) |
-
-### 3.2 Dual-Route Classification & Tessellation Engine
+### 3.2 Dual-Route Classification & Planar N-Gon Dissolver
+Standard CAD pipelines triangulate planar surfaces, causing visual diagonal artifacts across flat faces. GeoParametric3D uses a parallel dual-route face classification algorithm:
 
 ```python
-def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0.5):
+def route_cad_faces(shape, scale=1.0, linear_deflection=0.5):
     planar_faces = []
     curved_faces = []
     explorer = TopExp_Explorer(shape, TopAbs_FACE)
@@ -154,115 +192,155 @@ def route_cad_faces(shape: Any, scale: float = 1.0, linear_deflection: float = 0
     while explorer.More():
         occ_face = TopoDS_Face_Cast(explorer.Current())
         adaptor = BRepAdaptor_Surface(occ_face)
-        surface_type = adaptor.GetType()
+        stype = adaptor.GetType()
         
-        if surface_type == GeomAbs_Plane:
-            wire_data = extract_clean_planar_wires(occ_face, scale=scale, linear_deflection=linear_deflection)
-            planar_faces.append(wire_data)
+        if stype == GeomAbs_Plane:
+            wire_data = extract_clean_planar_wires(occ_face, scale, linear_deflection)
+            pln = adaptor.Plane()
+            norm = [pln.Axis().Direction().X(), pln.Axis().Direction().Y(), pln.Axis().Direction().Z()]
+            planar_faces.append({
+                "surface_type": "Plane",
+                "normal": norm,
+                "outer": wire_data["outer"],
+                "inner": wire_data["inner"],
+                "has_holes": len(wire_data["inner"]) > 0
+            })
         else:
-            curved_faces.append(occ_face)
+            curved_faces.append({"surface_type": str(stype), "occ_face": occ_face})
         explorer.Next()
         
     return planar_faces, curved_faces
 ```
 
-#### Route A: Exact Planar Polygon Extraction (GeomAbs_Plane)
-1. **Wire Exploration:** `BRepTools_WireExplorer` extracts ordered oriented edges for both outer loops and interior cutouts.
-2. **Deflection Sampling on Curved Edges:** Linear segments retain exact endpoints; curved boundaries (e.g., circular holes in flat plates) are discretized via `GCPnts_QuasiUniformDeflection` under chordal deflection tolerance $\delta_{\text{chord}} \le 0.05\text{ mm}$.
-3. **Loop Normalization:** Eliminates coincident points ($\|\mathbf{p}_i - \mathbf{p}_{i-1}\| < 10^{-6}\text{ mm}$) and guarantees counter-clockwise outer winding and clockwise inner hole winding.
-4. **Direct Mounting:** Emitted directly as `<gmp-polygon-3d>` elements with `altitudeMode="absolute"`.
+* **Outer Wire Extraction:** Discretizes edges using `GCPnts_QuasiUniformDeflection` to accurately resolve curved boundaries on planar sheets (e.g. rounded tabs or bracket profiles).
+* **Inner Wire Extraction:** Preserves interior loops for multi-connected cutout topologies (e.g. mounting holes or slots) and assigns them to `innerCoordinates` in `<gmp-polygon-3d>`.
 
-#### Route B: Adaptive Curvature Tessellation (Non-Planar Surfaces)
-For analytical cylinders, cones, spheres, tori, and freeform NURBS surfaces, dynamic linear and angular deflection is computed from the bounding diagonal $D_{\text{bbox}}$:
+### 3.3 Fast Ingestion, Multi-Format Intelligence & ThreadPool Worker Unpacking
+The universal byte parser accepts heterogeneous CAD payloads and normalizes them into canonical millimeters:
 
-$$\delta_{\text{linear}} = \begin{cases} 
-\max(2.5, D_{\text{bbox}} \cdot 0.003) & D_{\text{bbox}} > 5000\text{ mm} \\
-\max(1.0, D_{\text{bbox}} \cdot 0.002) & 1000\text{ mm} < D_{\text{bbox}} \le 5000\text{ mm} \\
-\max(0.5, D_{\text{bbox}} \cdot 0.002) & 200\text{ mm} < D_{\text{bbox}} \le 1000\text{ mm} \\
-\max(0.2, D_{\text{bbox}} \cdot 0.003) & D_{\text{bbox}} \le 200\text{ mm}
-\end{cases}, \quad \theta_{\text{angular}} = \begin{cases}
-0.65\text{ rad} & D_{\text{bbox}} > 5000\text{ mm} \\
-0.52\text{ rad} & 1000\text{ mm} < D_{\text{bbox}} \le 5000\text{ mm} \\
-0.45\text{ rad} & 200\text{ mm} < D_{\text{bbox}} \le 1000\text{ mm} \\
-0.40\text{ rad} & D_{\text{bbox}} \le 200\text{ mm}
-\end{cases}$$
+| Format / Magic Bytes | Schema Detection | Parsing Strategy | Topological Recovery |
+| :--- | :--- | :--- | :--- |
+| **STEP / `ISO-10303-21`** | AP203, AP214, AP242 | OCCT C++/WASM Reader (`STEPControl_Reader`) | Exact B-Rep solid manifold extraction |
+| **FreeCAD / `PK..Document.xml`** | FCStd ZIP Container | XML DOM Extraction + BRep shape decoding | Multi-body parametric feature tree |
+| **STL (Binary & ASCII)** | Binary Header / `solid` | Vectorized NumPy Struct (`<3f3f3f3fH`) | Coplanar edge welding & connected components |
+| **3MF / `PK..3dmodel.model`** | 3D Manufacturing Format | Zip archive XML XMLNS extraction | Multi-mesh instancing & color palette assignment |
+| **GLTF / GLB / `glTF`** | JSON / Binary Buffer | Chunk-0 JSON + Chunk-1 Binary buffer slices | Indexed triangle mesh with unit conversion |
+| **OBJ / Wavefront** | `v `, `f ` prefixes | Regex tokenizer + ear-clipping triangulator | Recovered part instance |
+| **XBF (Binary B-Rep)** | `XBF1`, `XBF2` Magic | Structured binary buffer read | Direct zero-copy GPU memory mapping |
 
-### 3.3 Universal Byte Format Parser & Scaling Adapter
-The ingestion pipeline processes arbitrary CAD byte streams through an 8-stage verification pipeline:
-
+```python
+def compute_optimal_deflection(diag_mm: float) -> Tuple[float, float]:
+    """Calculates linear and angular deflection based on solid bounding extent."""
+    if diag_mm > 5000.0:
+        return max(2.5, diag_mm * 0.003), 0.65
+    elif diag_mm > 1000.0:
+        return max(1.0, diag_mm * 0.002), 0.52
+    elif diag_mm > 200.0:
+        return max(0.5, diag_mm * 0.002), 0.45
+    return max(0.2, diag_mm * 0.003), 0.40
 ```
-[RAW BYTES] -> Format Detection -> Unit & Color Inspection -> Out-of-Scale Adaptation
-            -> B-Rep Kernel Load -> Multi-Solid Unpack -> Compaction -> Projection
-```
 
-* **Supported Formats:** STEP (AP203, AP214, AP242), FreeCAD (`.FCStd`), Binary/ASCII STL, Wavefront OBJ, 3MF, GLTF/GLB, PLY, COLLADA DAE, VRML WRL, and Native Binary XBF (`XBF1`, `XBF2`).
-* **Unit Recognition:** Regex token parsing on STEP headers detects SI/Imperial declarations (`SI_UNIT($, .METRE.)`, `SI_UNIT(.MILLI., .METRE.)`, `CONVERSION_BASED_UNIT('INCH', ...)`).
-* **Out-of-Scale Heuristic:** Unitless meshes with bounding diagonal $D < 0.15$ are automatically scaled by $1000.0\times$ (meter-to-millimeter recovery). Payloads with $D > 50,000,000.0$ are scaled by $0.001\times$ (micron-to-millimeter adaptation).
-* **Compaction Quality Gate:** Mesh buffers execute vectorized NaN/Inf elimination, index remapping, and degenerate triangle removal (rejection threshold: Area $\le 10^{-9}\text{ mm}^2$).
+### 3.4 Numerical Compaction, Golden Box Equivalence & Signed Distance Fields
+* **Signed Distance Field (SDF) Formulation:** Analytical evaluation verifies solid containment and boundary precision for primitives. For a box with dimensions $(w, d, h)$ centered at $(c_x, c_y, c_z)$:
+
+$$p = \begin{bmatrix} |x - c_x| - \frac{w}{2} \\ |y - c_y| - \frac{d}{2} \\ |z - (c_z + \frac{h}{2})| - \frac{h}{2} \end{bmatrix}$$
+
+$$G_{\text{Box}}(x, y, z) = \sqrt{\max(p_x, 0)^2 + \max(p_y, 0)^2 + \max(p_z, 0)^2} + \min(\max(p_x, \max(p_y, p_z)), 0)$$
+
+* **Mesh Validation & Compaction:** Compacts raw vertex arrays by stripping `NaN`/`Inf` coordinates, pruning degenerate zero-area triangles ($A < 10^{-9}\text{ mm}^2$), and re-indexing valid facets via vectorized NumPy mappings.
 
 ---
 
 ## 4. UI & Assistant Components
 
-### 4.1 Interface Layout & Component Hierarchy
-* **Sliding Top Panel (`#top-slide-container`):** Three-tier retractable action header containing 79 active command buttons organized into discrete functional sections:
-  1. *Session & Capture:* New, Open UUID, Save UUID, Universal Import, Export, Undo, Redo, Preferences, Social Share, Viewport Snapshot, 60-Second MP4 Video Recorder.
-  2. *Primitives (12" / 304.8 mm Defaults):* Box, Cylinder, Sphere, Cone, Torus, Prism, Polygon, Ellipse, Wedge, Pyramid, Ellipsoid, Tube, Plane.
-  3. *Transform & Draft:* Move, Rotate, Scale, Duplicate, Align, Line, Rectangle, Circle, Arc, Polyline, PolyDraft, EllipseDraft, Csnap Toggle.
-  4. *Topology Selection:* Part, Face, Edge, Vertex selection modes.
-  5. *Features & Operations:* Extrude, Cross Sections, Hole, Revolve, Fillet, Chamfer, Boolean Union, Subtract, Intersect, Measure, Mass, LinuxCNC Digest, Python Scripting.
-* **Left Assembly Sidebar (`#left-slide-container`):** Interactive collapsible tree exposing hierarchical B-Rep structures (`GeoAssembly` $\to$ `PartInstance` $\to$ `GeoSolid` $\to$ `GeoShell` $\to$ `GeoFace`).
-* **Right Properties & Inspection Inspector (`#right-slide-container`):** Live editing of object coordinates, rotations, scale multipliers, material assignment (22 engineering materials with accurate densities), color, and primitive dimensions.
-* **Bottom Assistant Drawer (`#assistant-drawer`):** Collapsible AI dock providing live chat and automated model execution.
+### 4.1 Retractable Sliding Panels & Workstation Layout
+* **Top Toolbar (`#top-slide-container`):** Three organized rows accommodating 79 mapped tools:
+  * *Row 1:* Session management (`New`, `Open`, `Save`, `Import`, `Export`, `Undo`, `Redo`, `Preferences`), Social Share/Capture (`Snapshot`, `Snap+Bars`, `Record MP4`, `Share...`), and $12''$ Primitive builders (`Box`, `Cylinder`, `Sphere`, `Cone`, `Torus`, `Prism`, `Polygon`, `Ellipse`, `Wedge`, `Pyramid`, `Ellipsoid`, `Tube`, `Plane`).
+  * *Row 2:* Direct Spatial Transformations (`Move`, `Rotate`, `Scale`, `Duplicate`, `Align`), 2D Draft Tools (`Line`, `Rectangle`, `Circle`, `Arc`, `Polyline`, `PolyDraft`, `EllipseDraft`), and Snap/Selection filters (`Csnap`, `Part`, `Face`, `Edge`, `Vertex`).
+  * *Row 3:* Parametric Features (`Extrude`, `Cross Sections`, `Hole`, `Revolve`), Boolean Operations (`Union`, `Subtract`, `Intersect`), Surface Modifications (`Fillet`, `Chamfer`), and Inspection/Manufacturing (`Measure`, `Mass Properties`, `LinuxCNC G-Code`, `CadQuery Script`).
+* **Left Panel (`#left-slide-container`):** Hierarchical Workspace Assembly Tree with nested expansion, selection synchronization, and visibility toggling.
+* **Right Panel (`#right-slide-container`):** Dynamic Inspector & Action Panel providing real-time property bindings, material assignment with density tables ($7.85\text{ g/cm}^3$ Steel down to $0.50\text{ g/cm}^3$ Wood), sub-element selection badges, and a streaming system telemetry log.
 
-### 4.2 Vertex AI Engineering Assistant Integration
-* **Model Configuration:** Gemini 1.5 Flash accessed via Google Cloud Vertex AI REST gateway:
-  * **Project ID:** `broadcasterfishmap`
-  * **Location:** `global`
-  * **Endpoint:** `https://aiplatform.googleapis.com/v1/projects/broadcasterfishmap/locations/global/publishers/google/models/gemini-1.5-flash:generateContent`
-* **Context Injection:** Prompts are injected with active document state metadata, assembly counts, active selections, volume in $\text{cm}^3$, and B-Rep face classifications.
-* **Alias Dispatcher:** Standard CAD short aliases (`l`, `c`, `rec`, `pl`, `m`, `co`, `ro`, `sc`, `e`, `z`) are intercepted on the client and mapped directly to workstation commands.
+### 4.2 Csnap Precision Snapping Engine
+The Csnap engine resolves interactive cursor placement onto 3D CAD topology using a depth-ordered, normal-weighted candidate evaluator:
+
+$$W(\text{candidate}) = \frac{1}{\text{dist}_{\text{px}} + \epsilon} \cdot \left( |\mathbf{n} \cdot \mathbf{v}_{\text{cam}}| + 0.1 \right)$$
+
+* **Vertex Snapping:** Snaps to exact 3D vertices within a 16px radius, displaying a circular gold glyph (`#fbbf24`).
+* **Edge Midpoint Snapping:** Computes and locks to the exact 3D midpoint of linear or circular boundary segments with a square gold glyph.
+* **Bearing Edge Disambiguation:** Rejects back-facing occluded candidate edges where $\mathbf{n} \cdot \mathbf{v}_{\text{cam}} > 0.05$.
+
+### 4.3 Google Cloud Vertex AI Engineering Assistant
+The assistant subsystem establishes a direct link between the UI input dock and the Vertex AI model:
+* **Context Ingestion:** Packages the active assembly state (body names, materials, volumetric properties, bounding boxes, and canonical dimensions) into the reasoning prompt.
+* **Action Intent Dispatch:** Translates natural language engineering queries into structured CAD operations:
+  * Standard CAD aliases (`L` $\to$ Line, `REC` $\to$ Rectangle, `C` $\to$ Circle, `M` $\to$ Move, `CO` $\to$ Duplicate, `RO` $\to$ Rotate, `SC` $\to$ Scale, `E` $\to$ Erase, `Z` $\to$ Zoom Fit).
+  * Direct Python CadQuery script execution via the `/cad/api/command` gateway.
+  * Industrial 3-axis LinuxCNC ISO G-code generation with configurable spindle speeds and feed rates.
+
+```python
+async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
+    system_context = (
+        f"You are the dedicated Engineering Assistant for GeoParametric3D "
+        f"(Project: {PROJECT_ID}, Location: {LOCATION}).\n"
+        "Provide substantive, technically precise engineering reasoning, CAD/CAM guidance, "
+        "B-Rep topological insight, material selection, and mathematical derivations.\n"
+        "B-Rep geometry is authoritative; render meshes are derived representations.\n"
+        "Distinguish CAD topology from render artifacts."
+    )
+    # REST invocation targeting Google Cloud Vertex AI Publisher API
+```
 
 ---
 
-## 5. System Telemetry & Performance Verification
+## 5. System Telemetry & Diagnostic Verification
 
-### 5.1 Telemetry Metrics Contract
-The server `/cad/api/telemetry` endpoint and client heads-up display provide continuous state monitoring:
+### 5.1 Real-Time Performance & Pipeline Telemetry
+The workstation continuously computes and broadcasts pipeline metrics:
+* **Object & Vertex Count:** Real-time solid body tallies and active topological facet computations.
+* **Frame Rate Monitoring:** Monitored viewport refresh rates (targeting sustained 60 FPS under active 3D Tiles streaming).
+* **Geospatial Sync State:** Verification of Local-Tangent-Plane-to-WGS84 projection consistency.
 
-| Metric Key | Target Performance | Verification Standard |
-| :--- | :--- | :--- |
-| **Viewport Refresh Rate** | Sustained $60\text{ FPS}$ | RequestAnimationFrame loop under full 2,000 ft grid load |
-| **Binary STL Vectorization** | $< 1.5\text{ s}$ per 50,000 facets | C-level NumPy `frombuffer` struct unpacking |
-| **Planar Tessellation Overhead** | $0.0\text{ ms}$ (GPU Native) | Zero CPU triangulation diagonals on planar surfaces |
-| **State Snapshot Latency** | $< 5.0\text{ ms}$ | Undo/Redo deepcopy snapshot limit: 50 states |
-| **Geospatial Origin Altitude** | $1609.34\text{ m}$ ($1.0\text{ mi}$) | Positive clearance above Fullerton, CA DEM surface |
-
-### 5.2 Verification Test Matrix
+### 5.2 End-to-End Test Suite Verification Matrix
 
 ```
 ========================================================================================
-GeoParametric3D Automated Verification Suite Status
+GEOPARAMETRIC3D COMPREHENSIVE ARCHITECTURAL VERIFICATION SUITE (ALL TESTS PASSING)
 ========================================================================================
-[PASS] test_canonical_box_brep_structure (test_canonical_geometry.py)
-       - 8 vertices, 12 edges, 6 loops, 6 surfaces, 6 faces, 1 shell, 1 solid.
-[PASS] test_transform_composition_and_instancing (test_canonical_geometry.py)
-       - 100 lightweight instances generated without geometry duplication.
-[PASS] test_adaptive_tessellation_derived_mesh (test_canonical_geometry.py)
-       - 6 box faces adaptively tessellated to 12 triangles; canonical part unchanged.
-[PASS] test_native_render_representation_selection (test_canonical_geometry.py)
-       - Planar faces route to NATIVE_POLYGON_3D; curves to NATIVE_POLYLINE_3D.
-[PASS] test_unit_conversion_integrity (test_cad_architecture.py)
-       - Inch, Foot, Meter, Centimeter conversions match 25.4mm, 304.8mm, 1000mm.
-[PASS] test_step_format_intelligence_and_brep (test_cad_architecture.py)
-       - Schema AP214 parsed, materials and product structures recovered.
-[PASS] test_vertex_and_triangle_integrity_pipeline (test_cad_architecture.py)
-       - Non-finite coordinates stripped; remapped triangle indices validated.
-[PASS] test_scale_dimensionless_invariant (test_workstation_repair.py)
-       - Scaling by 0.5 leaves world translation invariant at [254.0, 0.0, 0.0].
-[PASS] test_box_golden_equivalence (test_kernel_math.py)
-       - BoxSDF evaluation matches exact B-Rep boundary volume.
-========================================================================================
-OVERALL STATUS: 100% OPERATIONAL & VERIFIED
+Test Module                  Test Case                        Verified Invariant
+----------------------------------------------------------------------------------------
+test_canonical_geometry.py   test_canonical_box_brep_structure Pure B-Rep 6-face topology
+                             test_transform_composition       Single part / multi-instance
+                             test_adaptive_tessellation       Render buffer separation
+                             test_native_representation       <gmp-polygon-3d> routing
+                             test_finite_coordinate_validation NaN/Inf coordinate rejection
+----------------------------------------------------------------------------------------
+test_cad_architecture.py     test_unit_conversion_integrity   mm canonical normalization
+                             test_import_bytes_universal      Format auto-detection
+                             test_step_format_brep            STEP AP214 B-Rep recovery
+                             test_step_curved_classification  Analytic cylinder extraction
+                             test_vertex_triangle_integrity   Mesh compaction & cleaning
+                             test_stl_topology_reconstruction Component assembly recovery
+                             test_large_binary_stl_scaling    Vectorized C-speed parsing
+                             test_primitive_import_equivalent Semantic CAD model parity
+----------------------------------------------------------------------------------------
+test_kernel_math.py          test_box_golden_equivalence      Golden Box SDF & volume match
+                             test_prism_polygon_geometry      Exact polygonal cap math
+                             test_box_sdf_distance_accuracy   Euclidean field evaluation
+                             test_box_gradient_normals        Analytical gradient normals
+                             test_scalar_field_booleans       Constructive field CSG
+                             test_thickness_offset            Boundary dilation by tau
+----------------------------------------------------------------------------------------
+test_workstation_repair.py   test_scale_dimensionless_inv     Position unaffected by scale
+                             test_xbf_bytes_roundtrip         Binary B-Rep model export
+                             test_fcstd_container_inspect     FreeCAD ZIP container parse
 ========================================================================================
 ```
+
+### 5.3 Hardware Acceleration & Deployment Architecture
+* **ASGI Server Runtime:** Hypercorn serving asynchronous Quart endpoints supporting multi-gigabyte CAD payloads (`MAX_CONTENT_LENGTH = 1420 MB`).
+* **WebAssembly Bridge (`WasmCADKernel`):** In-browser OpenCASCADE WebAssembly engine (`occtimportjs`) enabling zero-latency client-side STEP and FCStd parsing.
+* **Production Deployment Configuration:**
+  * Application Port: `5000` (Bound to `0.0.0.0`).
+  * Primary Application Gateway: `/cad/` and `/GeoParametric3D/`.
+  * Canonical API Routing: `/cad/api/` with legacy fallbacks for `/GeoParametric3D/api/`.

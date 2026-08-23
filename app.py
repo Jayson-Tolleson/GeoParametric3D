@@ -184,11 +184,16 @@ async def handle_geometry_binary():
     flat_verts = []
     flat_indices = []
     v_idx = 0
+    scale = obj.scale or [1.0, 1.0, 1.0]
+    pos = obj.position or [0.0, 0.0, 0.0]
     for face in obj.faces:
         if len(face) >= 3:
             base = v_idx
             for pt in face:
-                flat_verts.extend([float(pt.get('x', 0)), float(pt.get('y', 0)), float(pt.get('z', 0))])
+                wx = pos[0] + float(pt.get('x', 0)) * scale[0]
+                wy = pos[1] + float(pt.get('y', 0)) * scale[1]
+                wz = pos[2] + float(pt.get('z', 0)) * scale[2]
+                flat_verts.extend([wx, wy, wz])
                 v_idx += 1
             for i in range(1, len(face) - 1):
                 flat_indices.extend([base, base + i, base + i + 1])

@@ -4,11 +4,12 @@ from enum import Enum
 from typing import Dict, List, Tuple, Optional, Any, Callable
 from universal_byte_parser import parse_universal_model_bytes, enu_to_wgs84, detect_and_normalize_units, clean_and_tessellate, SITE_ANCHOR
 
-SITE_ANCHOR = {
+SITE_ANCHOR: Dict[str, Any] = {
     'name': 'Fullerton Geodetic Anchor',
     'lat': 33.8704,
     'lng': -117.9242,
-    'altitude': 1609.34
+    'altitude': 1609.34,
+    'elevation_datum': '1.0 international mile (1609.34 m MSL)'
 }
 
 MATERIAL_DENSITIES: Dict[str, float] = {

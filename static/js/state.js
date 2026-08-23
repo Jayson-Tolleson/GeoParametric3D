@@ -3,6 +3,11 @@
 export const WGS84_SEMI_MAJOR_AXIS = 6378137.0;
 export const WGS84_FLATTENING = 1.0 / 298.257223563;
 export const WGS84_ECCENTRICITY_SQ = 0.00669437999014;
+export const DEFAULT_ANCHOR = {
+  lat: 33.8704,
+  lng: -117.9242,
+  altitude: 1609.34
+};
 
 export function enuToGeodetic(x_mm = 0, y_mm = 0, z_mm = 0, anchorLat = 33.8704, anchorLng = -117.9242, anchorAlt = 1609.34) {
   const x_m = (x_mm || 0) / 1000.0;

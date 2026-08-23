@@ -285,7 +285,12 @@ class APIClient {
         prompt: message,
         target_selection: context,
         canonical_unit: 'mm',
-        geodetic_anchor: { lat: 33.8704, lng: -117.9242, altitude: 1609.34 }
+        geodetic_anchor: { lat: 33.8704, lng: -117.9242, altitude: 1609.34 },
+        vertex_ai: {
+          project_id: 'broadcasterfishmap',
+          location: 'global',
+          model: 'gemini-1.5-flash'
+        }
       })
     });
   }
