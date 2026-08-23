@@ -928,6 +928,17 @@ export class ViewportController {
     const selFaceIdx = CADState.state.selectedFaceIndex;
     const selMode = CADState.state.selectionMode || 'part';
 
+    const enforceLoopClosure = (coords) => {
+      if (!coords || coords.length < 3) return coords || [];
+      const arr = [...coords];
+      const first = arr[0], last = arr[arr.length - 1];
+      const d = Math.hypot((first.lat || 0) - (last.lat || 0), (first.lng || 0) - (last.lng || 0), (first.altitude || 0) - (last.altitude || 0));
+      if (d > 1e-7) {
+        arr.push({ lat: first.lat, lng: first.lng, altitude: first.altitude !== undefined ? first.altitude : 0.0 });
+      }
+      return arr;
+    };
+
     objects.forEach(object => {
       if (object.visible === false) return;
       const objId = object.manifest_id || object.id || object.object_id;
@@ -944,14 +955,17 @@ export class ViewportController {
           const strokeWidth = isFaceSel ? 2.5 : (isObjSel ? 1.8 : 0.8);
 
           let polygon = polygonPool.get(key);
+          const outerCoords = enforceLoopClosure(poly.outer_coordinates || poly.outer || []);
+          const innerCoords = ((poly.inner_coordinates && poly.inner_coordinates.length > 0) ? poly.inner_coordinates : (poly.inner || [])).map(enforceLoopClosure);
           if (polygon) {
-            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
-            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
-              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
+            polygon.outerCoordinates = outerCoords;
+            if (innerCoords.length > 0) {
+              polygon.innerCoordinates = innerCoords;
             }
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
             polygon.strokeWidth = strokeWidth;
+            polygon.drawsOccludedSegments = true;
             polygonPool.delete(key);
           } else {
             polygon = document.createElement('gmp-polygon-3d');
@@ -961,12 +975,13 @@ export class ViewportController {
             polygon.dataset.faceId = poly.face_id || `Face_${polyIndex + 1}`;
             polygon.setAttribute('altitude-mode', 'absolute');
             polygon.altitudeMode = 'absolute';
+            polygon.drawsOccludedSegments = true;
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
             polygon.strokeWidth = strokeWidth;
-            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
-            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
-              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
+            polygon.outerCoordinates = outerCoords;
+            if (innerCoords.length > 0) {
+              polygon.innerCoordinates = innerCoords;
             }
             map3dElement.appendChild(polygon);
           }
@@ -996,12 +1011,14 @@ export class ViewportController {
           return enuToGeodetic(wx, wy, wz);
         });
 
+        const closedGeodetic = enforceLoopClosure(geodeticCoords);
         let polygon = polygonPool.get(key);
         if (polygon) {
-          polygon.outerCoordinates = geodeticCoords;
+          polygon.outerCoordinates = closedGeodetic;
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
           polygon.strokeWidth = strokeWidth;
+          polygon.drawsOccludedSegments = true;
           polygonPool.delete(key);
         } else {
           polygon = document.createElement('gmp-polygon-3d');
@@ -1010,10 +1027,11 @@ export class ViewportController {
           polygon.dataset.faceIndex = String(faceIndex);
           polygon.setAttribute('altitude-mode', 'absolute');
           polygon.altitudeMode = 'absolute';
+          polygon.drawsOccludedSegments = true;
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
           polygon.strokeWidth = strokeWidth;
-          polygon.outerCoordinates = geodeticCoords;
+          polygon.outerCoordinates = closedGeodetic;
           map3dElement.appendChild(polygon);
         }
       });

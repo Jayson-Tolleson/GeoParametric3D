@@ -1,6 +1,6 @@
 {
   "name": "GeoParametric3D",
-  "manifest_version": "10.0.0",
+  "manifest_version": "10.0.0-PROD",
   "purpose": "Native web CAD workstation manifest: Dual-route B-Rep pipeline, 100% opaque solid shading, 2,000-ft 1-ft ground grid, Null Island geodetic origin anchor, and Vertex AI engineering assistant.",
   "viewport": {
     "renderer": "Google Maps 3D Web Component (<gmp-map-3d>) with WebGL/Canvas Overlay",
