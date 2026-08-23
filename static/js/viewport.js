@@ -1037,7 +1037,13 @@ export class ViewportController {
       });
     });
 
-    polygonPool.forEach(polygon => polygon.remove());
+          polygonPool.forEach(polygon => polygon.remove());
+  }
+
+  refreshView() {
+    this.geometryCacheDirty = true;
+    this.syncNativeDOM();
+    this.render();
   }
 
   render() {

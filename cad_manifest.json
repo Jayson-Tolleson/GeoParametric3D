@@ -17,6 +17,7 @@
     "coordinate_system": "Geospatial WGS84 Geodetic & ENU Cartesian CAD",
     "canonical_unit": "mm",
     "shading": "100% Opaque Solid",
+    "depth_test": true,
     "grid_extent_feet": 2000,
     "grid_spacing_feet": 1
   },

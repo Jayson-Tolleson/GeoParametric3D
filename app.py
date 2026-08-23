@@ -458,7 +458,8 @@ async def get_telemetry():
         "status": "READY",
         "shading": {
             "mode": "100% Opaque Solid",
-            "default_opacity": 1.0
+            "default_opacity": 1.0,
+            "depth_test": True
         },
         "grid": {
             "mesh_spacing": "1 ft (304.8 mm)",
