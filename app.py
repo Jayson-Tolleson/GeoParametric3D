@@ -1,3 +1,7 @@
+"""
+GeoParametric3D Authoritative CAD Workstation Application Server
+B-Rep Modeling, Hybrid Canvas/WebGL Viewport & Vertex AI Engineering Assistant Gateway
+"""
 import asyncio
 import json
 import os
