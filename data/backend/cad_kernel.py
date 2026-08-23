@@ -2,6 +2,7 @@ import math
 import os
 import re
 import time
+import struct
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
@@ -486,7 +487,7 @@ class CADKernelPipeline:
         solids.append(collector_solid)
         total_ngons += len(collector_solid["planar_polygons"])
         
-        # 2. Part 56: L-Shaped Mounting Flange Bracket
+        # 2. Part 56: L-Shaped Mounting Flange Bracket (Genus 0 Concave N-Gon)
         l_outer = [
             [200.0, 100.0, 50.0],
             [300.0, 100.0, 50.0],
@@ -532,8 +533,55 @@ class CADKernelPipeline:
             cy = ((idx // 8) - 4) * 120.0
             cz = 100.0 + (idx * 5.0)
             
-            if idx % 3 == 0:
-                # Hexagonal / Polygonal Flange Plate
+            if idx % 4 == 0:
+                # Multi-Void Genus 2 (Letter B Topology / Twin Void Mounting Flange)
+                outer_plate = [
+                    [cx - 80.0, cy - 60.0, cz],
+                    [cx + 80.0, cy - 60.0, cz],
+                    [cx + 80.0, cy + 60.0, cz],
+                    [cx - 80.0, cy + 60.0, cz]
+                ]
+                void_1 = [
+                    [cx - 50.0, cy - 30.0, cz],
+                    [cx - 10.0, cy - 30.0, cz],
+                    [cx - 10.0, cy + 30.0, cz],
+                    [cx - 50.0, cy + 30.0, cz]
+                ]
+                void_2 = [
+                    [cx + 10.0, cy - 30.0, cz],
+                    [cx + 50.0, cy - 30.0, cz],
+                    [cx + 50.0, cy + 30.0, cz],
+                    [cx + 10.0, cy + 30.0, cz]
+                ]
+                p_solid = {
+                    "solid_id": f"solid_part_{idx}",
+                    "name": f"jetdrive - Part {idx}",
+                    "color": color_choice,
+                    "bounding_box": {
+                        "min": [(cx - 80.0)*scale, (cy - 60.0)*scale, cz*scale],
+                        "max": [(cx + 80.0)*scale, (cy + 60.0)*scale, (cz + 15.0)*scale],
+                        "dimensions_mm": [160.0*scale, 120.0*scale, 15.0*scale],
+                        "diagonal_mm": math.sqrt(160.0**2 + 120.0**2 + 15.0**2)*scale
+                    },
+                    "deflection": {"linear_mm": 0.3, "angular_rad": 0.45},
+                    "planar_polygons": [
+                        {
+                            "face_id": f"Face_TwinVoid_Part_{idx}",
+                            "solid_id": f"solid_part_{idx}",
+                            "solid_name": f"jetdrive - Part {idx}",
+                            "surface_type": "GeomAbs_Plane",
+                            "outer_coordinates": enu_mm_to_wgs84(outer_plate),
+                            "inner_coordinates": [enu_mm_to_wgs84(void_1), enu_mm_to_wgs84(void_2)],
+                            "raw_outer_mm": outer_plate,
+                            "vertex_count": 4,
+                            "holes_count": 2,
+                            "color": color_choice
+                        }
+                    ],
+                    "curved_mesh": {"vertices": [], "indices": [], "tri_count": 0}
+                }
+            elif idx % 3 == 0:
+                # Hexagonal Flange Plate
                 r = 60.0
                 hex_pts = []
                 for a in range(6):
