@@ -63,6 +63,9 @@ export class Map3DViewportRenderer {
           this.activePolygons.set(face.face_id, poly);
         }
 
+        // Store face base color
+        poly._baseColor = face.color || '#38bdf8';
+
         // Bind exact boundary coordinates
         poly.outerCoordinates = face.outer_coordinates || [];
         if (face.inner_coordinates && face.inner_coordinates.length > 0) {
@@ -71,7 +74,7 @@ export class Map3DViewportRenderer {
 
         // Style defaults
         const isSel = this.selectedFaceId === face.face_id;
-        poly.fillColor = isSel ? '#f59e0b' : (face.color || '#38bdf8');
+        poly.fillColor = isSel ? '#f59e0b' : poly._baseColor;
         poly.strokeColor = isSel ? '#ffffff' : '#e0f2fe';
         poly.strokeWidth = isSel ? 3.0 : 1.2;
       }
@@ -91,7 +94,7 @@ export class Map3DViewportRenderer {
     this.selectedFaceId = faceId;
     for (const [id, poly] of this.activePolygons) {
       const isSel = id === faceId;
-      poly.fillColor = isSel ? '#f59e0b' : '#38bdf8';
+      poly.fillColor = isSel ? '#f59e0b' : (poly._baseColor || '#38bdf8');
       poly.strokeColor = isSel ? '#ffffff' : '#e0f2fe';
       poly.strokeWidth = isSel ? 3.0 : 1.2;
     }
