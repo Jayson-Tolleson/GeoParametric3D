@@ -246,3 +246,4 @@ export function renderInfiniteGrid(ctx, camera, projectFn, cssWidth, cssHeight) 
 
 ---
 *End of Master Architectural Specification.*
+Please make primatives initialize opaque
