@@ -71,7 +71,6 @@ export class UIController {
     const chkGrid = document.getElementById('pref-toggle-grid');
     const chkAxes = document.getElementById('pref-toggle-axes');
     const chkCsnap = document.getElementById('pref-toggle-csnap');
-    const chkInfinite = document.getElementById('pref-toggle-infinite');
     const sessionUuidInp = document.getElementById('pref-session-uuid');
 
     const prefs = CADState.state.preferences;
@@ -80,7 +79,6 @@ export class UIController {
     if (chkGrid) chkGrid.checked = prefs.showGrid !== false;
     if (chkAxes) chkAxes.checked = prefs.showAxes !== false;
     if (chkCsnap) chkCsnap.checked = prefs.csnap !== false;
-    if (chkInfinite) chkInfinite.checked = prefs.infiniteCanvas !== false;
     if (sessionUuidInp) sessionUuidInp.value = CADState.state.projectId || 'None';
 
     modal.classList.remove('hidden');
@@ -104,22 +102,19 @@ export class UIController {
         const chkGrid = document.getElementById('pref-toggle-grid');
         const chkAxes = document.getElementById('pref-toggle-axes');
         const chkCsnap = document.getElementById('pref-toggle-csnap');
-        const chkInfinite = document.getElementById('pref-toggle-infinite');
 
         const themeVal = themeSel ? themeSel.value : 'night';
         const unitVal = unitSel && unitSel.value === 'imperial' ? 'in' : 'mm';
         const gridVal = chkGrid ? chkGrid.checked : true;
         const axesVal = chkAxes ? chkAxes.checked : true;
         const csnapVal = chkCsnap ? chkCsnap.checked : true;
-        const infiniteVal = chkInfinite ? chkInfinite.checked : true;
 
         CADState.setPreferences({
           theme: themeVal,
           units: unitVal,
           showGrid: gridVal,
           showAxes: axesVal,
-          csnap: csnapVal,
-          infiniteCanvas: infiniteVal
+          csnap: csnapVal
         });
         applyTheme(themeVal);
         this.logServerEvent(`[PREFERENCES] Saved (Theme: ${themeVal}, Units: ${unitVal}, Csnap: ${csnapVal})`);
@@ -281,9 +276,9 @@ export class UIController {
       updateState();
     };
 
-    setupBar('top-slide-container', 'btn-top-retract', { open: '▲', closed: '▼' });
-    setupBar('left-slide-container', 'btn-left-retract', { open: '◀', closed: '▶' });
-    setupBar('right-slide-container', 'btn-right-retract', { open: '▶', closed: '◀' });
+    setupBar('top-slide-container', 'btn-top-retract', { open: '\u25b2', closed: '\u25bc' });
+    setupBar('left-slide-container', 'btn-left-retract', { open: '\u25c0', closed: '\u25b6' });
+    setupBar('right-slide-container', 'btn-right-retract', { open: '\u25b6', closed: '\u25c0' });
   }
 
   initImportHandler() {
@@ -628,7 +623,7 @@ export class UIController {
       li.className = `tree-item ${isSel ? 'selected' : ''} ${isHidden ? 'hidden-part' : ''}`;
       li.style.paddingLeft = `${Math.max(8, depth * 14 + 8)}px`;
       li.innerHTML = `
-        <span class="tree-icon">${isGroup ? '📁' : '⚙️'}</span>
+        <span class="tree-icon">${isGroup ? '\ud83d\udcc1' : '\u2699\ufe0f'}</span>
         <span class="tree-name">${node.name || 'Component'} ${isHidden ? '(Hidden)' : ''}</span>
       `;
 
@@ -659,7 +654,7 @@ export class UIController {
         const isHidden = obj.visible === false;
         const li = document.createElement('li');
         li.className = `tree-item ${isSel ? 'selected' : ''} ${isHidden ? 'hidden-part' : ''}`;
-        li.innerHTML = `<span class="tree-icon">⚙️</span><span class="tree-name">${obj.name}</span>`;
+        li.innerHTML = `<span class="tree-icon">\u2699\ufe0f</span><span class="tree-name">${obj.name}</span>`;
         li.addEventListener('click', (e) => {
           CADState.setSelectedId(id, e.ctrlKey || e.metaKey, e.shiftKey);
         });
@@ -686,7 +681,7 @@ export class UIController {
         subElemBadge.classList.remove('hidden');
         if (CADState.state.selectedFaceInfo) {
           const selInfo = CADState.state.selectedFaceInfo;
-          subElemType.textContent = `Face: ${selInfo.face_id} | Type: ${selInfo.surface_type} | Area: ${selInfo.area_mm2.toFixed(2)} mm² | Normal: [${selInfo.normal.map(n => n.toFixed(2)).join(', ')}]`;
+          subElemType.textContent = `Face: ${selInfo.face_id} | Type: ${selInfo.surface_type} | Area: ${selInfo.area_mm2.toFixed(2)} mm\u00b2 | Normal: [${selInfo.normal.map(n => n.toFixed(2)).join(', ')}]`;
         } else {
           subElemType.textContent = `Planar Face #${CADState.state.selectedFaceIndex}`;
         }
@@ -797,9 +792,16 @@ export class UIController {
     const telemVert = document.getElementById('telem-vertices');
     const telemFps = document.getElementById('telem-fps');
 
-    if (telemObj) telemObj.textContent = CADState.state.telemetry.objects;
-    if (telemVert) telemVert.textContent = CADState.state.telemetry.vertices;
-    if (telemFps) telemFps.textContent = CADState.state.telemetry.fps;
+    if (telemObj) telemObj.textContent = CADState.state.objects.length;
+    if (telemVert) {
+      const vertCount = CADState.state.objects.reduce((acc, obj) => {
+        return acc + (obj.faces ? obj.faces.length * 4 : 24);
+      }, 0);
+      telemVert.textContent = vertCount;
+    }
+    if (telemFps && window.CADViewport) {
+      telemFps.textContent = window.CADViewport.fps || 60;
+    }
   }
 
   initAssistant() {
@@ -811,7 +813,7 @@ export class UIController {
     if (btnToggle && drawer) {
       btnToggle.addEventListener('click', () => {
         drawer.classList.toggle('collapsed');
-        btnToggle.textContent = drawer.classList.contains('collapsed') ? '▲' : '▼';
+        btnToggle.textContent = drawer.classList.contains('collapsed') ? '\u25b2' : '\u25bc';
       });
     }
 
@@ -832,7 +834,8 @@ export class UIController {
       }
       if (log) {
         const replyText = res.message || res.reply || res.response || 'Command executed.';
-        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\n/g, '<br>')}</div>`;
+        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\
+/g, '<br>')}</div>`;
         log.scrollTop = log.scrollHeight;
       }
     };
