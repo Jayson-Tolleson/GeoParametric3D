@@ -368,7 +368,8 @@ async def handle_instructions_build():
         "M5 (Spindle off)",
         "M2 (Program End and Rewind)"
     ]
-    digest_text = "\n".join(gcode_lines)
+    digest_text = "\
+".join(gcode_lines)
     return json_response({
         "ok": True,
         "success": True,
@@ -395,7 +396,7 @@ async def handle_cnc_generate():
     min_y, max_y = bounds.get('min', [-50, -50, 0])[1], bounds.get('max', [50, 50, 25])[1]
     max_z = bounds.get('max', [50, 50, 25])[2]
     
-    gcode = f"""(LinuxCNC ISO G-Code — {obj_name})
+    gcode = f"""(LinuxCNC ISO G-Code \u2014 {obj_name})
 G21 G90 G64 P0.01 (Metric mm, Absolute, Continuous contouring)
 G17 (XY plane)
 M3 S{spindle}
@@ -451,10 +452,13 @@ async def get_telemetry():
 
 async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
     system_context = (
-        f"You are the dedicated Engineering Assistant for GeoParametric3D (Project: {PROJECT_ID}, Location: {LOCATION}).\n"
+        f"You are the dedicated Engineering Assistant for GeoParametric3D (Project: {PROJECT_ID}, Location: {LOCATION}).\
+"
         "Provide substantive, technically precise engineering reasoning, CAD/CAM/CAE guidance, mechanical/structural analysis, "
-        "B-Rep topological insight, material selection, and mathematical derivations.\n"
-        "B-Rep geometry is authoritative; render meshes are derived representations.\n"
+        "B-Rep topological insight, material selection, and mathematical derivations.\
+"
+        "B-Rep geometry is authoritative; render meshes are derived representations.\
+"
         "Always distinguish CAD topology (faces, edges, loops, vertices) from render artifacts (triangles, diagonals)."
     )
     
@@ -462,10 +466,11 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
     if cad_context:
         objs = cad_context.get('objects', [])
         parts_summary = [
-            f"{o.get('name')} (ID: {o.get('id')}, Material: {o.get('material')}, Faces: {len(o.get('faces', []))}, Volume: {o.get('volume_cm3')} cm³)"
+            f"{o.get('name')} (ID: {o.get('id')}, Material: {o.get('material')}, Faces: {len(o.get('faces', []))}, Volume: {o.get('volume_cm3')} cm\u00b3)"
             for o in objs[:10]
         ]
-        context_snippet = f"\nCurrent Active Assembly Scene ({len(objs)} bodies, canonical unit: {CANONICAL_INTERNAL_UNIT}): " + "; ".join(parts_summary)
+        context_snippet = f"\
+Current Active Assembly Scene ({len(objs)} bodies, canonical unit: {CANONICAL_INTERNAL_UNIT}): " + "; ".join(parts_summary)
 
     token = None
     try:
@@ -490,7 +495,9 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
     payload = {
         "contents": [{
             "parts": [{
-                "text": f"{system_context}{context_snippet}\n\nUser Query: {prompt}"
+                "text": f"{system_context}{context_snippet}\
+\
+User Query: {prompt}"
             }]
         }]
     }
@@ -533,7 +540,9 @@ async def assistant_chat():
     ai_reply = await call_vertex_gemini(user_message, cad_ctx)
     
     if chat_response.requires_action:
-        final_message = f"{chat_response.text}\n\n{ai_reply}" if ai_reply else chat_response.text
+        final_message = f"{chat_response.text}\
+\
+{ai_reply}" if ai_reply else chat_response.text
     else:
         final_message = ai_reply if ai_reply else f"Engineering Assistant ({PROJECT_ID}/{LOCATION}): Analyzed model state with {len(cad_ctx.get('objects', []))} bodies."
         

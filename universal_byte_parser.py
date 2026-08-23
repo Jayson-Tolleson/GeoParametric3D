@@ -89,7 +89,6 @@ SITE_ANCHOR = {
     'altitude': 95.0
 }
 
-# Optional Open CASCADE Technology (OCCT) Integration (OCP & python-occ)
 _OCCT_AVAILABLE = False
 _OCCT_BACKEND = None
 
@@ -1170,7 +1169,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "name": subpart_name,
                     "primitive_type": "solid_imported",
                     "color": part_color,
-                    "material": "Structural Steel A36 (7.85 g/cm³)",
+                    "material": "Structural Steel A36 (7.85 g/cm\u00b3)",
                     "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0],
                     "rotation": [0.0, 0.0, 0.0],
@@ -1284,7 +1283,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         entity_map: Dict[str, Tuple[str, str]] = {e[0]: (e[1], e[2]) for e in entity_matches}
         
         prod_name = "STEP_Part"
-        material_name = "Structural Steel A36 (7.85 g/cm³)"
+        material_name = "Structural Steel A36 (7.85 g/cm\u00b3)"
         header_colors = extract_step_colors_from_header(text[:65536])
         part_color = header_colors[0] if header_colors else "#38bdf8"
         
@@ -1720,8 +1719,10 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\
+': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\
+': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
@@ -1959,7 +1960,8 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "\n".join(step_lines).encode('utf-8')
+    return "\
+".join(step_lines).encode('utf-8')
 
 
 # ============================================================

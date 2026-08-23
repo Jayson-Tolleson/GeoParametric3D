@@ -1,6 +1,6 @@
 """
 GeoParametric3D Command Engine
-Processes CAD operations, parametric mutations, B-Rep instantiations, script execution, and Universal Imports.
+Processes CAD operations, parametric mutations, B-Rep instantiations, and Universal Imports.
 """
 import uuid
 import time
@@ -575,4 +575,4 @@ class CommandEngine:
                 "error": f"IMPORT_FAILED: Unable to parse 3D polygon topology from '{filename}'."
             }
         except Exception as e:
-            return {"ok": False, "success": False, "stage": "IMPORT_ERROR", "error": f"IMPORT_FAILED: {str(e)}"}
+            return {"ok": False, "success": False, "stage": "IMPORT_ERROR", "error": f"IMPORT_FAILED: {str(e)

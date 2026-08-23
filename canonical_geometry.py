@@ -1,10 +1,10 @@
 """
-GeoParametric3D — Canonical Geometry, Adaptive Tessellation, and Native Maps 3D Pipeline
+GeoParametric3D \u2014 Canonical Geometry, Adaptive Tessellation, and Native Maps 3D Pipeline
 
 Architectural Invariants:
   1. SOURCE GEOMETRY IS NOT THE RENDER MESH.
   2. Triangles are a derived rendering representation, NOT the authoritative truth.
-  3. Canonical geometry preserves mathematical and topological semantics for as long as practical.
+  3. Canonical geometry preserves mathematical and topological semantics.
   4. Units are authoritatively converted and preserved in canonical linear millimeters (mm).
   5. Transformations and instancing are preserved separately from geometry definitions.
   6. The renderer (<gmp-map-3d> / Maps 3D Web Component) selects the optimal semantic representation:
@@ -334,7 +334,6 @@ class GeoSurface:
         return origin, x_axis, y_axis, z_axis
 
     def evaluate(self, u: float, v: float) -> np.ndarray:
-        """Evaluate parametric coordinates P(u, v) -> 3D point."""
         origin, x_axis, y_axis, z_axis = self._get_frame()
         if self.surface_type == SurfaceType.PLANE:
             u_dir = np.asarray(self.parameters.get("u_dir", x_axis), dtype=np.float64)
@@ -397,7 +396,6 @@ class GeoSurface:
 class GeoFace:
     """
     A first-class semantic CAD face bounded by one outer loop and zero or more inner loops.
-    Preserves underlying mathematical surface and exact closed boundaries.
     """
     def __init__(self,
                  face_id: str,
@@ -647,7 +645,6 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
     """
     Numerical validation layer before B-Rep geometry is passed to the visualization payload.
     Checks for NaN, infinite, or extreme coordinates before tessellation.
-    Logs errors and sanitizes data to prevent camera bounds or LOD corruption.
     """
     diagnostics = {
         "invalid_vertices": 0,
@@ -656,7 +653,6 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
         "sanitized": False
     }
     
-    # 1. Validate Vertices
     invalid_vids = set()
     for vid, v in list(part.vertices.items()):
         pt = v.point
@@ -667,11 +663,9 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
             diagnostics["invalid_vertices"] += 1
             diagnostics["sanitized"] = True
             
-    # 2. Validate Edges
     invalid_eids = set()
     for eid, e in list(part.edges.items()):
         if e.vertex_start in invalid_vids or e.vertex_end in invalid_vids:
-            logger.error(f"Edge {eid} references invalid vertices. Removing.")
             invalid_eids.add(eid)
             del part.edges[eid]
             diagnostics["degenerate_edges"] += 1
@@ -681,30 +675,25 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
         pt_a = part.vertices[e.vertex_start].point
         pt_b = part.vertices[e.vertex_end].point
         if np.linalg.norm(pt_a - pt_b) < 1e-7:
-            logger.error(f"Degenerate edge detected in {part.id}: {eid} (length ~ 0)")
             invalid_eids.add(eid)
             del part.edges[eid]
             diagnostics["degenerate_edges"] += 1
             diagnostics["sanitized"] = True
             
-    # 3. Validate Loops
     invalid_lids = set()
     for lid, loop in list(part.loops.items()):
         valid_edges = [eid for eid in loop.ordered_edge_ids if eid not in invalid_eids]
         if len(valid_edges) < len(loop.ordered_edge_ids):
             diagnostics["sanitized"] = True
         if len(valid_edges) == 0:
-            logger.error(f"Loop {lid} has no valid edges. Removing.")
             invalid_lids.add(lid)
             del part.loops[lid]
         else:
             loop.ordered_edge_ids = valid_edges
             
-    # 4. Validate Faces
     invalid_fids = set()
     for fid, face in list(part.faces.items()):
         if face.outer_loop_id in invalid_lids:
-            logger.error(f"Face {fid} references invalid outer loop {face.outer_loop_id}. Removing.")
             invalid_fids.add(fid)
             del part.faces[fid]
             diagnostics["zero_area_faces"] += 1
@@ -742,7 +731,6 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
                 
         face.inner_loop_ids = [lid for lid in face.inner_loop_ids if lid not in invalid_lids]
         
-    # 5. Validate Shells & Solids
     for sid, shell in list(part.shells.items()):
         valid_faces = [fid for fid in shell.face_ids if fid not in invalid_fids]
         if not valid_faces:
@@ -761,9 +749,7 @@ def validate_brep_numerical_safety(part: GeoPart, max_coord: float = 1e10) -> Di
 
 class AdaptiveTessellator:
     """
-    Converts canonical geometry to derived render representations
-    using curvature, feature size, and desired level-of-detail.
-    Supports both exact planar polygons and smooth composite parametric surfaces.
+    Converts canonical geometry to derived render representations.
     """
     def __init__(self, chordal_tolerance: float = 0.05, angular_tolerance_deg: float = 12.0, policy: Optional[MeshPolicy] = None):
         if policy is not None:
@@ -776,7 +762,6 @@ class AdaptiveTessellator:
             self.policy = MeshPolicy(angular_deflection_deg=angular_tolerance_deg, maximum_chord_error=chordal_tolerance)
 
     def tessellate_face(self, part: GeoPart, face: GeoFace, lod: LODLevel = LODLevel.HIGH_LOD3) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """Tessellates a single GeoFace adaptively."""
         surface = part.surfaces.get(face.surface_id)
         outer_loop = part.loops.get(face.outer_loop_id)
         if not outer_loop:
@@ -795,7 +780,6 @@ class AdaptiveTessellator:
             if vertex:
                 poly_pts.append(vertex.point)
 
-        # Planar faces or low-complexity loops
         if not surface or surface.surface_type == SurfaceType.PLANE:
             if len(poly_pts) < 3:
                 return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int32), np.empty((0, 3), dtype=np.float64)
@@ -807,7 +791,6 @@ class AdaptiveTessellator:
             norms_arr = np.tile(face_norm, (len(verts_arr), 1))
             return verts_arr, indices_arr, norms_arr
 
-        # Parametric Curved Surfaces (Cylinder, Cone, Sphere, Torus, NURBS, Revolve, Extrude)
         lod_samples = {
             LODLevel.BOUNDS_LOD0: (4, 4),
             LODLevel.LOW_LOD1: (8, 6),
@@ -854,7 +837,6 @@ class AdaptiveTessellator:
         return verts_arr, indices_arr, norms_arr
 
     def tessellate_part(self, part: GeoPart, lod: LODLevel = LODLevel.HIGH_LOD3) -> RenderMesh:
-        """Tessellates all faces in a GeoPart into a single compact RenderMesh with face-provenance tags."""
         validate_brep_numerical_safety(part)
         
         all_verts: List[np.ndarray] = []
@@ -873,7 +855,6 @@ class AdaptiveTessellator:
                 all_indices.append((offset + int(t[0]), offset + int(t[1]), offset + int(t[2])))
                 tri_face_ids.append(face.id)
 
-        # Compact coincident geometric vertices for planar surfaces
         unique = {}
         final_vertices = []
         remap = []
@@ -896,18 +877,14 @@ class AdaptiveTessellator:
 # ============================================================
 
 class NativeRenderRepresentationType(str, enum.Enum):
-    NATIVE_POLYGON_3D = "cad-polygon"             # Closed planar surfaces / boundary loops
-    NATIVE_POLYLINE_3D = "cad-polyline"           # CAD curves, outlines, edges, toolpaths
-    NATIVE_MARKER_3D = "cad-marker"               # Anchors, inspection vertices, control points
-    NATIVE_MODEL_3D = "cad-model"                 # High-complexity assemblies / GLTF
-    CUSTOM_RENDER_MESH = "custom_render_mesh"        # Freeform surfaces & parametric NURBS
+    NATIVE_POLYGON_3D = "cad-polygon"
+    NATIVE_POLYLINE_3D = "cad-polyline"
+    NATIVE_MARKER_3D = "cad-marker"
+    NATIVE_MODEL_3D = "cad-model"
+    CUSTOM_RENDER_MESH = "custom_render_mesh"
 
 
 class RenderRepresentationSelector:
-    """
-    Selects the least expensive valid native rendering representation
-    for each canonical geometric entity in the GeoParametric3D renderer.
-    """
     @staticmethod
     def select_face_representation(surface: GeoSurface, face: GeoFace, vertex_count: int) -> NativeRenderRepresentationType:
         if surface.surface_type == SurfaceType.PLANE and len(face.inner_loop_ids) == 0 and vertex_count <= 64:
@@ -926,44 +903,32 @@ class RenderRepresentationSelector:
 
 
 # ============================================================
-# 7. CANONICAL BUILDERS (Primitive solids as semantic B-Rep)
+# 7. CANONICAL BUILDERS
 # ============================================================
 
 def create_canonical_box_part(width: float = 304.8, depth: float = 304.8, height: float = 304.8, name: str = "Canonical Box (1')") -> GeoPart:
-    """
-    Constructs a true semantic 6-face B-Rep Box with exact planar surfaces, loops, and edges.
-    """
     part = GeoPart(f"part_box_{uuid.uuid4().hex[:6]}", name)
     hw, hd, h = width / 2.0, depth / 2.0, height
 
-    # 8 Canonical vertices
     v_pts = [
         [-hw, -hd, 0.0], [hw, -hd, 0.0], [hw, hd, 0.0], [-hw, hd, 0.0],
         [-hw, -hd, h],   [hw, -hd, h],   [hw, hd, h],   [-hw, hd, h]
     ]
     v_ids = [part.add_vertex(p).id for p in v_pts]
 
-    # 12 Canonical edges
     edge_indices = [
-        (0, 1), (1, 2), (2, 3), (3, 0),  # Bottom loop: e0, e1, e2, e3
-        (4, 5), (5, 6), (6, 7), (7, 4),  # Top loop:    e4, e5, e6, e7
-        (0, 4), (1, 5), (2, 6), (3, 7)   # Vertical:    e8, e9, e10, e11
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7)
     ]
     edge_ids = [part.add_edge(v_ids[i], v_ids[j]).id for (i, j) in edge_indices]
 
-    # 6 Faces (Bottom, Top, Front, Right, Back, Left)
     face_definitions = [
-        # Bottom Face (Z = 0)
         ([edge_ids[3], edge_ids[2], edge_ids[1], edge_ids[0]], [0, 0, -1], [0, 0, 0]),
-        # Top Face (Z = h)
         ([edge_ids[4], edge_ids[5], edge_ids[6], edge_ids[7]], [0, 0, 1], [0, 0, h]),
-        # Front Face (Y = -hd)
         ([edge_ids[0], edge_ids[9], edge_ids[4], edge_ids[8]], [0, -1, 0], [0, -hd, 0]),
-        # Right Face (X = hw)
         ([edge_ids[1], edge_ids[10], edge_ids[5], edge_ids[9]], [1, 0, 0], [hw, 0, 0]),
-        # Back Face (Y = hd)
         ([edge_ids[2], edge_ids[11], edge_ids[6], edge_ids[10]], [0, 1, 0], [0, hd, 0]),
-        # Left Face (X = -hw)
         ([edge_ids[3], edge_ids[8], edge_ids[7], edge_ids[11]], [-1, 0, 0], [-hw, 0, 0])
     ]
 
