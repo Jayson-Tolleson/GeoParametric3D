@@ -11,6 +11,8 @@ export function applyTheme(themeName) {
     window.CADViewport.render();
   }
 
+}
+
 export class UIController {
   constructor() {
     this.initSlidePanels();
@@ -842,7 +844,21 @@ export class UIController {
     inputMsg.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendMessage();
     });
-  }
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
 
-  }
 export const windowUI = new UIController();
