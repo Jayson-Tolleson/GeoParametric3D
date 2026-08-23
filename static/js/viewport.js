@@ -1032,11 +1032,11 @@ export class ViewportController {
     const isImp = CADState.isImperial();
     const gridStep = isImp ? 304.8 : 300.0;
     
-    // 1. Draw Grid & Axes
+    // 1. Draw Infinite Horizon Ground Grid & XYZ Datum Axes
     if (prefs.showGrid !== false) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.lineWidth = 1;
-      const gridExtent = gridStep * 10;
+      const gridExtent = gridStep * 35;
       for (let x = -gridExtent; x <= gridExtent; x += gridStep) {
         const p1 = this.project3DTo2D(x, -gridExtent, 0);
         const p2 = this.project3DTo2D(x, gridExtent, 0);

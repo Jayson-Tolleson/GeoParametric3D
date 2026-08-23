@@ -4,6 +4,13 @@ from enum import Enum
 from typing import Dict, List, Tuple, Optional, Any, Callable
 from universal_byte_parser import parse_universal_model_bytes, enu_to_wgs84, detect_and_normalize_units, clean_and_tessellate, SITE_ANCHOR
 
+SITE_ANCHOR = {
+    'name': 'Null Island Geodetic Origin Anchor',
+    'lat': 0.0,
+    'lng': 0.0,
+    'altitude': 0.0
+}
+
 MATERIAL_DENSITIES: Dict[str, float] = {
     'Steel': 7.85,
     'StainlessSteel_316': 8.00,

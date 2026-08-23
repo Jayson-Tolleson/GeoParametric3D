@@ -114,7 +114,7 @@ export class AIAssistantController {
         }
       }
 
-      const reply = res?.message || res?.reply || res?.response || res?.code || 'Analyzed CAD assembly state.';
+      const reply = res?.message || res?.reply || res?.response || res?.code || `[Vertex AI Assistant (broadcasterfishmap/global)]: Active CAD context analyzed (${CADState.state.objects.length} solid bodies). Ready for parametric modeling and B-Rep queries.`;
       this.appendAssistantMessage(reply, !res?.success && res?.ok === false);
     } catch (err) {
       this.appendAssistantMessage(`Error contacting Vertex AI Assistant: ${err.message}`, true);
