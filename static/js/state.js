@@ -4,7 +4,7 @@ export const WGS84_SEMI_MAJOR_AXIS = 6378137.0;
 export const WGS84_FLATTENING = 1.0 / 298.257223563;
 export const WGS84_ECCENTRICITY_SQ = 0.00669437999014;
 
-export function enuToGeodetic(x_mm = 0, y_mm = 0, z_mm = 0, anchorLat = 33.8814, anchorLng = -117.9213, anchorAlt = 95.0) {
+export function enuToGeodetic(x_mm = 0, y_mm = 0, z_mm = 0, anchorLat = 0.0, anchorLng = 0.0, anchorAlt = 0.0) {
   const x_m = (x_mm || 0) / 1000.0;
   const y_m = (y_mm || 0) / 1000.0;
   const z_m = (z_mm || 0) / 1000.0;
@@ -26,7 +26,7 @@ export function enuToGeodetic(x_mm = 0, y_mm = 0, z_mm = 0, anchorLat = 33.8814,
   return { lat, lng, altitude };
 }
 
-export function geodeticToEnu(lat, lng, altitude, anchorLat = 33.8814, anchorLng = -117.9213, anchorAlt = 95.0) {
+export function geodeticToEnu(lat, lng, altitude, anchorLat = 0.0, anchorLng = 0.0, anchorAlt = 0.0) {
   const latRad = (anchorLat * Math.PI) / 180.0;
   const sinLat = Math.sin(latRad);
   const sinLatSq = sinLat * sinLat;
@@ -85,7 +85,7 @@ class StateStore {
         range: 1828.8,
         panX: 0,
         panY: 0,
-        center: { lat: 33.8814, lng: -117.9213, altitude: 95.0 }
+        center: { lat: 0.0, lng: 0.0, altitude: 0.0
       },
       telemetry: {
         objects: 0,
@@ -130,10 +130,10 @@ class StateStore {
       this.state.projectId = doc.project_id;
       localStorage.setItem('cascadecad-active-uuid', doc.project_id);
     }
-    const camCenter = this.state.camera.center || { lat: 33.8814, lng: -117.9213, altitude: 95.0 };
+    const camCenter = this.state.camera.center || { lat: 0.0, lng: 0.0, altitude: 0.0 };
     const anchorLat = camCenter.lat !== undefined ? camCenter.lat : camCenter[0];
     const anchorLng = camCenter.lng !== undefined ? camCenter.lng : camCenter[1];
-    const anchorAlt = camCenter.altitude !== undefined ? camCenter.altitude : (camCenter[2] || 95.0);
+    const anchorAlt = camCenter.altitude !== undefined ? camCenter.altitude : (camCenter[2] || 0.0);
 
     if (doc.objects) {
       this.state.objects = doc.objects.map(obj => {

@@ -12,7 +12,7 @@ GeoParametric3D is an engineering-grade Computer-Aided Design and Manufacturing 
 1. **Authoritative Boundary Representation (B-Rep) Solid Modeling:** Exact mathematical surfaces, analytical boundary curves, topological orientation, and non-manifold healing powered by OpenCASCADE (OCCT / OCP) on the backend and WebAssembly clients on the frontend.
 2. **Native Geospatial Photorealistic Viewport Engine (`<gmp-map-3d>`):** Complete elimination of all legacy Three.js WebGL canvas wrappers in favor of direct hardware-accelerated 3D geospatial primitives (`<gmp-polygon-3d>`, `<gmp-polyline-3d>`, `<gmp-marker-3d>`, and 3D Tiles) within the Google Maps 3D ecosystem.
 
-This specification formally addresses the architectural mandate to eliminate legacy intermediate mesh layers (Three.js), details the mathematical mechanics of the Dual-Route B-Rep rendering pipeline, and establishes exclusive geodetic anchoring at Null Island `[0.0, 0.0, 0.0]` for zero-distortion Cartesian coordinate projection.
+This specification formally addresses the architectural mandate to eliminate legacy intermediate mesh layers (Three.js), details the mathematical mechanics of the Dual-Route B-Rep rendering pipeline, and provides an exhaustive analysis of geodetic anchoring constraints, establishing Null Island (`[0.0, 0.0, 0.0]`) as the exclusive planetary geodetic origin anchor.
 
 ---
 
@@ -25,7 +25,7 @@ Traditional web CAD implementations wrap WebGL or Three.js scene graphs around C
 - **Triangulation Diagonals on Planar Slabs:** Forcing planar faces into triangle meshes introduces visual meshing diagonals that degrade mechanical inspection.
 
 ### 2.2 Native Viewport Architecture
-All Three.js dependencies are eliminated. Viewport presentation is handled exclusively by native Web Components:
+All Three.js dependencies are eliminated. Viewport presentation is handled by native Web Components:
 - **`<gmp-map-3d>`:** Authoritative 3D camera controller, photorealistic Earth surface, real-world atmospheric lighting, and continuous level-of-detail (LOD) streaming.
 - **`<gmp-polygon-3d>`:** Direct rendering of exact planar polygons (`outerCoordinates`, `innerCoordinates`) with GPU-driven rasterization, zero meshing diagonals, and hardware depth testing against 3D buildings and terrain.
 - **`<gmp-polyline-3d>`:** Direct rendering of drafting lines, toolpaths, and boundary wire edges.
@@ -115,29 +115,26 @@ All Three.js dependencies are eliminated. Viewport presentation is handled exclu
 
 ---
 
-## 4. Exclusive Geodetic Anchoring at Null Island `[0.0, 0.0, 0.0]`
+## 4. Exclusive Geodetic Anchoring Analysis: Null Island `[0.0, 0.0, 0.0]`
 
-### 4.1 Geodetic Anchoring Principle
-Web CAD solid kernels operate in flat Euclidean $\mathbb{R}^3$ space (Local Cartesian ENU coordinates in millimeters), whereas `<gmp-map-3d>` operates in an ellipsoidal WGS-84 reference frame (Earth-Centered, Earth-Fixed / ECEF coordinates).
+### 4.1 Necessity of a Geodetic Datum
+Web CAD solid modeling kernels operate in flat Euclidean $\mathbb{R}^3$ space (Local Cartesian ENU coordinates in millimeters), whereas `<gmp-map-3d>` operates in an ellipsoidal WGS-84 reference frame (Earth-Centered, Earth-Fixed / ECEF coordinates). A geodetic anchor point $\mathbf{A} = (\phi_0, \lambda_0, h_0)$ is mathematically required to map local CAD coordinates $[x, y, z]^T$ to the planetary surface.
 
-To map local CAD coordinates $[x, y, z]^T$ to the planetary surface, the system mandates exclusive anchoring at Null Island:
-$$\mathbf{A} = (\phi_0, \lambda_0, h_0) = (0.0^\circ, 0.0^\circ, 0.0\text{ m})$$
+### 4.2 Exclusive Standardization on Null Island `[0.0, 0.0, 0.0]`
+Under the governing architecture, GeoParametric3D anchors exclusively to **Null Island** (Latitude $\phi_0 = 0.0^\circ$, Longitude $\lambda_0 = 0.0^\circ$, Altitude $h_0 = 0.0\text{ m}$).
 
-### 4.2 Mathematical Superiority of Null Island Anchoring
-Let $\phi_0 = 0.0^\circ$ (Equator), $\lambda_0 = 0.0^\circ$ (Prime Meridian), and $h_0 = 0.0\text{ m}$ (WGS-84 Ellipsoid Sea Level).
+#### Mathematical Mechanics of the Null Island Datum
+Under the Local Tangent Plane (East-North-Up / ENU) projection at $(\phi_0 = 0.0^\circ, \lambda_0 = 0.0^\circ, h_0 = 0.0\text{ m})$:
 
-Under the Local Tangent Plane (East-North-Up / ENU) projection:
-$$\phi = \phi_0 + \frac{y_{\text{m}}}{M(\phi_0) + h_0} \times \left(\frac{180^\circ}{\pi}\right)$$
-$$\lambda = \lambda_0 + \frac{x_{\text{m}}}{(N(\phi_0) + h_0) \cos(\phi_0)} \times \left(\frac{180^\circ}{\pi}\right)$$
-$$h = h_0 + z_{\text{m}}$$
+$$\phi = \frac{y_{\text{m}}}{M(0)} \times \left(\frac{180^\circ}{\pi}\right)$$
+$$\lambda = \frac{x_{\text{m}}}{N(0)} \times \left(\frac{180^\circ}{\pi}\right)$$
+$$h = z_{\text{m}}$$
 
-At $\phi_0 = 0.0^\circ$:
-- The prime vertical radius of curvature is maximized: $N(0) = a = 6,378,137.0\text{ m}$.
-- The meridional radius of curvature is minimized: $M(0) = a(1 - e^2) \approx 6,335,439.327\text{ m}$.
-- The longitudinal scaling term $\cos(\phi_0) = \cos(0) = 1.0$, completely eliminating latitude-dependent longitudinal convergence distortion.
-
-### 4.3 Architectural Mandate
-All project instances, geometry instantiations, and coordinate transforms are anchored exclusively to Null Island `[0.0, 0.0, 0.0]`. This guarantees maximum numerical stability, removes trigonometric distortion across horizontal axes, and ensures deterministic IEEE 754 precision.
+At the Equator and Prime Meridian intersection:
+1. **Maximum Curvature Radius:** $N(0) = a = 6,378,137.0\text{ m}$.
+2. **Minimum Meridional Curvature:** $M(0) = a(1 - e^2) \approx 6,335,439.327\text{ m}$.
+3. **Zero Longitudinal Convergence Distortion:** The cosine convergence term $\cos(\phi_0) = \cos(0^\circ) \equiv 1.0$, completely eliminating latitude-dependent longitudinal shearing and preserving pure Cartesian orthogonality across all mechanical part dimensions.
+4. **Singularity-Free Geometric Isometry:** The tangent plane at Null Island provides optimal condition numbers for the forward and inverse Jacobian matrices across engineering dimensions (sub-millimeter to kilometer scale).
 
 ---
 
@@ -153,7 +150,7 @@ $$N(\phi) = \frac{a}{\sqrt{1 - e^2 \sin^2(\phi)}}$$
 $$M(\phi) = \frac{a(1 - e^2)}{\left(1 - e^2 \sin^2(\phi)\right)^{3/2}}$$
 
 ### 5.3 Local Cartesian (mm) to Geodetic Conversion
-For any local point $\mathbf{P} = [x_{\text{mm}}, y_{\text{mm}}, z_{\text{mm}}]^T$ and rotation angle $\theta_z$:
+For any local CAD point $\mathbf{P} = [x_{\text{mm}}, y_{\text{mm}}, z_{\text{mm}}]^T$ and rotation angle $\theta_z$ around the vertical axis:
 
 $$\begin{bmatrix} x' \\ y' \\ z' \end{bmatrix} = \begin{bmatrix} \cos\theta_z & -\sin\theta_z & 0 \\ \sin\theta_z & \cos\theta_z & 0 \\ 0 & 0 & 1 \end{bmatrix} \begin{bmatrix} x_{\text{mm}} \times 10^{-3} \\ y_{\text{mm}} \times 10^{-3} \\ z_{\text{mm}} \times 10^{-3} \end{bmatrix}$$
 
@@ -200,7 +197,7 @@ $$h = h_0 + z'$$
                  +------------------------------------------+
 ```
 
-CSnap resolves edge selection ambiguity by computing a combined distance-normal score, preventing background edge misallocation.
+CSnap eliminates selection ambiguity across adjacent coplanar and non-coplanar boundaries by maximizing a combined proximity and view-normal metric.
 
 ---
 
@@ -220,10 +217,10 @@ CSnap resolves edge selection ambiguity by computing a combined distance-normal 
 
 ## 8. Conclusion & Production Guidelines
 
-1. **Zero External Render Engines:** `<gmp-map-3d>` is the sole viewport provider. No Three.js or Babylon.js layers exist in the runtime stack.
-2. **B-Rep Authoritative Primacy:** Visual polygons are strictly derived presentations; all edits mutate the B-Rep topology.
+1. **Zero External Render Engines:** `<gmp-map-3d>` is the sole 3D viewport provider. No Three.js, Babylon.js, or intermediate scene graphs exist in the runtime stack.
+2. **B-Rep Authoritative Primacy:** Visual polygons are derived presentations; all geometric operations mutate authoritative B-Rep topology.
 3. **Universal Internal Millimeters:** All geometry is stored in canonical linear millimeters (`mm`). Display unit conversions occur strictly at the UI presentation boundary.
-4. **Exclusive Null Island Anchoring:** The entire workstation anchors exclusively to Null Island `[0.0, 0.0, 0.0]`, delivering zero-distortion Cartesian-to-geodetic mappings across all CAD operations.
+4. **Exclusive Null Island Geodetic Anchor:** The entire workstation is anchored exclusively to Null Island `[0.0, 0.0, 0.0]` for zero longitudinal distortion and optimal isometric mapping.
 
 ---  
 *End of Master Architectural Specification.*

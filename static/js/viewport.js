@@ -235,10 +235,10 @@ export class ViewportController {
     this.isSyncingFromState = true;
     try {
       const cam = CADState.state.camera;
-      const c = cam.center || { lat: 33.8814, lng: -117.9213, altitude: 95.0 };
+      const c = cam.center || { lat: 0.0, lng: 0.0, altitude: 0.0 };
       const lat = c.lat !== undefined ? c.lat : c[0];
       const lng = c.lng !== undefined ? c.lng : c[1];
-      const alt = c.altitude !== undefined ? c.altitude : (c[2] || 95.0);
+      const alt = c.altitude !== undefined ? c.altitude : (c[2] || 0.0);
       this.map3d.setAttribute('center', `${lat},${lng},${alt}`);
       if (typeof cam.heading === 'number') this.map3d.setAttribute('heading', String(cam.heading));
       if (typeof cam.tilt === 'number') this.map3d.setAttribute('tilt', String(cam.tilt));
@@ -987,7 +987,7 @@ export class ViewportController {
 
         const geodeticCoords = pts.map(pt => {
           if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
-            return { lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 95.0 };
+            return { lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 0.0 };
           }
           const wx = (object.position?.[0] || 0) + (pt.x || 0) * (object.scale?.[0] || 1);
           const wy = (object.position?.[1] || 0) + (pt.y || 0) * (object.scale?.[1] || 1);
