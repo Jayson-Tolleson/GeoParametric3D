@@ -24,7 +24,7 @@ async def health_check():
         "status": "healthy",
         "version": "5.0.0",
         "site_anchor": SITE_ANCHOR,
-        "engine": "OpenCASCADE / GeoParametric3D"
+        "engine": "OpenCASCADE / GeoParametric3D True N-Gon Kernel"
     }
 
 @app.get("/api/telemetry")
@@ -34,7 +34,7 @@ async def get_telemetry():
         return {"lines": []}
     try:
         with open(log_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()[-100:]
+            lines = f.readlines()[-120:]
         return {"lines": [line.strip() for line in lines]}
     except Exception as e:
         return {"lines": [f"Error reading telemetry: {str(e)}"]}
@@ -53,10 +53,29 @@ async def import_step_file(file: UploadFile = File(...)):
 
 @app.get("/api/assembly/current")
 async def get_current_assembly():
+    global LATEST_ASSEMBLY_DATA
     if not LATEST_ASSEMBLY_DATA:
-        # Return default loaded demo
-        default_demo = pipeline.parse_step_data(b"ISO-10303-21; ( .MILLI. , .METRE. );", "jetdrive_collector.step")
-        return default_demo
+        LATEST_ASSEMBLY_DATA = pipeline.generate_synthetic_jetdrive_assembly("jetdrive.step", 1.0, ["#34d399", "#ec4899"])
+    return LATEST_ASSEMBLY_DATA
+
+@app.get("/api/presets/{preset_id}")
+async def load_preset(preset_id: str):
+    global LATEST_ASSEMBLY_DATA
+    if preset_id == "jetdrive":
+        LATEST_ASSEMBLY_DATA = pipeline.generate_synthetic_jetdrive_assembly("jetdrive.step", 1.0, ["#34d399", "#ec4899"])
+    elif preset_id == "collector":
+        LATEST_ASSEMBLY_DATA = pipeline.generate_synthetic_jetdrive_assembly("collector_flange.step", 1.0, ["#34d399"])
+        # Filter to only collector
+        LATEST_ASSEMBLY_DATA["solids"] = [s for s in LATEST_ASSEMBLY_DATA["solids"] if "collector" in s["name"].lower()]
+        LATEST_ASSEMBLY_DATA["total_solids"] = len(LATEST_ASSEMBLY_DATA["solids"])
+        LATEST_ASSEMBLY_DATA["total_ngons"] = sum(len(s["planar_polygons"]) for s in LATEST_ASSEMBLY_DATA["solids"])
+    elif preset_id == "part56":
+        LATEST_ASSEMBLY_DATA = pipeline.generate_synthetic_jetdrive_assembly("part56_mount.step", 1.0, ["#ec4899"])
+        LATEST_ASSEMBLY_DATA["solids"] = [s for s in LATEST_ASSEMBLY_DATA["solids"] if "56" in s["name"]]
+        LATEST_ASSEMBLY_DATA["total_solids"] = len(LATEST_ASSEMBLY_DATA["solids"])
+        LATEST_ASSEMBLY_DATA["total_ngons"] = sum(len(s["planar_polygons"]) for s in LATEST_ASSEMBLY_DATA["solids"])
+    else:
+        raise HTTPException(status_code=404, detail="Preset not found")
     return LATEST_ASSEMBLY_DATA
 
 if __name__ == "__main__":

@@ -20,7 +20,17 @@ function enuMmToWgs84(coordsMm) {
   });
 }
 
-function createFallbackDemo() {
+function createFallback61SolidAssembly() {
+  const PALETTE = [
+    '#34d399', '#ec4899', '#38bdf8', '#fbbf24',
+    '#a855f7', '#06b6d4', '#f97316', '#64748b',
+    '#22c55e', '#e11d48', '#818cf8', '#facc15'
+  ];
+
+  const solids = [];
+  let totalNgons = 0;
+
+  // 1. Collector Flange (Canonical mm: 1642.218 x 508.0 x 414.337 mm)
   const outer_flange_mm = [
     [-821.109, -254.0, 0.0],
     [821.109, -254.0, 0.0],
@@ -33,80 +43,132 @@ function createFallbackDemo() {
     [700.0, 180.0, 0.0],
     [-700.0, 180.0, 0.0]
   ];
+  const collector = {
+    solid_id: 'solid_collector_01',
+    name: 'Collector',
+    color: '#34d399',
+    bounding_box: {
+      min: [-821.109, -254.0, 0.0],
+      max: [821.109, 254.0, 414.337],
+      dimensions_mm: [1642.218, 508.0, 414.337],
+      diagonal_mm: Math.sqrt(1642.218**2 + 508.0**2 + 414.337**2)
+    },
+    deflection: { linear_mm: 1.2, angular_rad: 0.52 },
+    planar_polygons: [
+      {
+        face_id: 'Face_Collector_Flange_Intake',
+        solid_id: 'solid_collector_01',
+        solid_name: 'Collector',
+        surface_type: 'GeomAbs_Plane',
+        outer_coordinates: enuMmToWgs84(outer_flange_mm),
+        inner_coordinates: [enuMmToWgs84(void_intake_mm)],
+        raw_outer_mm: outer_flange_mm,
+        vertex_count: 4,
+        holes_count: 1,
+        color: '#34d399'
+      }
+    ],
+    curved_mesh: { vertices: [], indices: [], tri_count: 0 }
+  };
+  solids.push(collector);
+  totalNgons += 1;
+
+  // 2. Part 56: L-Shaped Mounting Flange Bracket
   const l_outer_mm = [
-    [0.0, 0.0, 50.0],
-    [100.0, 0.0, 50.0],
-    [100.0, 20.0, 50.0],
-    [20.0, 20.0, 50.0],
-    [20.0, 100.0, 50.0],
-    [0.0, 100.0, 50.0]
+    [200.0, 100.0, 50.0],
+    [300.0, 100.0, 50.0],
+    [300.0, 120.0, 50.0],
+    [220.0, 120.0, 50.0],
+    [220.0, 200.0, 50.0],
+    [200.0, 200.0, 50.0]
   ];
+  const part56 = {
+    solid_id: 'solid_part_56',
+    name: 'jetdrive - Part 56',
+    color: '#ec4899',
+    bounding_box: {
+      min: [200.0, 100.0, 50.0],
+      max: [300.0, 200.0, 70.0],
+      dimensions_mm: [100.0, 100.0, 20.0],
+      diagonal_mm: Math.sqrt(100.0**2 + 100.0**2 + 20.0**2)
+    },
+    deflection: { linear_mm: 0.2, angular_rad: 0.40 },
+    planar_polygons: [
+      {
+        face_id: 'Face_L_Flange_Mount_56',
+        solid_id: 'solid_part_56',
+        solid_name: 'jetdrive - Part 56',
+        surface_type: 'GeomAbs_Plane',
+        outer_coordinates: enuMmToWgs84(l_outer_mm),
+        inner_coordinates: [],
+        raw_outer_mm: l_outer_mm,
+        vertex_count: 6,
+        holes_count: 0,
+        color: '#ec4899'
+      }
+    ],
+    curved_mesh: { vertices: [], indices: [], tri_count: 0 }
+  };
+  solids.push(part56);
+  totalNgons += 1;
+
+  // 3. Generate remaining solids up to 61 solids
+  for (let idx = 3; idx <= 61; idx++) {
+    const col = PALETTE[idx % PALETTE.length];
+    const cx = (idx % 8 - 4) * 180.0;
+    const cy = (Math.floor(idx / 8) - 4) * 120.0;
+    const cz = 80.0 + (idx * 4.0);
+    
+    const w = 70.0;
+    const h = 40.0;
+    const rect = [
+      [cx - w/2, cy - h/2, cz],
+      [cx + w/2, cy - h/2, cz],
+      [cx + w/2, cy + h/2, cz],
+      [cx - w/2, cy + h/2, cz]
+    ];
+
+    const s = {
+      solid_id: `solid_part_${idx}`,
+      name: `jetdrive - Part ${idx}`,
+      color: col,
+      bounding_box: {
+        min: [cx - w/2, cy - h/2, cz],
+        max: [cx + w/2, cy + h/2, cz + 10.0],
+        dimensions_mm: [w, h, 10.0],
+        diagonal_mm: Math.sqrt(w**2 + h**2 + 100.0)
+      },
+      deflection: { linear_mm: 0.2, angular_rad: 0.40 },
+      planar_polygons: [
+        {
+          face_id: `Face_Part_${idx}_Top`,
+          solid_id: `solid_part_${idx}`,
+          solid_name: `jetdrive - Part ${idx}`,
+          surface_type: 'GeomAbs_Plane',
+          outer_coordinates: enuMmToWgs84(rect),
+          inner_coordinates: [],
+          raw_outer_mm: rect,
+          vertex_count: 4,
+          holes_count: 0,
+          color: col
+        }
+      ],
+      curved_mesh: { vertices: [], indices: [], tri_count: 0 }
+    };
+    solids.push(s);
+    totalNgons += 1;
+  }
 
   return {
     success: true,
-    filename: 'jetdrive_collector.step',
+    filename: 'jetdrive.step',
     units: { source: 'mm', canonical: 'mm', scale: 1.0 },
     extracted_colors: ['#34d399', '#ec4899'],
-    total_solids: 2,
-    solids: [
-      {
-        solid_id: 'solid_collector_01',
-        name: 'Collector',
-        color: '#34d399',
-        bounding_box: {
-          min: [-821.109, -254.0, 0.0],
-          max: [821.109, 254.0, 414.337],
-          dimensions_mm: [1642.218, 508.0, 414.337],
-          diagonal_mm: Math.sqrt(1642.218**2 + 508.0**2 + 414.337**2)
-        },
-        deflection: { linear_mm: 1.2, angular_rad: 0.52 },
-        planar_polygons: [
-          {
-            face_id: 'Face_Collector_Flange_Top',
-            solid_id: 'solid_collector_01',
-            solid_name: 'Collector',
-            surface_type: 'GeomAbs_Plane',
-            outer_coordinates: enuMmToWgs84(outer_flange_mm),
-            inner_coordinates: [enuMmToWgs84(void_intake_mm)],
-            raw_outer_mm: outer_flange_mm,
-            vertex_count: 4,
-            holes_count: 1,
-            color: '#34d399'
-          }
-        ],
-        curved_mesh: { vertices: [], indices: [], tri_count: 0 }
-      },
-      {
-        solid_id: 'solid_part_56',
-        name: 'jetdrive - Part 56',
-        color: '#ec4899',
-        bounding_box: {
-          min: [0.0, 0.0, 50.0],
-          max: [100.0, 100.0, 70.0],
-          dimensions_mm: [100.0, 100.0, 20.0],
-          diagonal_mm: Math.sqrt(100.0**2 + 100.0**2 + 20.0**2)
-        },
-        deflection: { linear_mm: 0.2, angular_rad: 0.40 },
-        planar_polygons: [
-          {
-            face_id: 'Face_L_Flange_Mount_56',
-            solid_id: 'solid_part_56',
-            solid_name: 'jetdrive - Part 56',
-            surface_type: 'GeomAbs_Plane',
-            outer_coordinates: enuMmToWgs84(l_outer_mm),
-            inner_coordinates: [],
-            raw_outer_mm: l_outer_mm,
-            vertex_count: 6,
-            holes_count: 0,
-            color: '#ec4899'
-          }
-        ],
-        curved_mesh: { vertices: [], indices: [], tri_count: 0 }
-      }
-    ],
-    total_ngons: 2,
+    total_solids: solids.length,
+    solids: solids,
+    total_ngons: totalNgons,
     total_triangles: 0,
-    duration_ms: 45
+    duration_ms: 65
   };
 }
 
@@ -121,10 +183,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       const assemblyData = await res.json();
       CADState.setAssembly(assemblyData);
     } else {
-      CADState.setAssembly(createFallbackDemo());
+      CADState.setAssembly(createFallback61SolidAssembly());
     }
   } catch (err) {
     console.warn('Backend offline, running in standalone True N-Gon workstation mode.');
-    CADState.setAssembly(createFallbackDemo());
+    CADState.setAssembly(createFallback61SolidAssembly());
   }
 });

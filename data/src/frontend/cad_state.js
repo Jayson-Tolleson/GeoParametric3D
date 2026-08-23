@@ -1,5 +1,5 @@
 /**
- * GeoParametric3D State & Unit Invariance Subsystem (Laws 1, 2, 3)
+ * GeoParametric3D State & Unit Invariance Subsystem (Laws 1, 2, 3, 4)
  */
 export const CADState = {
   _isImperial: false,
@@ -58,8 +58,25 @@ export const CADState = {
     this.notify('selection_changed', { faceId, solidId });
   },
 
+  selectSolid(solidId) {
+    this._selectedSolid = solidId;
+    if (this._currentAssembly && this._currentAssembly.solids) {
+      const solid = this._currentAssembly.solids.find(s => s.solid_id === solidId);
+      if (solid && solid.planar_polygons && solid.planar_polygons.length > 0) {
+        this._selectedFace = solid.planar_polygons[0].face_id;
+      } else {
+        this._selectedFace = null;
+      }
+    }
+    this.notify('selection_changed', { faceId: this._selectedFace, solidId });
+  },
+
   getSelectedFace() {
     return this._selectedFace;
+  },
+
+  getSelectedSolid() {
+    return this._selectedSolid;
   },
 
   subscribe(fn) {

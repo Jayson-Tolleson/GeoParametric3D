@@ -18,7 +18,7 @@ export class Map3DViewportRenderer {
     this.map3d.center = { lat: 33.881400, lng: -117.921300, altitude: 95.0 };
     this.map3d.heading = 25;
     this.map3d.tilt = 60;
-    this.map3d.range = 80;
+    this.map3d.range = 75;
   }
 
   handleStateEvent(event, data) {
@@ -31,7 +31,7 @@ export class Map3DViewportRenderer {
 
   /**
    * Mounts extracted planar N-Gon polygons into the native Google Maps 3D viewport.
-   * Preserves exact face boundaries with zero internal diagonals.
+   * Preserves exact face boundaries with zero internal diagonals and applies ingested header colors.
    */
   mountAssembly(assemblyData) {
     if (!this.map3d || !assemblyData || !assemblyData.solids) return;
@@ -63,8 +63,8 @@ export class Map3DViewportRenderer {
           this.activePolygons.set(face.face_id, poly);
         }
 
-        // Store face base color
-        poly._baseColor = face.color || '#38bdf8';
+        // Store face base color from STEP header ingestion
+        poly._baseColor = face.color || solid.color || '#38bdf8';
 
         // Bind exact boundary coordinates
         poly.outerCoordinates = face.outer_coordinates || [];
@@ -72,10 +72,10 @@ export class Map3DViewportRenderer {
           poly.innerCoordinates = face.inner_coordinates;
         }
 
-        // Style defaults
+        // Style defaults with 100% opaque shading
         const isSel = this.selectedFaceId === face.face_id;
         poly.fillColor = isSel ? '#f59e0b' : poly._baseColor;
-        poly.strokeColor = isSel ? '#ffffff' : '#e0f2fe';
+        poly.strokeColor = isSel ? '#ffffff' : '#0f172a';
         poly.strokeWidth = isSel ? 3.0 : 1.2;
       }
     }
@@ -95,7 +95,7 @@ export class Map3DViewportRenderer {
     for (const [id, poly] of this.activePolygons) {
       const isSel = id === faceId;
       poly.fillColor = isSel ? '#f59e0b' : (poly._baseColor || '#38bdf8');
-      poly.strokeColor = isSel ? '#ffffff' : '#e0f2fe';
+      poly.strokeColor = isSel ? '#ffffff' : '#0f172a';
       poly.strokeWidth = isSel ? 3.0 : 1.2;
     }
   }
@@ -109,7 +109,42 @@ export class Map3DViewportRenderer {
         heading: 30,
         range: 65
       },
-      durationMillis: 1200
+      durationMillis: 1000
     });
+  }
+
+  setViewAngle(mode) {
+    if (!this.map3d) return;
+    const center = { lat: 33.881400, lng: -117.921300, altitude: 95.0 };
+    
+    switch (mode) {
+      case 'fit':
+        this.flyToAssembly();
+        break;
+      case 'iso':
+        this.map3d.flyCameraTo({
+          endCamera: { center, tilt: 45, heading: 45, range: 70 },
+          durationMillis: 800
+        });
+        break;
+      case 'top':
+        this.map3d.flyCameraTo({
+          endCamera: { center, tilt: 0.1, heading: 0, range: 60 },
+          durationMillis: 800
+        });
+        break;
+      case 'front':
+        this.map3d.flyCameraTo({
+          endCamera: { center, tilt: 89, heading: 0, range: 60 },
+          durationMillis: 800
+        });
+        break;
+      case 'side':
+        this.map3d.flyCameraTo({
+          endCamera: { center, tilt: 89, heading: 90, range: 60 },
+          durationMillis: 800
+        });
+        break;
+    }
   }
 }

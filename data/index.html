@@ -11,8 +11,8 @@
   <style>
     /* Custom scrollbars */
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 5px;
+      height: 5px;
     }
     ::-webkit-scrollbar-track {
       background: #090d16;
@@ -24,62 +24,67 @@
     ::-webkit-scrollbar-thumb:hover {
       background: #334155;
     }
+    .cad-dark-panel {
+      background-color: rgba(13, 19, 32, 0.95);
+      border-color: rgba(30, 41, 59, 0.8);
+    }
   </style>
 </head>
-<body class="bg-slate-950 text-slate-100 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
+<body class="bg-[#070b12] text-slate-100 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
 
-  <!-- HEADER TOOLBAR -->
-  <header class="h-14 bg-slate-900/95 backdrop-blur border-b border-slate-800 px-4 flex items-center justify-between z-20 shrink-0 shadow-lg">
-    <div class="flex items-center space-x-3">
-      <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-sky-500 via-indigo-600 to-emerald-400 flex items-center justify-center font-bold text-white shadow-md ring-1 ring-white/10">
-        <i class="fa-solid fa-cube text-base"></i>
-      </div>
-      <div>
-        <div class="flex items-center space-x-2">
-          <h1 class="text-sm font-bold tracking-wide text-white leading-none">GeoParametric3D</h1>
-          <span class="px-1.5 py-0.5 text-[9px] font-mono font-semibold bg-sky-950 text-sky-400 border border-sky-800/80 rounded">V5.0 PROD</span>
+  <!-- TOP CAD COMMAND RIBBON -->
+  <header class="bg-[#0c121e] border-b border-slate-800 px-3 py-1.5 flex flex-col gap-1 z-30 shrink-0 shadow-lg">
+    <!-- Primary Control Bar -->
+    <div class="flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-sky-500 via-indigo-600 to-emerald-400 flex items-center justify-center font-bold text-white shadow-md ring-1 ring-white/10">
+          <i class="fa-solid fa-cube text-sm"></i>
         </div>
-        <span class="text-[10px] text-slate-400 font-mono">True N-Gon Dual-Route Invariant B-Rep Engine</span>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="text-xs font-bold tracking-wide text-white leading-none">GeoParametric3D</h1>
+            <span class="px-1.5 py-0.2 text-[9px] font-mono font-semibold bg-sky-950 text-sky-400 border border-sky-800/80 rounded">V5.0 PROD</span>
+          </div>
+          <span class="text-[9px] text-slate-400 font-mono">B-Rep Solid Kernel &middot; Direct Header Color Ingestion &middot; Opaque Shading</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons & Quick Controls -->
+      <div class="flex items-center space-x-2">
+        <input type="file" id="step-file-input" accept=".step,.stp" class="hidden">
+        <button id="btn-upload-step" class="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold px-2.5 py-1 rounded transition shadow ring-1 ring-white/10">
+          <i class="fa-solid fa-cloud-arrow-up text-[10px]"></i>
+          <span>Universal Import (STEP)</span>
+        </button>
+
+        <button id="btn-unit-toggle" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] font-semibold px-2.5 py-1 rounded transition shadow-sm" title="Toggle Canonical Unit Display (Law 3)">
+          <i class="fa-solid fa-ruler-combined text-[10px] text-amber-400"></i>
+          <span id="unit-status-indicator">Metric (mm)</span>
+        </button>
+
+        <button id="btn-fly-home" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-[11px] px-2 py-1 rounded transition shadow-sm" title="Re-center Camera">
+          <i class="fa-solid fa-crosshairs text-sky-400"></i>
+        </button>
+
+        <div id="system-status-badge" class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-500 text-white flex items-center space-x-1 shadow ring-1 ring-emerald-400/40">
+          <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+          <span id="status-badge-text">Ready (60 FPS)</span>
+        </div>
       </div>
     </div>
 
-    <!-- Central Model Presets & Controls -->
-    <div class="flex items-center space-x-2 bg-slate-950/70 p-1 rounded-lg border border-slate-800">
-      <span class="text-[11px] font-semibold text-slate-400 px-2 flex items-center space-x-1">
-        <i class="fa-solid fa-layer-group text-sky-400 text-xs"></i>
-        <span>Presets:</span>
-      </span>
-      <button id="preset-jetdrive" class="preset-btn px-2.5 py-1 text-xs font-medium rounded bg-sky-600 text-white shadow-sm transition hover:bg-sky-500">
-        Jetdrive Flange (61-Solid)
-      </button>
-      <button id="preset-lbracket" class="preset-btn px-2.5 py-1 text-xs font-medium rounded bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white">
-        Concave L-Bracket
-      </button>
-      <button id="preset-genus2" class="preset-btn px-2.5 py-1 text-xs font-medium rounded bg-slate-800 text-slate-300 transition hover:bg-slate-700 hover:text-white">
-        Multi-Void Genus 2 ('B')
-      </button>
-    </div>
-
-    <!-- Actions & Status -->
-    <div class="flex items-center space-x-2.5">
-      <input type="file" id="step-file-input" accept=".step,.stp" class="hidden">
-      <button id="btn-upload-step" class="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-md transition shadow ring-1 ring-white/10">
-        <i class="fa-solid fa-cloud-arrow-up text-xs"></i>
-        <span>Import STEP</span>
-      </button>
-
-      <button id="btn-unit-toggle" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-md transition shadow-sm" title="Toggle Canonical Unit Display (Law 3)">
-        <i class="fa-solid fa-ruler-combined text-xs text-amber-400"></i>
-        <span id="unit-status-indicator">Metric (mm)</span>
-      </button>
-
-      <button id="btn-fly-home" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-md transition shadow-sm" title="Re-center Camera to CAD Site Anchor">
-        <i class="fa-solid fa-crosshairs text-sky-400"></i>
-      </button>
-
-      <div id="system-status-badge" class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/90 text-white flex items-center space-x-1.5 shadow ring-1 ring-emerald-400/40">
-        <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-        <span id="status-badge-text">Ready (60 FPS)</span>
+    <!-- Quick Filter & Tool Strip -->
+    <div class="flex items-center justify-between text-[11px] text-slate-300 pt-0.5 border-t border-slate-800/60 overflow-x-auto whitespace-nowrap gap-2">
+      <div class="flex items-center space-x-1.5">
+        <span class="text-[10px] text-slate-400 uppercase font-semibold">Presets:</span>
+        <button id="preset-jetdrive" class="px-2 py-0.5 rounded text-[11px] font-medium bg-sky-600 text-white hover:bg-sky-500 transition">Marine Jetdrive (61 Solids)</button>
+        <button id="preset-collector" class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Collector Flange (#34d399)</button>
+        <button id="preset-part56" class="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 transition">Part 56 Mount (#ec4899)</button>
+      </div>
+      <div class="flex items-center space-x-2 text-[10px] text-slate-400 font-mono">
+        <span>Render Mode: <span class="text-emerald-400 font-bold">Opaque Solid (No Ghosting)</span></span>
+        <span>|</span>
+        <span>Color Mode: <span class="text-cyan-300 font-bold">STEP Header RGB</span></span>
       </div>
     </div>
   </header>
@@ -87,7 +92,22 @@
   <!-- MAIN WORKSPACE -->
   <div class="flex-1 flex overflow-hidden relative">
     
-    <!-- 3D VIEWPORT CANVAS (<gmp-map-3d>) -->
+    <!-- LEFT SIDEBAR: WORKSPACE ASSEMBLY TREE -->
+    <aside class="w-64 bg-[#0a0f1c]/95 border-r border-slate-800 flex flex-col shrink-0 z-10 shadow-2xl overflow-hidden">
+      <div class="px-3 py-2 bg-[#0d1424] border-b border-slate-800 flex items-center justify-between">
+        <div class="text-xs font-bold text-slate-200 tracking-wider uppercase flex items-center space-x-1.5">
+          <i class="fa-solid fa-folder-tree text-sky-400 text-xs"></i>
+          <span>Workspace Assembly Tree</span>
+        </div>
+        <span id="tree-solid-count" class="text-[10px] font-mono text-sky-400 bg-sky-950/80 px-1.5 py-0.5 rounded border border-sky-800/60">0</span>
+      </div>
+      
+      <div id="assembly-tree-list" class="flex-1 overflow-y-auto p-1.5 space-y-0.5 font-mono text-[11px]">
+        <!-- Assembly Tree Nodes injected dynamically -->
+      </div>
+    </aside>
+
+    <!-- CENTER 3D VIEWPORT CANVAS (<gmp-map-3d>) -->
     <main class="flex-1 relative bg-slate-950 flex flex-col items-stretch justify-stretch overflow-hidden">
       <gmp-map-3d
         class="w-full h-full block relative"
@@ -97,60 +117,70 @@
         default-labels-disabled
       ></gmp-map-3d>
 
-      <!-- Overlay Watermark & Topological HUD -->
-      <div class="absolute top-3 left-3 bg-slate-900/90 backdrop-blur border border-slate-700/70 rounded-lg p-3 pointer-events-none shadow-2xl max-w-sm">
-        <div class="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-2">
-          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span>Dual-Route Planar N-Gon Active</span>
+      <!-- Viewport HUD Orientation Compass Widget -->
+      <div class="absolute top-3 right-3 bg-slate-900/90 backdrop-blur border border-slate-700/70 rounded-full p-1 shadow-2xl pointer-events-none flex flex-col items-center justify-center w-16 h-16 border-sky-500/30">
+        <div class="text-[9px] font-bold text-emerald-400 font-mono">TOP</div>
+        <div class="flex items-center justify-between w-full px-1.5 text-[8px] font-mono text-slate-400">
+          <span>W</span>
+          <i class="fa-solid fa-compass text-sky-400 text-xs"></i>
+          <span>E</span>
         </div>
-        <div class="text-[11px] text-slate-300 mt-1 leading-relaxed font-sans">
-          Planar surfaces rendered directly with <code class="text-amber-300 font-mono">&lt;gmp-polygon-3d&gt;</code>.<br>
-          <span class="text-emerald-400 font-semibold">Zero internal triangulation diagonals.</span><br>
-          <span class="text-slate-400 text-[10px]">Site Anchor: <span class="font-mono text-slate-300">33.8814°N, 117.9213°W (95m Elev)</span></span>
-        </div>
+        <div class="text-[9px] font-bold text-sky-400 font-mono">BOT</div>
       </div>
 
-      <!-- Viewport Controls HUD Overlay -->
-      <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur border border-slate-800 rounded-lg p-1.5 flex items-center space-x-2 text-xs shadow-lg">
-        <span class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold px-1.5">View Angle:</span>
-        <button id="btn-view-iso" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-mono">ISO (3D)</button>
-        <button id="btn-view-top" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-mono">TOP (Planar)</button>
-        <button id="btn-view-front" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[11px] font-mono">FRONT</button>
+      <!-- Viewport View Angle Toolbar -->
+      <div class="absolute top-3 left-3 bg-slate-900/85 backdrop-blur border border-slate-800 rounded-lg p-1 flex items-center space-x-1 text-xs shadow-lg">
+        <button id="btn-view-fit" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-mono font-semibold">FIT</button>
+        <button id="btn-view-iso" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-mono font-semibold">ISO</button>
+        <button id="btn-view-top" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-mono font-semibold">TOP</button>
+        <button id="btn-view-front" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-mono font-semibold">FRONT</button>
+        <button id="btn-view-side" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded text-[10px] font-mono font-semibold">SIDE</button>
+      </div>
+
+      <!-- Overlay Watermark & Topological HUD -->
+      <div class="absolute bottom-3 left-3 bg-slate-900/90 backdrop-blur border border-slate-700/70 rounded-lg p-2.5 pointer-events-none shadow-2xl max-w-sm">
+        <div class="text-[10px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+          <span>Dual-Route Opaque N-Gon Shading Active</span>
+        </div>
+        <div class="text-[10px] text-slate-300 mt-0.5 leading-tight font-sans">
+          Rendered with native <code class="text-amber-300 font-mono">&lt;gmp-polygon-3d&gt;</code> &middot; 100% Opaque Geometry &middot; Zero Internal Triangulation Diagonals.
+        </div>
       </div>
     </main>
 
-    <!-- RIGHT SIDEBAR INSPECTOR & TELEMETRY -->
-    <aside class="w-96 bg-slate-900/95 border-l border-slate-800 flex flex-col shrink-0 z-10 shadow-2xl overflow-hidden">
+    <!-- RIGHT SIDEBAR: PROPERTIES & ACTION PANEL -->
+    <aside class="w-80 bg-[#0a0f1c]/95 border-l border-slate-800 flex flex-col shrink-0 z-10 shadow-2xl overflow-hidden">
       
-      <!-- Topological B-Rep Hierarchy & Properties Panel -->
+      <!-- Properties & Action Panel Container -->
       <div class="flex-1 flex flex-col overflow-hidden border-b border-slate-800">
-        <div class="px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
-          <div class="text-xs font-bold text-slate-200 tracking-wider uppercase flex items-center space-x-2">
-            <i class="fa-solid fa-sliders text-sky-400"></i>
-            <span>Topological Inspector</span>
+        <div class="px-3 py-2 bg-[#0d1424] border-b border-slate-800 flex items-center justify-between">
+          <div class="text-xs font-bold text-slate-200 tracking-wider uppercase flex items-center space-x-1.5">
+            <i class="fa-solid fa-sliders text-sky-400 text-xs"></i>
+            <span>Properties & Action Panel</span>
           </div>
-          <span id="header-unit-tag" class="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/60">Invariance: mm</span>
+          <span id="header-unit-tag" class="text-[10px] font-mono text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/60">Metric (mm)</span>
         </div>
         
-        <div id="properties-content" class="p-3.5 text-xs text-slate-300 flex-1 overflow-y-auto space-y-3 font-sans">
-          <!-- Dynamic property bindings rendered by UIController -->
+        <div id="properties-content" class="p-3 text-xs text-slate-300 flex-1 overflow-y-auto space-y-3 font-sans">
+          <!-- Dynamic material, color, transparency, and bounding box controls -->
         </div>
       </div>
 
-      <!-- Multi-Worker Parallel Telemetry Console -->
-      <div class="h-64 bg-slate-950 flex flex-col shrink-0">
-        <div class="px-3 py-1.5 bg-slate-900/90 border-t border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+      <!-- Multi-Worker Telemetry Log Console -->
+      <div class="h-48 bg-slate-950 flex flex-col shrink-0">
+        <div class="px-3 py-1.5 bg-[#0d1424] border-t border-b border-slate-800 flex items-center justify-between text-[10px] text-slate-400 font-semibold">
           <span class="flex items-center space-x-1.5">
             <i class="fa-solid fa-terminal text-emerald-400 text-xs"></i>
             <span>sys_telemetry.log</span>
           </span>
-          <div class="flex items-center space-x-2">
+          <div class="flex items-center space-x-1.5">
             <span class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-            <span class="text-[10px] text-slate-400 font-mono">Multi-Worker Pool (x4)</span>
+            <span class="text-[9px] text-slate-400 font-mono">Multi-Worker (x4)</span>
           </div>
         </div>
-        <div id="telemetry-terminal" class="flex-1 p-2.5 font-mono text-[11px] overflow-y-auto space-y-1 bg-slate-950/95 text-slate-300 select-text leading-tight">
-          <!-- Real-time Multi-Worker Telemetry Feed -->
+        <div id="telemetry-terminal" class="flex-1 p-2 font-mono text-[10px] overflow-y-auto space-y-1 bg-slate-950/95 text-slate-300 select-text leading-tight">
+          <!-- Real-time Telemetry Feed -->
         </div>
       </div>
     </aside>
