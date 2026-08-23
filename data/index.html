@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoParametric3D Workstation | True N-Gon CAD & Maps 3D Pipeline</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Maps 3D Web Component -->
+  <script async src="https://maps.googleapis.com/maps/api/js?key=&v=alpha&libraries=maps3d"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen w-screen overflow-hidden flex flex-col font-sans select-none">
+
+  <!-- HEADER TOOLBAR -->
+  <header class="h-14 bg-slate-900 border-b border-slate-800 px-4 flex items-center justify-between z-20 shrink-0 shadow-lg">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow">
+        <i class="fa-solid fa-cube text-sm"></i>
+      </div>
+      <div>
+        <h1 class="text-sm font-bold tracking-wide text-white leading-none">GeoParametric3D</h1>
+        <span class="text-[10px] text-slate-400 font-mono">True N-Gon Dual-Route CAD Engine V5.0</span>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex items-center space-x-3">
+      <input type="file" id="step-file-input" accept=".step,.stp" class="hidden">
+      <button id="btn-upload-step" class="flex items-center space-x-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-3 py-1.5 rounded transition shadow">
+        <i class="fa-solid fa-cloud-arrow-up text-xs"></i>
+        <span>Import STEP</span>
+      </button>
+
+      <button id="btn-unit-toggle" class="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded transition">
+        <i class="fa-solid fa-ruler-combined text-xs text-amber-400"></i>
+        <span id="unit-status-indicator">Metric (mm)</span>
+      </button>
+
+      <button id="btn-fly-home" class="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded transition" title="Re-center Camera">
+        <i class="fa-solid fa-crosshairs text-sky-400"></i>
+      </button>
+
+      <div id="system-status-badge" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500 text-white">
+        Ready (60 FPS)
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN WORKSPACE -->
+  <div class="flex-1 flex overflow-hidden relative">
+    
+    <!-- 3D VIEWPORT CANVAS (<gmp-map-3d>) -->
+    <main class="flex-1 relative bg-slate-950 flex flex-col items-stretch justify-stretch">
+      <gmp-map-3d
+        class="w-full h-full block relative"
+        heading="25"
+        tilt="60"
+        range="80"
+        default-labels-disabled
+      ></gmp-map-3d>
+
+      <!-- Overlay Watermark & Telemetry Banner -->
+      <div class="absolute top-3 left-3 bg-slate-900/85 backdrop-blur border border-slate-700/60 rounded-lg p-2.5 pointer-events-none shadow-xl max-w-sm">
+        <div class="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center space-x-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Dual-Route Planar N-Gon Active</span>
+        </div>
+        <div class="text-[11px] text-slate-300 mt-1 leading-normal">
+          Planar surfaces rendered directly with <code class="text-amber-300 font-mono">&lt;gmp-polygon-3d&gt;</code>.<br>
+          <span class="text-emerald-400 font-semibold">Zero internal triangulation diagonals.</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- RIGHT SIDEBAR INSPECTOR & TELEMETRY -->
+    <aside class="w-84 bg-slate-900 border-l border-slate-800 flex flex-col shrink-0 z-10 shadow-2xl">
+      <!-- Properties Panel -->
+      <div class="p-3.5 border-b border-slate-800 flex-1 overflow-y-auto">
+        <div class="text-xs font-bold text-slate-300 tracking-wider uppercase mb-3 flex items-center space-x-1.5">
+          <i class="fa-solid fa-sliders text-sky-400"></i>
+          <span>Topological Inspector</span>
+        </div>
+        <div id="properties-content" class="text-xs text-slate-300 space-y-3">
+          <!-- Dynamic property bindings rendered by UIController -->
+        </div>
+      </div>
+
+      <!-- System Telemetry Console -->
+      <div class="h-56 bg-slate-950 border-t border-slate-800 flex flex-col">
+        <div class="px-3 py-1.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-[11px] text-slate-400 font-semibold">
+          <span class="flex items-center space-x-1.5">
+            <i class="fa-solid fa-terminal text-emerald-400"></i>
+            <span>sys_telemetry.log</span>
+          </span>
+          <span class="text-[10px] text-slate-500 font-mono">Multi-Worker Pool</span>
+        </div>
+        <div id="telemetry-terminal" class="flex-1 p-2.5 font-mono text-[11px] overflow-y-auto space-y-0.5 bg-slate-950 select-text">
+          <!-- Telemetry feed -->
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="src/frontend/app.js"></script>
+</body>
+</html>
