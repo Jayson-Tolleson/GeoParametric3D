@@ -822,27 +822,6 @@ export class UIController {
       input.value = '';
 
       const res = await CADApi.sendAssistantPrompt(text);
-      if (res && res.document) {
-        CADState.setDocument(res.document);
-      }
-      if (log) {
-        const replyText = res.message || res.reply || res.response || 'Command executed.';
-        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\/g, '<br>')}</div>`;
-        log.scrollTop = log.scrollHeight;
-      }
-    };
-
-    if (btnSend) btnSend.addEventListener('click', sendPrompt);
-    if (input) {
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') sendPrompt();
-      });
-    }
-  }
-}
-
-export const windowUI = new UIController();
-window.uiController = windowUI;
     const telemFps = document.getElementById('telem-fps');
 
     if (telemObj) telemObj.textContent = CADState.state.objects.length;
