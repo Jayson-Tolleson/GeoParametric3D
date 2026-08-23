@@ -130,6 +130,33 @@ export class WasmKernelBridge {
     return res;
   }
 
+  transformMesh(mesh, matrix) {
+    if (!mesh || !matrix) return mesh;
+    const det = this.computeMatrixDeterminant(matrix);
+    const isInverted = det < 0;
+
+    if (mesh.attributes?.position?.array) {
+      const pos = mesh.attributes.position.array;
+      for (let i = 0; i < pos.length; i += 3) {
+        const pt = this.applyTransformToPoint({ x: pos[i], y: pos[i + 1], z: pos[i + 2] }, matrix);
+        pos[i] = pt.x;
+        pos[i + 1] = pt.y;
+        pos[i + 2] = pt.z;
+      }
+    }
+
+    if (isInverted && mesh.index?.array) {
+      const idx = mesh.index.array;
+      for (let i = 0; i < idx.length; i += 3) {
+        const tmp = idx[i + 1];
+        idx[i + 1] = idx[i + 2];
+        idx[i + 2] = tmp;
+      }
+    }
+
+    return mesh;
+  }
+
   buildAssemblyTree(wasmResult) {
     if (!wasmResult) {
       return { name: 'Empty Assembly', objects: [], assemblyTree: [] };
@@ -339,3 +366,4 @@ export class WasmKernelBridge {
 
 export const WasmCADKernel = new WasmKernelBridge();
 window.WasmCADKernel = WasmCADKernel;
+export default WasmCADKernel;
