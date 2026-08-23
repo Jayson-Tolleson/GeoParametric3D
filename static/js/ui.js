@@ -268,4 +268,30 @@ export class UIController {
       panel.addEventListener('mouseenter', () => setHover(true));
       panel.addEventListener('mouseleave', () => setHover(false));
       btn.addEventListener('mouseenter', () => setHover(true));
-      btn.addEventListener('mouseleave', () => set
+      btn.addEventListener('mouseleave', () => setHover(false));
+
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const currentlyLocked = panel.dataset.locked === 'true';
+        panel.dataset.locked = currentlyLocked ? 'false' : 'true';
+        updateState();
+      });
+    };
+
+    setupBar('top-slide-container', 'btn-retract-top', { open: '▲', closed: '▼' });
+    setupBar('left-slide-container', 'btn-retract-left', { open: '◄', closed: '►' });
+    setupBar('right-slide-container', 'btn-retract-right', { open: '►', closed: '◄' });
+  }
+
+  initInspector() {}
+  initActionPanel() {}
+  initAssistant() {}
+  initImportHandler() {}
+  renderAssemblyTree() {}
+  renderInspector() {}
+  renderTelemetry() {}
+  syncActiveButtons() {}
+}
+
+
+export const windowUI = new UIController();

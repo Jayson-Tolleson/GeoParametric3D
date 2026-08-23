@@ -575,4 +575,4 @@ class CommandEngine:
                 "error": f"IMPORT_FAILED: Unable to parse 3D polygon topology from '{filename}'."
             }
         except Exception as e:
-            return {"ok": False, "success": False, "stage": "IMPORT_ERROR", "error": f"IMPORT_FAILED: {str(e)
+            return {"ok": False, "success": False, "stage": "IMPORT_ERROR", "error": f"IMPORT_FAILED: {str(e)}"}
