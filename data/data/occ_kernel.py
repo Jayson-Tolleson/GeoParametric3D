@@ -1,13 +1,12 @@
 """
 GeoParametric3D OpenCASCADE (OCCT / OCP) Kernel & Parallel Dual-Route Extractor
-Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (V5.1.0):
+Enforces Sections 1, 2, 3 & 4 of the Governing Architecture Specification (V4.4.0):
   1. Exact B-Rep as authoritative geometric truth (GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace)
   2. Adaptive deflection: dynamic linear and angular deflection scaling to prevent over-tessellation while expanding planar angles
   3. Complete solid face coverage: extracts both clean outer/inner N-Gon perimeter loops and complete watertight tessellation triangles (matching FreeCAD standard)
   4. Concave perimeters ('L', 'T', 'E' brackets) and multiply-connected cutout holes ('A', 'B', 'O' genus topology)
   5. Multi-solid compound unpacking with multi-worker ThreadPool execution and telemetry progress reporting
   6. STEP linear unit scale factor detection & canonical internal linear millimeter normalization
-  7. Authoritative native color and presentation style metadata extraction
 """
 
 from typing import List, Dict, Any, Tuple, Optional, Callable
@@ -35,7 +34,6 @@ try:
     from OCP.TopLoc import TopLoc_Location
     from OCP.Bnd import Bnd_Box
     from OCP.BRepBndLib import BRepBndLib
-    from OCP.Quantity import Quantity_Color, Quantity_TOC_RGB
     _OCCT_AVAILABLE = True
     TopoDS_Face_Cast = getattr(TopoDS, "Face_s", getattr(TopoDS, "Face", None))
     TopoDS_Wire_Cast = getattr(TopoDS, "Wire_s", getattr(TopoDS, "Wire", None))
@@ -60,7 +58,6 @@ except ImportError:
         from OCC.Core.TopLoc import TopLoc_Location
         from OCC.Core.Bnd import Bnd_Box
         from OCC.Core.BRepBndLib import brepbndlib as BRepBndLib
-        from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
         _OCCT_AVAILABLE = True
         TopoDS_Face_Cast = getattr(TopoDS, "Face", None)
         TopoDS_Wire_Cast = getattr(TopoDS, "Wire", None)
