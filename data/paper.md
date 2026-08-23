@@ -1,399 +1,231 @@
-# Master Architectural Specification: Exact B-Rep Solid Kernel, True N-Gon Boundary Pipeline, and High-Precision 3D Photorealistic Geodetic Rendering in `<gmp-map-3d>`
+# MASTER ARCHITECTURAL SPECIFICATION & SYSTEM DESIGN REPORT
 
-**Author:** Principal CAD Systems Architect & Graphics Kernel Governor  
-**System:** GeoParametric3D Engineering Workstation (V5.2.0 Production Standard)  
-**Target Environments:** Google Maps 3D Web Component (`<gmp-map-3d>`), Native WebGL/OpenGL Shaders, OpenCASCADE/OCP 7.9+ Kernel, LinuxCNC CAM Gateway  
-**Document Version:** 5.2.0  
+**System Name:** GeoParametric3D (CascadeCAD High-Precision Workstation)
+**Document Version:** 6.0.0 (Consolidated Master Technical Paper)
+**Author:** Principal CAD Systems Architect & Computational Geometry Governor
+**Target Platforms:** Google Maps 3D Web Component (`<gmp-map-3d>`), WebGL/WebGPU Hardware Pipeline, OpenCASCADE (OCCT/OCP) Kernel, Vertex AI Assistant Engine
 
 ---
 
 ## Table of Contents
-1. [Executive Summary & Architectural Invariants](#1-executive-summary--architectural-invariants)
-2. [Root Cause Analysis: Viewport Invisibility & Camera-Geometry Decoupling](#2-root-cause-analysis-viewport-invisibility--camera-geometry-decoupling)
-3. [Geodetic Coordinate Transform & WGS84 Local Tangent Plane (ENU) Engine](#3-geodetic-coordinate-transform--wgs84-local-tangent-plane-enu-engine)
-4. [Authoritative CAD B-Rep Kernel & Dual-Route Surface Extractor](#4-authoritative-cad-b-rep-kernel--dual-route-surface-extractor)
-5. [Direct Native `<gmp-map-3d>` Component Integration Architecture](#5-direct-native-gmp-map-3d-component-integration-architecture)
-6. [WebGL / OpenGL Hardware Overlay & Depth-Buffer Synchronization](#6-webgl--opengl-hardware-overlay--depth-buffer-synchronization)
-7. [Camera Framing, View Frustum Tuning, and Automatic Bounding Box Fitting](#7-camera-framing-view-frustum-tuning-and-automatic-bounding-box-fitting)
-8. [Universal Byte Parsing, Manifold Healing, and Assembly Hierarchy](#8-universal-byte-parsing-manifold-healing-and-assembly-hierarchy)
-9. [AI Assistant Integration & Vertex AI Mechanical Reasoning](#9-ai-assistant-integration--vertex-ai-mechanical-reasoning)
-10. [Comprehensive Verification Strategy & Test Matrix](#10-comprehensive-verification-strategy--test-matrix)
+1. [Executive Summary & Core Architectural Tenets](#1-executive-summary--core-architectural-tenets)
+2. [Mathematical & Canonical Geometry Foundations](#2-mathematical--canonical-geometry-foundations)
+3. [Coordinate Systems, Dynamic Geodetic Anchoring & Infinite CAD Space](#3-coordinate-systems-dynamic-geodetic-anchoring--infinite-cad-space)
+4. [Units Detection, Ingestion, and Multiscale Pipeline](#4-units-detection-ingestion-and-multiscale-pipeline)
+5. [B-Rep Authority vs. Derived Render Mesh Separation](#5-b-rep-authority-vs-derived-render-mesh-separation)
+6. [OpenCASCADE Dual-Route Extraction & Planar N-Gon Topology](#6-opencascade-dual-route-extraction--planar-n-gon-topology)
+7. [Hybrid Rendering Pipeline: `<gmp-map-3d>` & WebGL Overlay](#7-hybrid-rendering-pipeline-gmp-map-3d--webgl-overlay)
+8. [Camera Frustum, Dynamic Framing, and Infinite 1'x1' Ground Grid](#8-camera-frustum-dynamic-framing-and-infinite-1x1-ground-grid)
+9. [Vertex AI Assistant & REST API Integration](#9-vertex-ai-assistant--rest-api-integration)
+10. [Verification, Telemetry, and Diagnostics](#10-verification-telemetry-and-diagnostics)
 
 ---
 
-## 1. Executive Summary & Architectural Invariants
+## 1. Executive Summary & Core Architectural Tenets
 
-GeoParametric3D is an engineering-grade, browser-based CAD/CAM workstation capable of modeling, parsing, and rendering authoritative Boundary Representation (B-Rep) solid geometry directly within Google Maps 3D Photorealistic 3D Tiles (`<gmp-map-3d>`). 
+GeoParametric3D is a cloud-native, browser-executable parametric CAD workstation engineered for high-precision mechanical, architectural, and civil engineering modeling. The workstation bridges exact Boundary Representation (B-Rep) topological solids with geospatial visualization engines—specifically Google Maps 3D Web Components (`<gmp-map-3d>`) augmented by a synchronized WebGL/Canvas hardware overlay.
 
-Unlike conventional web viewers that degrade solids into unstructured triangle soups, GeoParametric3D enforces strict separation between **Authoritative Geometric Truth** (B-Rep curves, surfaces, faces, loops, shells, and solids) and **Derived Rendering Representations** (planar N-Gons and adaptive deflection meshes).
+### Primary Directives & Invariants
+1. **Exact B-Rep Geometric Truth:** The source CAD geometry (`GeoPart`, `GeoSolid`, `GeoShell`, `GeoFace`, `GeoLoop`, `GeoEdge`, `GeoVertex`) is the immutable mathematical truth. Triangulated meshes are ephemeral derived views.
+2. **Arbitrary Scale Operational Domain:** The system seamlessly spans scales from sub-millimeter precision parts (5 mm screws, micro-fluidics) to civil structures (2,000 ft skyscrapers and infrastructure corridors) without visual clipping, floating-point jitter, or coordinate collapse.
+3. **Decoupled Geospatial & Cartesian Space:** The internal modeling kernel operates in pure, canonical metric millimeters ($mm$) at Cartesian origin $(0, 0, 0)$. Dynamic projection maps Cartesian ENU (East-North-Up) offsets to Earth-Centered Earth-Fixed (ECEF) / WGS84 coordinates on demand, removing hardcoded regional site anchors.
+4. **Dual-Route Planar Extraction:** Planar faces (`GeomAbs_Plane`) are preserved as pristine N-Gon perimeter and hole loops, eliminating diagonal triangulation artifacts. Non-planar surfaces are discretized under adaptive chordal and angular deflection controls.
+5. **High-Efficiency Memory Contract:** Zero-copy binary serialization and typed arrays (`Float32Array`, `Uint32Array`) ensure 60 FPS viewport throughput and instant memory compaction.
+
+---
+
+## 2. Mathematical & Canonical Geometry Foundations
+
+### 2.1 B-Rep Topological Hierarchy
+Every solid in GeoParametric3D adheres to standard Euler-Poincaré topological characteristics:
+$$\mathcal{V} - \mathcal{E} + \mathcal{F} = 2(\mathcal{S} - \mathcal{G}) + \mathcal{H}$$
+where $\mathcal{V}$ is vertices, $\mathcal{E}$ is edges, $\mathcal{F}$ is faces, $\mathcal{S}$ is shells, $\mathcal{G}$ is genus (through-holes), and $\mathcal{H}$ is internal void cavities.
 
 ```
-+---------------------------------------------------------------------------------------------------+
-|                               AUTHORITATIVE B-REP SOLID GEOMETRY                                  |
-|  GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace -> GeoSurface / Loop   |
-+-------------------------------------------------+-------------------------------------------------+
-                                                  |
-                                                  v
-                              [Analytic Surface Classification]
-                                                  |
-                 +--------------------------------+--------------------------------+
-                 |                                                                 |
-                 v (GeomAbs_Plane)                                                 v (Curved / Freeform)
-+------------------------------------------------+      +--------------------------------------------------+
-|     TRUE PLANAR N-GON LOOP EXTRACTOR           |      |        ADAPTIVE DEFLECTION TESSELLATOR           |
-|   - Exact Outer Bound & Inner Cutout Wires     |      |   - Dynamic Linear & Angular Deflection          |
-|   - Zero Internal Triangulation Diagonals      |      |   - Watertight Vertex Normal Continuity          |
-|   - Discretized Analytical Curves Under Chord  |      |   - Face-ID Provenance Preservation              |
-+-----------------------+------------------------+      +------------------------+-------------------------+
-                        |                                                                |
-                        +------------------------+---------------------------------------+
-                                                 |
-                                                 v
-+---------------------------------------------------------------------------------------------------+
-|                         WGS84 LOCAL TANGENT PLANE (ENU -> GEODETIC CONVERTER)                     |
-|   Anchored at Fullerton, CA (33.8814° N, -117.9213° W, 95.0 m MSL) | Canonical Unit: Linear mm   |
-+------------------------------------------------+--------------------------------------------------+
-                                                 |
-                                                 v
-+---------------------------------------------------------------------------------------------------+
-|                      DUAL VIEWPORT COMPOSITOR & OPENGL/WEBGL SYNC ENGINE                          |
-|  1. Native <gmp-map-3d> Web Component: Instantiates <gmp-polygon-3d> & <gmp-polyline-3d>        |
-|  2. Hardware WebGL Overlay: Depth-buffered rendering, hover highlighting, Csnap, drafting         |
-|  3. Unified Camera Orchestrator: Dynamic 60:1 range clamping, smooth orbit, and framing          |
-+---------------------------------------------------------------------------------------------------+
+GeoAssembly (Hierarchical Scene Graph / Lightweight Transforms)
+  └── GeoInstance (4x4 Affine Matrix M, Material, Visibility)
+        └── GeoPart (Topological Container, Canonical Unit = mm)
+              └── GeoSolid (Closed Manifold Domain)
+                    └── GeoShell (Oriented Face Manifold)
+                          └── GeoFace (Parametric Surface Manifold)
+                                ├── Outer GeoLoop (Winding Order CCW)
+                                │     └── [GeoEdge -> GeoCurve]
+                                └── Inner GeoLoops (Winding Order CW - Holes)
+                                      └── [GeoEdge -> GeoCurve]
 ```
 
-### The Core Architectural Laws
-1. **The Source Geometry Is Not the Render Mesh:** Authoritative CAD models retain topological and algebraic definition (`GeoPart`, `GeoSurface`, `GeoFace`, `GeoLoop`, `GeoEdge`, `GeoVertex`). Triangulation is an ephemeral, downstream derivative.
-2. **Units Are Strictly Canonical Linear Millimeters (`mm`):** All mathematical calculations, transforms, bounding boxes, tolerances, and physics evaluations operate in `mm`. Imperial units (inches, feet) and other metric units are transformed at ingress/egress boundaries.
-3. **Planar Faces Must Not Display Internal Diagonals:** Planar faces (`GeomAbs_Plane`) are extracted as topological outer loops and inner cutout wires, rendered cleanly using `<gmp-polygon-3d>`.
-4. **Viewport Visibility Is Non-Negotiable:** Solids and primitives instantiated in the system must immediately and reliably render in the 3D viewport, properly framed by the camera without disappearing due to range scaling or altitude clipping.
+### 2.2 Analytical Surface & Curve Mathematics
+- **Planar Face:**
+  $$\mathbf{P}(u, v) = \mathbf{P}_0 + u \mathbf{D}_u + v \mathbf{D}_v, \quad \mathbf{N} = \frac{\mathbf{D}_u \times \mathbf{D}_v}{\|\mathbf{D}_u \times \mathbf{D}_v\|}$$
+- **Cylindrical Surface:**
+  $$\mathbf{P}(u, v) = \mathbf{P}_0 + R (\cos(2\pi u) \mathbf{X} + \sin(2\pi u) \mathbf{Y}) + v \mathbf{Z}$$
+- **Signed Distance Field (SDF) Formulation for Solid Validation:**
+  $$\Phi_{\text{Box}}(\mathbf{p}) = \|\max(|\mathbf{p} - \mathbf{c}| - \mathbf{h}, \mathbf{0})\| + \min(\max(|\mathbf{p} - \mathbf{c}| - \mathbf{h}), 0.0)$$
+  where $\mathbf{c}$ is the center vector and $\mathbf{h} = \left(\frac{w}{2}, \frac{d}{2}, \frac{h}{2}\right)$ represents the half-extents.
 
 ---
 
-## 2. Root Cause Analysis: Viewport Invisibility & Camera-Geometry Decoupling
+## 3. Coordinate Systems, Dynamic Geodetic Anchoring & Infinite CAD Space
 
-An exhaustive architectural audit identified three interacting failure modes that previously prevented the initial reference block (1-foot cube) and imported solids from displaying on-screen:
+### 3.1 Unanchored CAD Space & Dynamic Global Origin
+Prior implementations coupled CAD rendering to a static site anchor in Fullerton, California (`33.8814° N, 117.9213° W, 95.0m`). This caused severe distortion and rendering failures when viewing local Cartesian models at $(0, 0, 0)$.
 
-### Root Cause 1: Camera Range & Spatial Scale Mismatch
-* **Symptom:** The default `<gmp-map-3d>` element in `templates/index.html` was initialized with `range="1800000"` (1,800 kilometers altitude) and `center="34.2,-120,120"`.
-* **Defect:** A 304.8 mm (12-inch) cube situated at `(0, 0, 0)` is completely sub-pixel at 1,800 km altitude ($< 10^{-7}$ pixels wide). In perspective projection, the object is culled or indistinguishable from a point coordinate.
-* **Resolution:** Camera range must be calculated adaptively based on the scene's bounding radius ($R$) using the golden ratio rule: $\text{Range} = \max(1.5\,\text{m}, 3.0 \cdot R)$ for millimeter CAD objects, ensuring an optimal field-of-view framing ($30^{\circ}$ heading, $65^{\circ}$ tilt, range $\approx 1.8\,\text{m}$). The default altitude anchor is unified at Fullerton, CA ($33.8814^{\circ}\,\text{N}, -117.9213^{\circ}\,\text{W}, 95.0\,\text{m}$). 
+The modernized architecture adopts a **Dynamic World Reference Point (DWRP)**:
+1. The user workspace operates at a pure, unconstrained local Cartesian origin: $(x, y, z) = (0.0, 0.0, 0.0)$.
+2. When projecting to `<gmp-map-3d>`, an arbitrary base geodetic datum $(\phi_0, \lambda_0, h_0)$ acts solely as a smooth mathematical carrier frame.
+3. The mapping converts local metric millimeter offsets $\Delta x, \Delta y, \Delta z$ to WGS84 ellipsoidal coordinates using the meridian and prime vertical radii of curvature:
 
-### Root Cause 2: Geographic Altitude Mode & Geodetic Coordinate Registration
-* **Symptom:** Polygonal primitives were created with `altitudeMode = 'absolute'`, but geographic vertex altitudes were being clipped against the 3D Photorealistic terrain mesh or rendered beneath the ground elevation tile.
-* **Defect:** If terrain elevation data at the anchor point is $95.0\,\text{m}$, an object coordinate with local offset $z = 0.0$ placed at absolute altitude $0.0\,\text{m}$ is located $95\,\text{m}$ below the surface of the Earth, entirely occluded by the terrain depth buffer.
-* **Resolution:** The coordinate transformation layer converts local Cartesian coordinates $(x, y, z)$ in linear millimeters to absolute ellipsoidal geodetic heights: $\text{Altitude} = \text{Anchor Altitude} + (z \cdot 0.001)\,\text{meters}$, ensuring that the bottom face ($z = 0$) sits flush on the anchor elevation plane ($95.0\,\text{m}$). Alternatively, `altitude-mode="RELATIVE_TO_GROUND"` or `"ABSOLUTE"` is consistently matched with accurate ellipsoidal offsets.
+$$M = \frac{a(1 - e^2)}{(1 - e^2 \sin^2 \phi_0)^{3/2}}, \quad N = \frac{a}{\sqrt{1 - e^2 \sin^2 \phi_0}}$$
+$$\phi = \phi_0 + \left(\frac{\Delta y \cdot 10^{-3}}{M + h_0}\right) \left(\frac{180}{\pi}\right)$$
+$$\lambda = \lambda_0 + \left(\frac{\Delta x \cdot 10^{-3}}{(N + h_0) \cos \phi_0}\right) \left(\frac{180}{\pi}\right)$$
+$$h = h_0 + \Delta z \cdot 10^{-3}$$
 
-### Root Cause 3: `<gmp-polygon-3d>` DOM Property vs Attribute Lifecycle
-* **Symptom:** Setting `polygon.outerCoordinates` required arrays of geodetic coordinate objects `[{lat, lng, altitude}]` formatted strictly to the Google Maps 3D specification.
-* **Defect:** In earlier scripts, arrays were passed as nested lists `[[lng, lat, alt]]` or raw string attributes, which the Web Component's internal C++ WASM bindings ignored, causing zero polygons to be submitted to the GPU rasterizer.
-* **Resolution:** Synchronous coordinate hydration in `ViewportController.syncNativePolygons()` directly assigns structured `{lat: Number, lng: Number, altitude: Number}` objects to `polygon.outerCoordinates` and `polygon.innerCoordinates`.
+where $a = 6378137.0\,\text{m}$ (WGS84 semi-major axis) and $e^2 = 0.00669437999014$ (first eccentricity squared).
 
----
-
-## 3. Geodetic Coordinate Transform & WGS84 Local Tangent Plane (ENU) Engine
-
-GeoParametric3D operates natively in a Local Tangent Plane East-North-Up (ENU) Cartesian frame, with mathematical conversion to the WGS84 Reference Ellipsoid.
-
-### Ellipsoidal Parameters (WGS84 Standard)
-* **Semi-Major Axis ($a$):** $6,378,137.0\,\text{m}$
-* **Flattening ($f$):** $1 / 298.257223563$
-* **First Eccentricity Squared ($e^2$):** $e^2 = 2f - f^2 = 0.00669437999014$
-
-### Forward Transformation: Local ENU (mm) $\rightarrow$ WGS84 Geodetic
-Given an anchor point $(\phi_0, \lambda_0, h_0)$ and local Cartesian coordinates $(x, y, z)$ in millimeters:
-
-1. **Convert linear millimeters to meters:**
-   $$x_m = \frac{x}{1000}, \quad y_m = \frac{y}{1000}, \quad z_m = \frac{z}{1000}$$
-
-2. **Compute prime vertical radius of curvature ($N$) and meridional radius ($M$):**
-   $$N(\phi_0) = \frac{a}{\sqrt{1 - e^2 \sin^2(\phi_0)}}$$
-   $$M(\phi_0) = \frac{a(1 - e^2)}{(1 - e^2 \sin^2(\phi_0))^{3/2}}$$
-
-3. **Calculate angular differential increments:**
-   $$\Delta \phi = \frac{y_m}{M(\phi_0) + h_0} \cdot \left(\frac{180}{\pi}\right)$$
-   $$\Delta \lambda = \frac{x_m}{(N(\phi_0) + h_0)\cos(\phi_0)} \cdot \left(\frac{180}{\pi}\right)$$
-
-4. **Obtain target Geodetic Coordinates:**
-   $$\phi = \phi_0 + \Delta \phi$$
-   $$\lambda = \lambda_0 + \Delta \lambda$$
-   $$h = h_0 + z_m$$
-
-```python
-def enu_to_wgs84(coords, lat0=33.8814, lon0=-117.9213, alt0=95.0, rot_z=0.0):
-    arr = np.asarray(coords, dtype=np.float64)
-    if arr.ndim == 1: arr = arr.reshape(1, 3)
-    
-    if rot_z != 0.0:
-        rad = math.radians(rot_z)
-        c, s = math.cos(rad), math.sin(rad)
-        rx = arr[:, 0] * c - arr[:, 1] * s
-        ry = arr[:, 0] * s + arr[:, 1] * c
-        rz = arr[:, 2]
-    else:
-        rx, ry, rz = arr[:, 0], arr[:, 1], arr[:, 2]
-        
-    lat_rad = math.radians(lat0)
-    sin_lat = math.sin(lat_rad)
-    sin_lat_sq = sin_lat * sin_lat
-    
-    a = 6378137.0
-    e_sq = 0.00669437999014
-    
-    N = a / math.sqrt(1.0 - e_sq * sin_lat_sq)
-    M = (a * (1.0 - e_sq)) / ((1.0 - e_sq * sin_lat_sq) ** 1.5)
-    
-    d_lat_deg = (ry / 1000.0) / (M + alt0) * (180.0 / math.pi)
-    d_lng_deg = (rx / 1000.0) / ((N + alt0) * math.cos(lat_rad)) * (180.0 / math.pi)
-    
-    lats = lat0 + d_lat_deg
-    lngs = lon0 + d_lng_deg
-    alts = alt0 + (rz / 1000.0)
-    
-    return [{'lat': float(lats[i]), 'lng': float(lngs[i]), 'altitude': float(alts[i])} for i in range(len(arr))]
-```
+### 3.2 Dynamic Extent Scaling (5 mm to 2,000 ft)
+To avoid WebGL single-precision depth buffer degradation (Z-fighting) and `<gmp-map-3d>` near/far plane clipping, camera distance and clipping ranges scale dynamically:
+$$R_{\text{fit}} = 60 \cdot \max\left(r_{\text{bbox}}, 25.0\,\text{mm}\right)$$
+$$\text{near} = \max(0.001\,\text{m}, 10^{-5} \cdot R_{\text{fit}}), \quad \text{far} = \min(10^9\,\text{m}, 10^4 \cdot R_{\text{fit}})$$
 
 ---
 
-## 4. Authoritative CAD B-Rep Kernel & Dual-Route Surface Extractor
+## 4. Units Detection, Ingestion, and Multiscale Pipeline
 
-GeoParametric3D uses a parallel dual-route surface extractor operating over OpenCASCADE / OCP topology:
+### 4.1 Authoritative Single-Conversion Rule
+All geometry across every parser and input pipe is converted **strictly once** upon ingestion into canonical internal linear millimeters ($mm$). Display formatting applies user preferences (Imperial vs. Metric) only at the presentation layer.
 
 ```
-                         TopoDS_Shape (Authoritative Solid)
-                                        |
-                    +-------------------+-------------------+
-                    |                                       |
-                    v                                       v
-             GeomAbs_Plane                            Non-Planar Surface
-                    |                                       |
-                    v                                       v
-       [Topological Wire Explorer]              [BRepMesh_IncrementalMesh]
-                    |                                       |
-                    v                                       v
-     [Outer Wire & Cutout Wires]             [Deflection Triangulation]
-                    |                                       |
-                    v                                       v
-       <gmp-polygon-3d> Loop                  RenderMesh (Indexed Vertices)
-  (Zero Diagonals, Crisp Polygons)          (Dynamic Linear/Angular Deflection)
+Incoming Stream (STEP, FCStd, XBF, STL, 3MF, OBJ, GLB, PLY)
+     │
+     ├──> Header / Unit Entity Parser
+     │     ├── SI_UNIT (.MILLI., .METRE.)     ──> Scale: 1.0
+     │     ├── SI_UNIT (.CENTI., .METRE.)     ──> Scale: 10.0
+     │     ├── SI_UNIT ($, .METRE.)           ──> Scale: 1000.0
+     │     ├── CONVERSION_BASED_UNIT ('INCH') ──> Scale: 25.4
+     │     └── CONVERSION_BASED_UNIT ('FOOT') ──> Scale: 304.8
+     │
+     ├──> Scale Normalization Engine (v_canonical = v_raw * scale)
+     │
+     └──> Canonical Store: GeoPart (Linear Unit: mm)
 ```
 
-### 4.1 Planar Face Handling (`GeomAbs_Plane`)
-Planar surfaces do not require triangulation diagonals. They are extracted as oriented outer boundary loops plus inner hole loops:
-* Outer wire defines positive solid fill.
-* Inner wires define topological voids.
-* Discretization along curved boundary edges uses chordal deflection: $\delta \le 0.05\,\text{mm}$.
-
-### 4.2 Curved / Non-Planar Face Handling
-Curved surfaces (cylinders, cones, spheres, tori, B-splines) use adaptive incremental deflection:
-* Dynamic linear deflection: $\delta_L = \max(0.2\,\text{mm}, D \cdot 0.002)$ where $D$ is the solid bounding diagonal.
-* Dynamic angular deflection: $\theta_A \le 0.45\,\text{rad} \approx 25^{\circ}$.
-
----
-
-## 5. Direct Native `<gmp-map-3d>` Component Integration Architecture
-
-The Google Maps 3D Web Component (`<gmp-map-3d>`) executes within a WebGL2/WebGPU context, streaming photorealistic 3D terrain and building meshes. GeoParametric3D interacts with this DOM tree as a first-class citizen.
-
-### Component Lifecycle & Mounting Protocol
-```javascript
-// ViewportController: Native DOM Synchronization
-syncNativePolygons(map3dElement, objects) {
-  const existingPolygons = new Map();
-  map3dElement.querySelectorAll('gmp-polygon-3d').forEach(poly => {
-    const key = poly.dataset.key;
-    if (key) existingPolygons.set(key, poly);
-  });
-
-  objects.forEach(obj => {
-    if (obj.visible === false) return;
-    const objId = obj.manifest_id || obj.id;
-    
-    // 1. Check for True Planar N-Gon Loops
-    const planarPolys = obj.planar_polygons || [];
-    if (planarPolys.length > 0) {
-      planarPolys.forEach((poly, polyIdx) => {
-        const key = `ngon-${objId}-${poly.face_id || polyIdx}`;
-        let polygon = existingPolygons.get(key);
-        
-        if (!polygon) {
-          polygon = document.createElement('gmp-polygon-3d');
-          polygon.dataset.key = key;
-          polygon.dataset.objectId = objId;
-          polygon.dataset.faceId = poly.face_id || `Face_${polyIdx + 1}`;
-          polygon.setAttribute('altitude-mode', 'absolute');
-          polygon.altitudeMode = 'absolute';
-          map3dElement.appendChild(polygon);
-        } else {
-          existingPolygons.delete(key);
-        }
-        
-        polygon.fillColor = poly.color || obj.color || '#38bdf8';
-        polygon.strokeColor = '#ffffff';
-        polygon.strokeWidth = 1.5;
-        polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
-        if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
-          polygon.innerCoordinates = poly.inner_coordinates;
-        }
-      });
-      return;
-    }
-
-    // 2. Standard Watertight Solid Faces
-    const faces = obj.faces || [];
-    faces.forEach((face, faceIdx) => {
-      const key = `face-${objId}-${faceIdx}`;
-      let polygon = existingPolygons.get(key);
-      
-      if (!polygon) {
-        polygon = document.createElement('gmp-polygon-3d');
-        polygon.dataset.key = key;
-        polygon.dataset.objectId = objId;
-        polygon.dataset.faceIndex = String(faceIdx);
-        polygon.setAttribute('altitude-mode', 'absolute');
-        polygon.altitudeMode = 'absolute';
-        map3dElement.appendChild(polygon);
-      } else {
-        existingPolygons.delete(key);
-      }
-      
-      polygon.fillColor = obj.color || '#38bdf8';
-      polygon.strokeColor = '#ffffff';
-      polygon.strokeWidth = 1;
-      polygon.outerCoordinates = face;
-    });
-  });
-
-  // Remove unreferenced polygons
-  existingPolygons.forEach(polygon => polygon.remove());
-}
-```
+### 4.2 Multi-Format Scale Factors
+| Unit Key | Scale to Canonical ($mm$) | Dimensionality Factor ($D=2$) | Dimensionality Factor ($D=3$) |
+| :--- | :--- | :--- | :--- |
+| `mm`, `millimeter` | $1.0$ | $1.0$ | $1.0$ |
+| `cm`, `centimeter` | $10.0$ | $100.0$ | $1,000.0$ |
+| `m`, `meter` | $1000.0$ | $1,000,000.0$ | $1,000,000,000.0$ |
+| `in`, `inch` | $25.4$ | $645.16$ | $16,387.064$ |
+| `ft`, `foot` | $304.8$ | $92,903.04$ | $28,316,846.592$ |
+| `yd`, `yard` | $914.4$ | $836,127.36$ | $764,554,857.984$ |
+| `um`, `micron` | $0.001$ | $10^{-6}$ | $10^{-9}$ |
 
 ---
 
-## 6. WebGL / OpenGL Hardware Overlay & Depth-Buffer Synchronization
+## 5. B-Rep Authority vs. Derived Render Mesh Separation
 
-To provide instant sub-element selection (vertex, continuous edge, face), rubber-band marquee selection, real-time drafting feedback, and precision Csnap indicators without lagging the Maps 3D DOM engine, GeoParametric3D maintains a synchronized hardware overlay:
+### 5.1 The Anti-Corruption Principle
+Under no circumstance does client-side rendering alter the underlying `GeoPart` data structures. Tessellation buffers (`RenderMesh`, `Float32Array` positions, `Uint32Array` indices) are derived representations cached for display.
 
-1. **Z-Sort Depth Painter:** Evaluates centroid depth along camera view vector $\mathbf{v}_{cam}$ and performs depth-ordered rendering.
-2. **Continuous Edge Highlighting:** Emphasizes exact topological boundaries with anti-aliased sub-pixel stroking.
-3. **Vertex Csnap Target Renderer:** Renders magnetic snapping rings at exact 3D coordinates when cursor distance $< 16\,\text{px}$.
+### 5.2 Compaction & Validation Pipeline
+Before render data reaches the viewport, it passes through `validate_and_compact_mesh`:
+1. **Finite Verification:** Coordinates containing `NaN` or `±Inf` are stripped.
+2. **Index Re-mapping:** Vertex gaps are compacted into contiguous zero-indexed buffers.
+3. **Degenerate Triangle Elimination:** Zero-area triangles ($\|(p_1 - p_0) \times (p_2 - p_0)\| < 10^{-8}$) and self-referencing indices are pruned.
+4. **Manifold Continuity:** Normals and face provenance IDs are preserved.
+
+---
+
+## 6. OpenCASCADE Dual-Route Extraction & Planar N-Gon Topology
+
+### 6.1 Route A: Planar Faces (`GeomAbs_Plane`)
+1. OpenCASCADE adaptor queries `adaptor.GetType() == GeomAbs_Plane`.
+2. `BRepTools_WireExplorer` extracts ordered loops of edges without internal diagonals.
+3. Continuous curves on boundary edges are discretized using chordal deflection.
+4. Output is rendered directly via `<gmp-polygon-3d>` as clean N-Gons.
+
+### 6.2 Route B: Curved & Analytical Solids
+1. Curved surfaces (Cylinders, Cones, Spheres, Tori, B-Splines, NURBS) undergo adaptive meshing (`BRepMesh_IncrementalMesh`).
+2. Linear deflection $\delta_L$ and angular deflection $\theta_A$ scale with solid diagonal:
+   $$\delta_L = \max(0.2, d_{\text{diag}} \cdot 0.002)\,\text{mm}, \quad \theta_A = 0.45\,\text{rad}$$
+3. High-density watertight triangle meshes are packed into binary base64 buffers.
+
+---
+
+## 7. Hybrid Rendering Pipeline: `<gmp-map-3d>` & WebGL Overlay
+
+### 7.1 Multi-Layer Architecture
 
 ```
-                                Viewport Event (Mouse / Touch)
-                                              |
-                     +------------------------+------------------------+
-                     |                                                 |
-                     v                                                 v
-           [Csnap Candidate Search]                           [Topological Hit-Test]
-           (Vertex & Midpoint Ring)                           (Face Boundary Ray-Cast)
-                     |                                                 |
-                     +------------------------+------------------------+
-                                              |
-                                              v
-                                [Hardware Canvas Redraw]
-                            - Anti-aliased Edge Strokes
-                            - Active Transform Gizmos
-                            - Marquee Box Selection
++--------------------------------------------------------------------------+
+|                       USER BROWSER VIEWPORT                              |
++--------------------------------------------------------------------------+
+|  LAYER 2: Canvas / WebGL Interactive Overlay (Z-Index: 2)                |
+|   - Interactive Sub-element Highlighting (Vertex, Edge, Face)            |
+|   - Csnap Snapping Targets (Vertex, Midpoint, Center)                    |
+|   - Transform Gizmos (Move, Rotate, Scale, Align)                        |
+|   - 1'x1' Infinite Ground Grid & Origin Coordinate Axes                  |
+|   - 2D Drag-Select Box & Construction Lines                              |
++--------------------------------------------------------------------------+
+|  LAYER 1: Google Maps 3D Web Component `<gmp-map-3d>` (Z-Index: 1)       |
+|   - Native Photorealistic Photogrammetry / 3D Tiles                      |
+|   - Native `<gmp-polygon-3d>` for Planar CAD Faces (Zero Diagonals)      |
+|   - Hardware Depth Buffering & GPU Occlusion                             |
++--------------------------------------------------------------------------+
 ```
 
----
-
-## 7. Camera Framing, View Frustum Tuning, and Automatic Bounding Box Fitting
-
-The unified camera controller guarantees that any created or imported solid is automatically brought into crisp focus at the center of the viewport.
-
-### Mathematical Framing Formulation
-Given an active solid bounding box with extents $[dx, dy, dz]$ and center $[c_x, c_y, c_z]$ in linear millimeters:
-
-1. **Solid Radius ($R$):**
-   $$R = \max\left(25.0, \frac{1}{2} \sqrt{dx^2 + dy^2 + dz^2}\right)$$
-
-2. **Target Camera Range ($D_{target}$):**
-   $$D_{target} = \max\left(1.5\,\text{m}, \frac{R}{\sin(\text{FOV} / 2)} \cdot 1.5\right) \approx \max(152.4\,\text{mm}, 60.0 \cdot R)$$
-
-3. **Camera Target Assignment:**
-   $$\mathbf{c}_{geo} = \text{enuToGeodetic}(c_x, c_y, c_z)$$
-   $$\text{heading} = 30^{\circ}, \quad \text{tilt} = 65^{\circ}, \quad \text{range} = D_{target}$$
-
-```javascript
-export function fitCameraToModel(options = {}) {
-  const map3d = document.querySelector('gmp-map-3d');
-  const bounds = windowViewport.computeSceneBoundingBox();
-  if (!bounds) return;
-
-  const maxDim = bounds.maxDimension || bounds.diagonal || 304.8;
-  const R = bounds.radius || (maxDim / 2.0);
-  const fitDistanceMm = Math.max(152.4, 60.0 * R);
-  const targetRangeMeters = Math.max(0.001, fitDistanceMm / 1000.0);
-
-  const [cx, cy, cz] = bounds.center;
-  const geoCenter = enuToGeodetic(cx, cy, cz);
-
-  const heading = options.heading ?? CADState.state.camera.heading ?? 30;
-  const tilt = options.tilt ?? CADState.state.camera.tilt ?? 65;
-
-  if (map3d) {
-    map3d.setAttribute('min-altitude', '0');
-    map3d.setAttribute('max-altitude', '1000000000');
-    map3d.setAttribute('min-distance', '0.001');
-    map3d.setAttribute('max-distance', '1000000');
-    
-    map3d.setAttribute('center', `${geoCenter.lat},${geoCenter.lng},${geoCenter.altitude}`);
-    map3d.setAttribute('heading', String(heading));
-    map3d.setAttribute('tilt', String(tilt));
-    map3d.setAttribute('range', String(targetRangeMeters));
-  }
-}
-```
+### 7.2 Initial Primitive Display Resolution
+To ensure default 1-Foot ($304.8\,\text{mm}$) reference cubes and imported solids display immediately upon load:
+1. Solids are registered in `CADState` and projected via local ENU coordinates.
+2. `<gmp-polygon-3d>` nodes are attached to `<gmp-map-3d>` with `altitude-mode="absolute"`.
+3. The synchronized 2D/WebGL canvas overlay performs immediate depth-sorted polygonal projection so parts are visible even if Web component tiles are loading.
 
 ---
 
-## 8. Universal Byte Parsing, Manifold Healing, and Assembly Hierarchy
+## 8. Camera Frustum, Dynamic Framing, and Infinite 1'x1' Ground Grid
 
-The `universal_byte_parser.py` pipeline ingests raw byte payloads across all CAD formats without requiring cloud preprocessing:
+### 8.1 Infinite 1-Foot Grid Construction
+The ground plane features an infinite procedural grid calibrated in 1-foot increments ($304.8\,\text{mm}$ in Imperial, $300.0\,\text{mm}$ in Metric):
+- Grid lines span radially across the view frustum on the $XY$ plane ($Z = 0$).
+- Orthogonal RGB coordinate axes denote $+X$ (Red), $+Y$ (Green), and $+Z$ (Blue).
+- Grid line rendering adjusts dynamic alpha fading based on camera altitude to eliminate aliasing at glancing angles.
 
-* **STEP (AP203, AP214, AP242):** Full B-Rep topological hierarchy (`GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace -> GeoLoop -> GeoEdge -> GeoVertex`). Direct color inspection via `COLOUR_RGB` and XCAF application protocols.
-* **FreeCAD (.FCStd):** In-memory ZIP container decompression, parsing `Document.xml` and restoring geometric parts.
-* **XBF Binary B-Rep:** Native high-speed binary serialization format with 32-byte header, per-part material color channels, and zero-copy triangle blocks.
-* **STL / OBJ / 3MF / PLY / DAE / GLTF / GLB:** Parallel vertex welding ($10^{-4}\,\text{mm}$ grid quantization), non-manifold edge detection, and connected component assembly reconstruction.
-
----
-
-## 9. AI Assistant Integration & Vertex AI Mechanical Reasoning
-
-GeoParametric3D includes a live Engineering Assistant powered by Google Cloud Vertex AI:
-* **Project Identifier:** `broadcasterfishmap`
-* **Location:** `global`
-* **Model Engine:** `gemini-1.5-flash`
-
-### Ingested Context Schema
-Each chat prompt is enriched with the active CAD assembly state:
-* Active parts, quantities, volumes ($\text{cm}^3$), and mass ($\text{g}$).
-* Selected sub-elements (Face ID, Area, Normal vector $[n_x, n_y, n_z]$, Surface Type).
-* Parametric feature history and CNC machining toolpath parameters.
+### 8.2 Spherical Trackball Gizmo & Quick Presets
+An enlarged Viridian-teal spherical gizmo with a neon-blue outer glow provides intuitive 3D orientation tracking:
+- Displays Top, Bottom, North, South, East, West face tags.
+- Instant alignment chips: `FIT`, `ISO`, `TOP`, `FRONT`, `SIDE`.
 
 ---
 
-## 10. Comprehensive Verification Strategy & Test Matrix
+## 9. Vertex AI Assistant & REST API Integration
 
-| Test Suite | File | Focus Areas Verified |
-| :--- | :--- | :--- |
-| **Canonical Geometry Pipeline** | `test_canonical_geometry.py` | B-Rep semantic preservation, GeoTransform composition, adaptive tessellation derived buffers, Maps 3D selector, finite coordinate validation. |
-| **Comprehensive CAD Architecture** | `test_cad_architecture.py` | STEP AP203/214/242 structured import, unit conversion precision ($1\,\text{in} \rightarrow 25.4\,\text{mm}$), vertex welding, binary STL vector decoding, golden box equivalence. |
-| **Mathematical Geometry Kernel** | `test_kernel_math.py` | BoxSDF distance accuracy, gradient surface normals, min/max scalar field booleans, thickness offsets, prism/polygon geometry. |
-| **Workstation Production Repair** | `test_workstation_repair.py` | Scale dimensionless invariance ($x_{after} == x_{before}$), Move tool CAD world step ($+25.4\,\text{mm}$), XBF byte roundtrip, FreeCAD FCStd archive parsing. |
+### 9.1 Environment & Model Configuration
+- **GCP Project ID:** `broadcasterfishmap`
+- **Location:** `global`
+- **Model:** `gemini-1.5-flash`
+- **System Prompt:** Configured as a specialized Senior CAD Systems Engineer with deep knowledge of B-Rep topology, material densities, stress formulas, LinuxCNC toolpath generation, and CadQuery script generation.
 
-### Validation Invariant Checklist
-- [x] Canonical internal unit fixed at linear millimeter (`mm`).
-- [x] Initial reference block (1-foot cube) renders immediately upon document initialization.
-- [x] Native `<gmp-map-3d>` elements receive correctly formatted Geodetic `{lat, lng, altitude}` objects.
-- [x] Camera range dynamically set to 1.8m for reference blocks rather than 1,800km.
-- [x] Planar faces retain clean N-Gon boundaries without internal triangulation diagonals.
-- [x] Non-finite numbers (NaN/Inf) strictly rejected with diagnostic stage traceability.
-- [x] All unit and integration test suites pass with zero regressions.
+### 9.2 Context Injection
+Every chat interaction automatically serializes the active assembly scene context:
+- Total body count, names, materials, bounding boxes, volume ($cm^3$), and mass ($g$).
+- Active selection status (Part ID, Face ID, Surface Type, Normal Vector, Area $mm^2$).
 
 ---
 
-*Master Architectural Specification V5.2.0 is hereby locked and authoritative for the GeoParametric3D workstation runtime.*
+## 10. Verification, Telemetry, and Diagnostics
+
+### 10.1 Automated Test Suite Coverage
+1. `test_canonical_geometry.py`: Verifies B-Rep structure, instance transforms, adaptive tessellation, and representation selection.
+2. `test_cad_architecture.py`: Verifies universal byte parsing, STEP AP203/214/242 schemas, unit conversions, and binary STL scaling.
+3. `test_kernel_math.py`: Validates Box SDF golden reference equivalence, prism geometries, and boolean scalar fields.
+4. `test_workstation_repair.py`: Validates scale-invariance of world coordinates, XBF roundtrip integrity, and FreeCAD FCStd archive extraction.
+
+### 10.2 Real-Time Diagnostic Dashboard
+The system reports live telemetry metrics via the inspector terminal:
+- Active Object Count & Vertex Counts.
+- Live FPS Counter (60 FPS baseline target).
+- Pipeline Execution Logs (`STEP_BUFFER_STAGED`, `OCCT_TOPODS_TRANSFER`, `UNIT_RESOLUTION`, `DUAL_ROUTE_EXTRACTION`).
+
+---
+
+*Master Architectural Specification authored and verified for GeoParametric3D production workstation deployment.*
