@@ -15,7 +15,10 @@
     "gmp_map_3d": true,
     "external_map_dependency": true,
     "coordinate_system": "Geospatial WGS84 Geodetic & ENU Cartesian CAD",
-    "canonical_unit": "mm"
+    "canonical_unit": "mm",
+    "shading": "100% Opaque Solid",
+    "grid_extent_feet": 2000,
+    "grid_spacing_feet": 1
   },
   "architecture": {
     "document_state": "state.py",

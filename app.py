@@ -442,17 +442,28 @@ async def get_telemetry():
         "system": "GeoParametric3D Workstation",
         "version": "10.0.0-PROD",
         "canonical_base": "metric_linear_mm",
-        "geodetic_anchor": SITE_ANCHOR,
+        "canonical_unit": CANONICAL_INTERNAL_UNIT,
+        "geodetic_anchor": {
+            "name": "Fullerton Geodetic Anchor",
+            "lat": 33.8704,
+            "lng": -117.9242,
+            "altitude": 1609.34,
+            "elevation_datum": "1.0 international mile (1609.34 m MSL)"
+        },
         "objects": len(objs),
         "objectsCount": len(objs),
         "vertices": total_vertices,
         "totalVertices": total_vertices,
         "fps": 60,
         "status": "READY",
-        "canonical_unit": CANONICAL_INTERNAL_UNIT,
-        "geodetic_origin": SITE_ANCHOR,
-        "grid": {"mesh_spacing": "1 ft (304.8 mm)", "max_extent": "2000 ft (609600 mm)"},
-        "shading": {"mode": "100% Opaque Solid", "default_opacity": 1.0},
+        "shading": {
+            "mode": "100% Opaque Solid",
+            "default_opacity": 1.0
+        },
+        "grid": {
+            "mesh_spacing": "1 ft (304.8 mm)",
+            "max_extent": "2000 ft (609600 mm)"
+        },
         "vertex_ai": {
             "enabled": USE_VERTEX_AI,
             "project_id": PROJECT_ID,
