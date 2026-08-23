@@ -83,10 +83,10 @@ DEFAULT_TOLERANCE_MM = 1e-4
 EPSILON_AREA = 1e-9
 
 SITE_ANCHOR = {
-    'name': 'Null Island Geodetic Origin Anchor',
-    'lat': 0.0,
-    'lng': 0.0,
-    'altitude': 0.0
+    'name': 'Fullerton Geodetic Anchor',
+    'lat': 33.8704,
+    'lng': -117.9242,
+    'altitude': 1609.34
 }
 
 _OCCT_AVAILABLE = False
