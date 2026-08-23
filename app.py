@@ -434,15 +434,24 @@ async def get_telemetry():
     total_vertices = sum(len(obj.get('faces', [])) * 4 for obj in objs)
     return json_response({
         "success": True,
+        "system": "GeoParametric3D Workstation",
+        "version": "10.0.0-PROD",
         "objects": len(objs),
         "objectsCount": len(objs),
         "vertices": total_vertices,
         "totalVertices": total_vertices,
         "fps": 60,
         "status": "READY",
-        "vertex_ai": USE_VERTEX_AI,
-        "project_id": PROJECT_ID,
-        "location": LOCATION
+        "canonical_unit": CANONICAL_INTERNAL_UNIT,
+        "geodetic_origin": SITE_ANCHOR,
+        "grid": {"mesh_spacing": "1 ft (304.8 mm)", "max_extent": "2000 ft (609600 mm)"},
+        "shading": {"mode": "100% Opaque Solid", "default_opacity": 1.0},
+        "vertex_ai": {
+            "enabled": USE_VERTEX_AI,
+            "project_id": PROJECT_ID,
+            "location": LOCATION,
+            "model": "gemini-1.5-flash"
+        }
     })
 
 async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:

@@ -487,6 +487,7 @@ export class ViewportController {
       -Math.sin(tiltRad)
     ];
 
+    const epsilon = 1e-3;
     for (const snap of this.snapCandidates) {
       const d = Math.hypot(mx - snap.px, my - snap.py);
       if (d <= maxPixelDistance) {
@@ -496,7 +497,7 @@ export class ViewportController {
           if (dot > 0.05) continue;
           normalWeight = Math.abs(dot) + 0.1;
         }
-        const weight = (1.0 / (d + 1e-3)) * normalWeight;
+        const weight = (1.0 / (d + epsilon)) * normalWeight;
         if (weight > bestWeight) {
           bestWeight = weight;
           best = snap;
