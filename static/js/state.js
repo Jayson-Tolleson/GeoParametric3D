@@ -85,7 +85,7 @@ class StateStore {
         range: 1828.8,
         panX: 0,
         panY: 0,
-        center: { lat: 0.0, lng: 0.0, altitude: 0.0
+        center: { lat: 0.0, lng: 0.0, altitude: 0.0 }
       },
       telemetry: {
         objects: 0,

@@ -87,6 +87,7 @@ SITE_ANCHOR = {
     'lat': 0.0,
     'lng': 0.0,
     'altitude': 0.0
+}
 
 _OCCT_AVAILABLE = False
 _OCCT_BACKEND = None
