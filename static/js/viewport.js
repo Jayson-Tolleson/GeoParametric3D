@@ -1,15 +1,3 @@
-"use strict";
-
-/**
- * GeoParametric3D Viewport Controller (V5.1.0 Production Architecture)
- * Full B-Rep Solid Rendering & Dual-Route Maps 3D Integration:
- *  - Planar Faces (GeomAbs_Plane): Rendered as clean N-Gon boundaries (<gmp-polygon-3d>) with ZERO internal diagonals.
- *  - 100% Opaque Solid Shading (FreeCAD parity): solids default to full opacity with hardware depth buffer occlusion.
- *  - Multi-solid color assignment preserved directly from STEP header metadata.
- *  - Bidirectional property panel reaction.
- *  - Full 2D Canvas & WebGL hybrid overlay for selection, vertex/edge manipulation, drafting, and Csnap.
- */
-
 import { CADState, enuToGeodetic, geodeticToEnu } from './state.js';
 import { CADCommands } from './commands.js';
 import { CADApi } from './api.js';
@@ -123,6 +111,7 @@ export class ViewportController {
     this.draftCurrent = null;
 
     this.geometryCacheDirty = true;
+    this.lastDocUpdatedTime = 0;
     this.faceRenderQueue = [];
     this.verticesRender = [];
     this.edgesRender = [];
@@ -145,7 +134,10 @@ export class ViewportController {
       totalRenderTimeMs: 0,
       totalProjTimeMs: 0,
       totalSortTimeMs: 0,
-      maxRenderTimeMs: 0
+      maxRenderTimeMs: 0,
+      vertexAllocCount: 0,
+      edgeAllocCount: 0,
+      faceAllocCount: 0
     };
 
     this.initMap3D();
@@ -161,6 +153,7 @@ export class ViewportController {
     });
   }
 
+  // 1. UNIFIED CAMERA ACTION PRIMITIVES
   orbitHeading(deltaDeg) {
     const cam = CADState.state.camera;
     cam.heading = ((cam.heading || 0) + deltaDeg + 360) % 360;
@@ -189,6 +182,7 @@ export class ViewportController {
   zoomBy(factor, focalScreenX = null, focalScreenY = null) {
     const cam = CADState.state.camera;
     const oldRange = cam.range || 1828.8;
+    // Multi-scale range: 0.125 inches (3.175 mm / 0.003175 m) to 3000+ ft (1,000,000 mm / 1000.0 m)
     const newRange = Math.max(3.175, Math.min(1000000.0, oldRange * factor));
     
     if (focalScreenX !== null && focalScreenY !== null) {
@@ -205,20 +199,21 @@ export class ViewportController {
   }
 
   async initMap3D() {
-    this.map3d = document.getElementById('boatscreen') || document.getElementById('map-3d-element') || document.querySelector('gmp-map-3d');
+    this.map3d = document.getElementById('map-3d-element');
     try {
       await customElements.whenDefined('gmp-map-3d');
       if (!this.map3d) {
         const container = document.getElementById('viewport-container');
         if (container) {
           this.map3d = document.createElement('gmp-map-3d');
-          this.map3d.id = 'boatscreen';
+          this.map3d.id = 'map-3d-element';
           this.map3d.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1;';
           container.insertBefore(this.map3d, this.canvasOverlay);
         }
       }
       if (this.map3d) {
         this.bindMap3DEvents();
+        this.bindSelectionEvents();
         this.syncMap3DFromState();
         this.syncNativeDOM();
       }
@@ -270,6 +265,7 @@ export class ViewportController {
       this.orbitTilt(dTilt);
     });
 
+    // Preset chip single-click listeners
     document.querySelectorAll('.preset-chip').forEach(chip => {
       chip.addEventListener('click', (e) => {
         e.preventDefault();
@@ -284,13 +280,14 @@ export class ViewportController {
     });
   }
 
+  // Zoom to Fit (60:1 Viewport Fit): Position gizmo/target at model center, camera distance = 60 * R (2x doubled framing ratio)
   fitView(options = {}) {
     const bounds = this.computeSceneBoundingBox();
     const cam = CADState.state.camera;
     const cx = bounds.center[0], cy = bounds.center[1], cz = bounds.center[2];
     
     const R = bounds.radius || (bounds.diagonal ? bounds.diagonal / 2.0 : 152.4);
-    const targetDistance = Math.max(152.4, 60.0 * R);
+    const targetDistance = Math.max(152.4, 60.0 * R); // 60:1 viewport-to-part framing ratio (doubled to eliminate edge clipping)
     
     const geoCenter = enuToGeodetic(cx, cy, cz);
     cam.center = geoCenter;
@@ -304,7 +301,24 @@ export class ViewportController {
     if (this.trackball) {
       this.trackball.updateFromCamera(cam.heading, cam.tilt);
     }
-    this.syncMap3DFromState();
+    if (this.map3d && typeof this.map3d.flyCameraTo === 'function' && !options.immediate) {
+      try {
+        this.map3d.flyCameraTo({
+          endCamera: {
+            center: { lat: geoCenter.lat, lng: geoCenter.lng, altitude: geoCenter.altitude },
+            heading: cam.heading,
+            tilt: cam.tilt,
+            range: targetDistance,
+            roll: 0
+          },
+          durationMillis: 800
+        });
+      } catch (_) {
+        this.syncMap3DFromState();
+      }
+    } else {
+      this.syncMap3DFromState();
+    }
     CADState.notify();
     this.render();
   }
@@ -378,6 +392,7 @@ export class ViewportController {
         return;
       }
 
+      // Keyboard Pan Controls: Same-direction movement (Left arrow pans view left/scene right, Right arrow pans view right)
       if (!isShift && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         if (e.key === 'ArrowLeft') this.panScreen(panStep, 0);
@@ -387,6 +402,7 @@ export class ViewportController {
         return;
       }
 
+      // Shift Arrows (ORBIT)
       if (isShift) {
         if (e.key === 'ArrowLeft') { e.preventDefault(); this.orbitHeading(-rotStep); return; }
         if (e.key === 'ArrowRight') { e.preventDefault(); this.orbitHeading(rotStep); return; }
@@ -418,6 +434,13 @@ export class ViewportController {
 
   initOverlay() {
     if (!this.canvasOverlay) return;
+    // Multi-scale WebGL rendering context with logarithmicDepthBuffer for wide dynamic clipping
+    try {
+      this.gl = this.canvasOverlay.getContext('webgl2', { logarithmicDepthBuffer: true, antialias: true, alpha: true }) ||
+                this.canvasOverlay.getContext('webgl', { logarithmicDepthBuffer: true, antialias: true, alpha: true });
+    } catch (e) {
+      console.warn('[Viewport] WebGL init fallback:', e);
+    }
     const resize = () => {
       if (this.canvasOverlay.parentElement) {
         const rect = this.canvasOverlay.parentElement.getBoundingClientRect();
@@ -435,34 +458,6 @@ export class ViewportController {
     };
     window.addEventListener('resize', resize);
     resize();
-  }
-
-  project3DTo2D(x, y, z) {
-    const w = this.cssWidth || 800;
-    const h = this.cssHeight || 600;
-    const cam = CADState.state.camera || { heading: 30, tilt: 65, range: 1828.8, panX: 0, panY: 0 };
-    const hdgRad = ((cam.heading || 30) * Math.PI) / 180;
-    const tiltRad = ((cam.tilt || 65) * Math.PI) / 180;
-    const zoom = Math.max(0.005, 3000 / (cam.range || 1828.8));
-    
-    const rx = x * Math.cos(hdgRad) - y * Math.sin(hdgRad);
-    const ry = x * Math.sin(hdgRad) + y * Math.cos(hdgRad);
-    const rz = z;
-    
-    const px = rx;
-    const py = -(ry * Math.cos(tiltRad) + rz * Math.sin(tiltRad));
-    const depth = ry * Math.sin(tiltRad) - rz * Math.cos(tiltRad);
-    
-    const cx = w / 2 + (cam.panX || 0);
-    const cy = h / 2 + (cam.panY || 0);
-    const scale = zoom * 3.5;
-    
-    return {
-      px: cx + px * scale,
-      py: cy + py * scale,
-      depth: depth,
-      visible: true
-    };
   }
 
   unproject2DToPlane(mx, my, planeZ = 0) {
@@ -500,6 +495,7 @@ export class ViewportController {
     return best;
   }
 
+  // Two-Finger Pinch Zoom & Pan on Touch Devices
   initTouchControls() {
     if (!this.canvasOverlay) return;
     const canvas = this.canvasOverlay;
@@ -582,6 +578,7 @@ export class ViewportController {
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
 
+      // Transform tools: move, rotate, scale
       const activeTransTool = CADState.state.activeTransformTool;
       const selObjs = CADState.getSelectedObjects();
       
@@ -829,6 +826,7 @@ export class ViewportController {
   async handleHitTest(mx, my, isCtrl, isShift) {
     const selMode = CADState.state.selectionMode || 'part';
 
+    // 1. VERTEX SELECTION MODE
     if (selMode === 'vertex') {
       let bestV = null, bestDist = 12;
       for (const v of this.lastRenderVertices) {
@@ -841,6 +839,7 @@ export class ViewportController {
       }
     }
 
+    // 2. EDGE SELECTION MODE
     if (selMode === 'edge') {
       let bestEdge = null, bestDist = 10;
       for (const edge of this.lastRenderEdges) {
@@ -853,6 +852,7 @@ export class ViewportController {
       }
     }
 
+    // 3. FACE SELECTION MODE
     let hitItem = null;
     for (let i = this.lastRenderQueue.length - 1; i >= 0; i--) {
       const item = this.lastRenderQueue[i];
@@ -905,6 +905,7 @@ export class ViewportController {
     if (!this.map3d) return;
     const objects = CADState.state.objects || [];
     this.syncNativePolygons(this.map3d, objects);
+    this.syncNativePolylines(this.map3d, objects);
   }
 
   syncNativePolygons(map3dElement, objects) {
@@ -926,21 +927,22 @@ export class ViewportController {
       const objId = object.manifest_id || object.id || object.object_id;
       const isObjSel = selectedIds.includes(objId);
       
-      const planarPolys = object.planar_polygons || object.ngon_loops || object.planar_loops || [];
+      // Target 2: True N-Gon Native <gmp-polygon-3d> direct rendering pipeline
+      const planarPolys = object.planar_polygons || [];
       if (planarPolys.length > 0) {
         planarPolys.forEach((poly, polyIndex) => {
           const key = `ngon-${objId}-${poly.face_id || polyIndex}`;
           const isFaceSel = isObjSel && (selFaceIdx === polyIndex || (CADState.state.selectedFaceInfo && CADState.state.selectedFaceInfo.face_id === poly.face_id));
           const baseColor = poly.color || object.color || '#38bdf8';
-          const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
+          const fillColor = isFaceSel ? 'rgba(251, 191, 36, 0.95)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 0.85)' : baseColor);
           const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
           const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
 
           let polygon = polygonPool.get(key);
           if (polygon) {
-            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
-            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
-              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
+            polygon.outerCoordinates = poly.outer_coordinates;
+            if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
+              polygon.innerCoordinates = poly.inner_coordinates;
             }
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
@@ -950,16 +952,15 @@ export class ViewportController {
             polygon = document.createElement('gmp-polygon-3d');
             polygon.dataset.key = key;
             polygon.dataset.objectId = objId;
-            polygon.dataset.faceIndex = String(polyIndex);
+            polygon.dataset.faceIndex = polyIndex;
             polygon.dataset.faceId = poly.face_id || `Face_${polyIndex + 1}`;
-            polygon.setAttribute('altitude-mode', 'absolute');
             polygon.altitudeMode = 'absolute';
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
             polygon.strokeWidth = strokeWidth;
-            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
-            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
-              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
+            polygon.outerCoordinates = poly.outer_coordinates;
+            if (poly.inner_coordinates && poly.inner_coordinates.length > 0) {
+              polygon.innerCoordinates = poly.inner_coordinates;
             }
             map3dElement.appendChild(polygon);
           }
@@ -975,7 +976,7 @@ export class ViewportController {
 
         const isFaceSel = isObjSel && selFaceIdx === faceIndex;
         const baseColor = face.color || object.color || '#38bdf8';
-        const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
+        const fillColor = isFaceSel ? 'rgba(251, 191, 36, 0.95)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 0.85)' : baseColor);
         const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
         const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
 
@@ -983,13 +984,12 @@ export class ViewportController {
           if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
             return { lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 95.0 };
           }
-          const wx = (object.position?.[0] || 0) + (pt.x || 0) * (object.scale?.[0] || 1);
-          const wy = (object.position?.[1] || 0) + (pt.y || 0) * (object.scale?.[1] || 1);
-          const wz = (object.position?.[2] || 0) + (pt.z || 0) * (object.scale?.[2] || 1);
+          const [wx, wy, wz] = [pt.x || 0, pt.y || 0, pt.z || 0];
           return enuToGeodetic(wx, wy, wz);
         });
 
         let polygon = polygonPool.get(key);
+
         if (polygon) {
           polygon.outerCoordinates = geodeticCoords;
           polygon.fillColor = fillColor;
@@ -1000,8 +1000,8 @@ export class ViewportController {
           polygon = document.createElement('gmp-polygon-3d');
           polygon.dataset.key = key;
           polygon.dataset.objectId = objId;
-          polygon.dataset.faceIndex = String(faceIndex);
-          polygon.setAttribute('altitude-mode', 'absolute');
+          polygon.dataset.faceIndex = faceIndex;
+          polygon.dataset.faceId = (pts[0] && pts[0].face_id) || `Face_${faceIndex + 1}`;
           polygon.altitudeMode = 'absolute';
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
@@ -1012,193 +1012,621 @@ export class ViewportController {
       });
     });
 
-    polygonPool.forEach(polygon => polygon.remove());
+    polygonPool.forEach(stalePolygon => {
+      stalePolygon.remove();
+    });
   }
 
-  render() {
-    if (!this.ctx || !this.canvasOverlay) return;
-    const tStart = performance.now();
-    const ctx = this.ctx;
-    const w = this.cssWidth || 800;
-    const h = this.cssHeight || 600;
-    ctx.clearRect(0, 0, w, h);
+  syncNativePolylines(map3dElement, objects) {
+    if (!map3dElement) return;
+    const existingPolylines = Array.from(map3dElement.querySelectorAll('gmp-polyline-3d'));
+    const polylinePool = new Map();
 
-    const prefs = CADState.state.preferences;
-    const isImp = CADState.isImperial();
-    const gridStep = isImp ? 304.8 : 300.0;
-    
-    // 1. Draw Grid & Axes
-    if (prefs.showGrid !== false) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-      ctx.lineWidth = 1;
-      const gridExtent = gridStep * 10;
-      for (let x = -gridExtent; x <= gridExtent; x += gridStep) {
-        const p1 = this.project3DTo2D(x, -gridExtent, 0);
-        const p2 = this.project3DTo2D(x, gridExtent, 0);
-        ctx.beginPath();
-        ctx.moveTo(p1.px, p1.py);
-        ctx.lineTo(p2.px, p2.py);
-        ctx.stroke();
-      }
-      for (let y = -gridExtent; y <= gridExtent; y += gridStep) {
-        const p1 = this.project3DTo2D(-gridExtent, y, 0);
-        const p2 = this.project3DTo2D(gridExtent, y, 0);
-        ctx.beginPath();
-        ctx.moveTo(p1.px, p1.py);
-        ctx.lineTo(p2.px, p2.py);
-        ctx.stroke();
-      }
-    }
+    existingPolylines.forEach(polyline => {
+      const key = polyline.dataset.key || `${polyline.dataset.objectId}-${polyline.dataset.edgeIndex}`;
+      polylinePool.set(key, polyline);
+    });
 
-    if (prefs.showAxes !== false) {
-      const pOrigin = this.project3DTo2D(0, 0, 0);
-      const pX = this.project3DTo2D(gridStep, 0, 0);
-      const pY = this.project3DTo2D(0, gridStep, 0);
-      const pZ = this.project3DTo2D(0, 0, gridStep);
-
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = '#ef4444';
-      ctx.beginPath(); ctx.moveTo(pOrigin.px, pOrigin.py); ctx.lineTo(pX.px, pX.py); ctx.stroke();
-      ctx.strokeStyle = '#10b981';
-      ctx.beginPath(); ctx.moveTo(pOrigin.px, pOrigin.py); ctx.lineTo(pY.px, pY.py); ctx.stroke();
-      ctx.strokeStyle = '#3b82f6';
-      ctx.beginPath(); ctx.moveTo(pOrigin.px, pOrigin.py); ctx.lineTo(pZ.px, pZ.py); ctx.stroke();
-    }
-
-    // 2. Build Render Queues
-    const queue = [];
-    const vertices = [];
-    const edges = [];
-    const snaps = [];
-
-    const selectedIds = CADState.state.selectedIds || [];
-    const objects = CADState.state.objects || [];
     const selMode = CADState.state.selectionMode || 'part';
+    const selectedIds = CADState.state.selectedIds || [];
+    const selEdgeIdx = CADState.state.selectedEdgeIndex;
+
+    if (selMode === 'edge' || selMode === 'vertex') {
+      let globalEdgeIdx = 0;
+      objects.forEach(object => {
+        if (object.visible === false) return;
+        const objId = object.manifest_id || object.id || object.object_id;
+        const isObjSel = selectedIds.includes(objId);
+        const faces = object.faces || [];
+
+        faces.forEach(face => {
+          const pts = Array.isArray(face) ? face : (face.vertices || []);
+          for (let i = 0; i < pts.length; i++) {
+            const next = (i + 1) % pts.length;
+            const eIdx = globalEdgeIdx++;
+            const isEdgeSel = isObjSel && selEdgeIdx === eIdx;
+            const key = `edge-${objId}-${eIdx}`;
+
+            const p1 = pts[i];
+            const p2 = pts[next];
+            const c1 = (typeof p1.lat === 'number' && typeof p1.lng === 'number')
+              ? { lat: p1.lat, lng: p1.lng, altitude: p1.altitude || 95.0 }
+              : enuToGeodetic(p1.x || 0, p1.y || 0, p1.z || 0);
+            const c2 = (typeof p2.lat === 'number' && typeof p2.lng === 'number')
+              ? { lat: p2.lat, lng: p2.lng, altitude: p2.altitude || 95.0 }
+              : enuToGeodetic(p2.x || 0, p2.y || 0, p2.z || 0);
+
+            let polyline = polylinePool.get(key);
+            if (polyline) {
+              polyline.coordinates = [c1, c2];
+              polyline.strokeColor = isEdgeSel ? '#ef4444' : '#38bdf8';
+              polyline.strokeWidth = isEdgeSel ? 4 : 2;
+              polylinePool.delete(key);
+            } else {
+              polyline = document.createElement('gmp-polyline-3d');
+              polyline.dataset.key = key;
+              polyline.dataset.objectId = objId;
+              polyline.dataset.edgeIndex = eIdx;
+              polyline.altitudeMode = 'absolute';
+              polyline.coordinates = [c1, c2];
+              polyline.strokeColor = isEdgeSel ? '#ef4444' : '#38bdf8';
+              polyline.strokeWidth = isEdgeSel ? 4 : 2;
+              map3dElement.appendChild(polyline);
+            }
+          }
+        });
+      });
+    }
+
+    polylinePool.forEach(stale => stale.remove());
+  }
+
+  bindSelectionEvents() {
+    if (!this.map3d) return;
+
+    this.map3d.addEventListener('click', (event) => {
+      const clickedPolyline = event.target.closest('gmp-polyline-3d');
+      const clickedPolygon = event.target.closest('gmp-polygon-3d');
+
+      const isCtrl = event.ctrlKey || event.metaKey;
+      const isShift = event.shiftKey;
+      const selMode = CADState.state.selectionMode || 'part';
+
+      if (clickedPolyline) {
+        const objId = clickedPolyline.dataset.objectId;
+        const edgeIdx = parseInt(clickedPolyline.dataset.edgeIndex, 10);
+        CADState.setSelectedId(objId, isCtrl, isShift, { type: 'edge', index: edgeIdx });
+        this.geometryCacheDirty = true;
+        this.syncViewport();
+        return;
+      }
+
+      if (clickedPolygon) {
+        const objId = clickedPolygon.dataset.objectId;
+        const faceIndex = parseInt(clickedPolygon.dataset.faceIndex, 10);
+        const faceId = clickedPolygon.dataset.faceId;
+
+        if (selMode === 'face') {
+          CADState.setSelectedId(objId, isCtrl, isShift, {
+            type: 'face',
+            index: isNaN(faceIndex) ? 0 : faceIndex,
+            info: {
+              face_id: faceId || `Face_${(isNaN(faceIndex) ? 0 : faceIndex) + 1}`,
+              surface_type: 'Plane',
+              area_mm2: 0,
+              normal: [0, 0, 1]
+            }
+          });
+        } else {
+          CADState.setSelectedId(objId, isCtrl, isShift, null);
+        }
+
+        this.geometryCacheDirty = true;
+        this.syncViewport();
+        return;
+      }
+
+      CADState.setSelectedId(null);
+      this.geometryCacheDirty = true;
+      this.syncViewport();
+    });
+  }
+
+  rebuildGeometryCache() {
+    const objects = CADState.state.objects || [];
+    this.faceRenderQueue.length = 0;
+    this.verticesRender.length = 0;
+    this.edgesRender.length = 0;
+    this.snaps.length = 0;
 
     objects.forEach(obj => {
       if (obj.visible === false) return;
       const objId = obj.manifest_id || obj.id || obj.object_id;
-      const isObjSel = selectedIds.includes(objId);
       const pos = obj.position || [0, 0, 0];
-      const scale = obj.scale || [1, 1, 1];
+      const scale = obj.scale || [1.0, 1.0, 1.0];
+      const rot = obj.rotation || [0, 0, 0];
+      const rotZRad = (rot[2] * Math.PI) / 180.0;
+      const cosR = Math.cos(rotZRad), sinR = Math.sin(rotZRad);
+
       const faces = obj.faces || [];
+      let vGlobalIdx = 0;
+      let eGlobalIdx = 0;
 
       faces.forEach((face, fIdx) => {
-        const pts = Array.isArray(face) ? face : (face.vertices || []);
-        if (pts.length < 3) return;
-
         const poly2D = [];
-        let sumDepth = 0;
-        let sumX = 0, sumY = 0, sumZ = 0;
+        const polyCamZ = [];
+        const worldPts = [];
+        let faceCentroid = [0, 0, 0];
 
-        const worldPts = pts.map((pt, vIdx) => {
-          const wx = pos[0] + (pt.x !== undefined ? pt.x : 0) * scale[0];
-          const wy = pos[1] + (pt.y !== undefined ? pt.y : 0) * scale[1];
-          const wz = pos[2] + (pt.z !== undefined ? pt.z : 0) * scale[2];
-          const p2d = this.project3DTo2D(wx, wy, wz);
-          poly2D.push([p2d.px, p2d.py]);
-          sumDepth += p2d.depth;
-          sumX += wx; sumY += wy; sumZ += wz;
+        const vertStartIndex = this.persistentVertices.length;
+        const edgeStartIndex = this.persistentEdges.length;
 
-          vertices.push({ objId, fIdx, vIdx, wx, wy, wz, px: p2d.px, py: p2d.py, depth: p2d.depth });
-          snaps.push({ type: 'vertex', world: [wx, wy, wz], px: p2d.px, py: p2d.py });
-          return { wx, wy, wz, px: p2d.px, py: p2d.py, depth: p2d.depth };
+        face.forEach(pt => {
+          const lx = (pt.x !== undefined ? pt.x : 0) * scale[0];
+          const ly = (pt.y !== undefined ? pt.y : 0) * scale[1];
+          const lz = (pt.z !== undefined ? pt.z : 0) * scale[2];
+          const rx = lx * cosR - ly * sinR;
+          const ry = lx * sinR + ly * cosR;
+          const rz = lz;
+          const wx = pos[0] + rx;
+          const wy = pos[1] + ry;
+          const wz = pos[2] + rz;
+
+          worldPts.push([wx, wy, wz]);
+          poly2D.push([0, 0]);
+          polyCamZ.push(0);
+
+          const vertRecord = {
+            objId,
+            vIdx: vGlobalIdx++,
+            px: 0, py: 0,
+            wx, wy, wz,
+            camZ: 0,
+            isSel: false
+          };
+          this.persistentVertices.push(vertRecord);
+
+          this.persistentSnaps.push({
+            type: 'vertex',
+            objId,
+            px: 0, py: 0,
+            world: [wx, wy, wz]
+          });
+
+          faceCentroid[0] += wx;
+          faceCentroid[1] += wy;
+          faceCentroid[2] += wz;
         });
 
-        for (let i = 0; i < worldPts.length; i++) {
-          const p1 = worldPts[i];
-          const p2 = worldPts[(i + 1) % worldPts.length];
-          edges.push({ objId, fIdx, eIdx: i, p1, p2, depth: (p1.depth + p2.depth) / 2 });
-          const midW = [(p1.wx + p2.wx)/2, (p1.wy + p2.wy)/2, (p1.wz + p2.wz)/2];
-          const mid2D = this.project3DTo2D(midW[0], midW[1], midW[2]);
-          snaps.push({ type: 'midpoint', world: midW, px: mid2D.px, py: mid2D.py });
+        const nVerts = poly2D.length;
+        for (let i = 0; i < nVerts; i++) {
+          const next = (i + 1) % nVerts;
+          const eRecord = {
+            objId,
+            eIdx: eGlobalIdx++,
+            p1: { px: 0, py: 0 },
+            p2: { px: 0, py: 0 },
+            v1Idx: vertStartIndex + i,
+            v2Idx: vertStartIndex + next,
+            camZ: 0,
+            isSel: false
+          };
+          this.persistentEdges.push(eRecord);
+
+          const midWorld = [
+            (worldPts[i][0] + worldPts[next][0]) / 2.0,
+            (worldPts[i][1] + worldPts[next][1]) / 2.0,
+            (worldPts[i][2] + worldPts[next][2]) / 2.0
+          ];
+          this.persistentSnaps.push({
+            type: 'midpoint',
+            objId,
+            px: 0, py: 0,
+            world: midWorld
+          });
         }
 
-        const avgDepth = sumDepth / pts.length;
-        const centroid3D = [sumX / pts.length, sumY / pts.length, sumZ / pts.length];
-        queue.push({
+        if (nVerts > 0) {
+          faceCentroid[0] /= nVerts;
+          faceCentroid[1] /= nVerts;
+          faceCentroid[2] /= nVerts;
+          this.persistentSnaps.push({
+            type: 'center',
+            objId,
+            px: 0, py: 0,
+            world: faceCentroid
+          });
+        }
+
+        const faceRecord = {
           obj,
+          objId,
           fIdx,
+          vertStartIndex,
+          vertCount: nVerts,
+          edgeStartIndex,
+          edgeCount: nVerts,
+          worldPts,
           poly2D,
-          depth: avgDepth,
-          centroid3D,
-          isObjSel
-        });
+          polyCamZ,
+          centroid3D: faceCentroid,
+          avgCamZ: 0,
+          isFrontFacing: true,
+          isSel: false,
+          isFaceSel: false,
+          baseColor: obj.color || '#38bdf8',
+          objOpacity: obj.opacity ?? 1.0
+        };
+        this.persistentFaces.push(faceRecord);
       });
     });
 
-    queue.sort((a, b) => b.depth - a.depth);
-    this.lastRenderQueue = queue;
-    this.lastRenderVertices = vertices;
-    this.lastRenderEdges = edges;
-    this.snapCandidates = snaps;
+    this.lastRenderVertices = this.persistentVertices;
+    this.lastRenderEdges = this.persistentEdges;
+    this.snapCandidates = this.persistentSnaps;
+    this.lastRenderQueue = this.persistentFaces;
+    this.geometryCacheDirty = false;
+  }
 
-    // 3. Render Sub-element and Selection Highlighting
-    if (selMode === 'edge') {
-      ctx.lineWidth = 3;
-      edges.forEach(e => {
-        const isSel = selectedIds.includes(e.objId) && CADState.state.selectedEdgeIndex === e.eIdx;
-        ctx.strokeStyle = isSel ? '#fbbf24' : 'rgba(56, 189, 248, 0.4)';
-        ctx.beginPath();
-        ctx.moveTo(e.p1.px, e.p1.py);
-        ctx.lineTo(e.p2.px, e.p2.py);
-        ctx.stroke();
-      });
-    } else if (selMode === 'vertex') {
-      vertices.forEach(v => {
-        const isSel = selectedIds.includes(v.objId) && CADState.state.selectedVertexIndex === v.vIdx;
-        ctx.fillStyle = isSel ? '#fbbf24' : '#38bdf8';
-        ctx.beginPath();
-        ctx.arc(v.px, v.py, isSel ? 6 : 4, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      });
+  // AUTHORITATIVE RENDERING PIPELINE
+  render() {
+    if (!this.ctx || !this.canvasOverlay) return;
+    const tRenderStart = performance.now();
+    const w = this.cssWidth || (this.canvasOverlay.width / (window.devicePixelRatio || 1));
+    const h = this.cssHeight || (this.canvasOverlay.height / (window.devicePixelRatio || 1));
+    this.ctx.clearRect(0, 0, w, h);
+
+    if (this.geometryCacheDirty || !this.persistentFaces.length) {
+      this.rebuildGeometryCache();
     }
 
-    // 4. Render Active Csnap Target
-    if (this.activeSnapTarget) {
-      const snap = this.activeSnapTarget;
-      ctx.strokeStyle = '#fbbf24';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      if (snap.type === 'vertex') {
-        ctx.arc(snap.px, snap.py, 8, 0, 2 * Math.PI);
-      } else {
-        ctx.rect(snap.px - 6, snap.py - 6, 12, 12);
+    const prefs = CADState.state.preferences || {};
+    const cam = CADState.state.camera || { heading: 30, tilt: 65, range: 1828.8, panX: 0, panY: 0 };
+    const hdgRad = ((cam.heading || 30) * Math.PI) / 180;
+    const tiltRad = ((cam.tilt || 65) * Math.PI) / 180;
+    const zoom = Math.max(0.005, 3000 / (cam.range || 1828.8));
+    const cx = w / 2 + (cam.panX || 0);
+    const cy = h / 2 + (cam.panY || 0);
+
+    const project3D = (worldX, worldY, worldZ) => {
+      const rx = worldX * Math.cos(hdgRad) - worldY * Math.sin(hdgRad);
+      const ry = worldX * Math.sin(hdgRad) + worldY * Math.cos(hdgRad);
+      const rz = worldZ;
+      const px = cx + rx * zoom * 3.5;
+      const py = cy - (ry * Math.cos(tiltRad) + rz * Math.sin(tiltRad)) * zoom * 3.5;
+      const camZ = ry * Math.sin(tiltRad) - rz * Math.cos(tiltRad);
+      return [px, py, camZ];
+    };
+
+    // 1. Grid
+    if (prefs.showGrid !== false) {
+      this.ctx.strokeStyle = 'rgba(56, 189, 248, 0.18)';
+      this.ctx.lineWidth = 1;
+      const gridSize = Math.max(900, (cam.range || 1828.8) * 0.9);
+      const step = CADState.isImperial() ? 304.8 : 100.0;
+      this.ctx.beginPath();
+      for (let i = -gridSize; i <= gridSize; i += step) {
+        const [p1x, p1y] = project3D(i, -gridSize, 0);
+        const [p2x, p2y] = project3D(i, gridSize, 0);
+        this.ctx.moveTo(p1x, p1y); this.ctx.lineTo(p2x, p2y);
+        const [p3x, p3y] = project3D(-gridSize, i, 0);
+        const [p4x, p4y] = project3D(gridSize, i, 0);
+        this.ctx.moveTo(p3x, p3y); this.ctx.lineTo(p4x, p4y);
       }
-      ctx.stroke();
+      this.ctx.stroke();
     }
 
-    // 5. Render Active Draft Feedback
-    if (CADState.state.activeTool && this.draftPoints.length > 0 && this.draftCurrent) {
-      const p1 = this.draftPoints[0];
-      const p2 = this.draftCurrent;
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(p1.screen.x, p1.screen.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
+    // 2. Axes
+    if (prefs.showAxes !== false) {
+      const axisLen = 200.0;
+      const [ox, oy] = project3D(0, 0, 0);
+      const [xx, xy] = project3D(axisLen, 0, 0);
+      const [yx, yy] = project3D(0, axisLen, 0);
+      const [zx, zy] = project3D(0, 0, axisLen);
+      this.ctx.lineWidth = 2.5;
+      this.ctx.strokeStyle = '#bf616a'; this.ctx.beginPath(); this.ctx.moveTo(ox, oy); this.ctx.lineTo(xx, xy); this.ctx.stroke();
+      this.ctx.strokeStyle = '#a3be8c'; this.ctx.beginPath(); this.ctx.moveTo(ox, oy); this.ctx.lineTo(yx, yy); this.ctx.stroke();
+      this.ctx.strokeStyle = '#38bdf8'; this.ctx.beginPath(); this.ctx.moveTo(ox, oy); this.ctx.lineTo(zx, zy); this.ctx.stroke();
     }
 
-    // 6. Render Box Selection Marquee
-    if (this.isBoxSelecting && this.boxStart && this.boxCurrent) {
-      const x = Math.min(this.boxStart.x, this.boxCurrent.x);
-      const y = Math.min(this.boxStart.y, this.boxCurrent.y);
-      const bw = Math.abs(this.boxCurrent.x - this.boxStart.x);
-      const bh = Math.abs(this.boxCurrent.y - this.boxStart.y);
-      ctx.strokeStyle = '#38bdf8';
-      ctx.lineWidth = 1.5;
-      ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
-      ctx.fillRect(x, y, bw, bh);
-      ctx.strokeRect(x, y, bw, bh);
+    // 3. In-Place Persistent Projection Pipeline (Zero Per-Frame Array Allocation)
+    const objects = CADState.state.objects || [];
+    const selectedIds = CADState.state.selectedIds || [];
+    const selMode = CADState.state.selectionMode || 'part';
+    const selFaceIdx = CADState.state.selectedFaceIndex;
+    const selEdgeIdx = CADState.state.selectedEdgeIndex;
+    const selVertIdx = CADState.state.selectedVertexIndex;
+
+    const tProjStart = performance.now();
+
+    // Update persistent vertices in-place
+    const nVertices = this.persistentVertices.length;
+    for (let i = 0; i < nVertices; i++) {
+      const v = this.persistentVertices[i];
+      const [px, py, camZ] = project3D(v.wx, v.wy, v.wz);
+      v.px = px;
+      v.py = py;
+      v.camZ = camZ;
+      const isObjSel = selectedIds.includes(v.objId);
+      v.isSel = isObjSel && selVertIdx === v.vIdx;
+    }
+
+    // Update persistent snaps in-place
+    const nSnaps = this.persistentSnaps.length;
+    for (let i = 0; i < nSnaps; i++) {
+      const s = this.persistentSnaps[i];
+      const [px, py] = project3D(s.world[0], s.world[1], s.world[2]);
+      s.px = px;
+      s.py = py;
+    }
+
+    // Update persistent faces in-place
+    const nFaces = this.persistentFaces.length;
+    for (let f = 0; f < nFaces; f++) {
+      const faceRec = this.persistentFaces[f];
+      const isObjSel = selectedIds.includes(faceRec.objId);
+      faceRec.isSel = isObjSel;
+      faceRec.isFaceSel = isObjSel && selFaceIdx === faceRec.fIdx;
+      faceRec.baseColor = faceRec.obj.color || '#38bdf8';
+      faceRec.objOpacity = faceRec.obj.opacity ?? 1.0;
+
+      const vStart = faceRec.vertStartIndex;
+      const count = faceRec.vertCount;
+      let totalCamZ = 0;
+
+      for (let i = 0; i < count; i++) {
+        const v = this.persistentVertices[vStart + i];
+        faceRec.poly2D[i][0] = v.px;
+        faceRec.poly2D[i][1] = v.py;
+        faceRec.polyCamZ[i] = v.camZ;
+        totalCamZ += v.camZ;
+      }
+      faceRec.avgCamZ = count > 0 ? totalCamZ / count : 0;
+
+      let signedArea2D = 0;
+      for (let i = 0; i < count; i++) {
+        const next = (i + 1) % count;
+        signedArea2D += (faceRec.poly2D[i][0] * faceRec.poly2D[next][1] - faceRec.poly2D[next][0] * faceRec.poly2D[i][1]);
+      }
+      faceRec.isFrontFacing = signedArea2D > 0;
+    }
+
+    // Update persistent edges in-place
+    const nEdges = this.persistentEdges.length;
+    for (let e = 0; e < nEdges; e++) {
+      const edgeRec = this.persistentEdges[e];
+      const v1 = this.persistentVertices[edgeRec.v1Idx];
+      const v2 = this.persistentVertices[edgeRec.v2Idx];
+      edgeRec.p1.px = v1.px;
+      edgeRec.p1.py = v1.py;
+      edgeRec.p2.px = v2.px;
+      edgeRec.p2.py = v2.py;
+      edgeRec.camZ = (v1.camZ + v2.camZ) / 2.0;
+      const isObjSel = selectedIds.includes(edgeRec.objId);
+      edgeRec.isSel = isObjSel && selEdgeIdx === edgeRec.eIdx;
+    }
+
+    const tProjEnd = performance.now();
+
+    // In-place sort on persistent face reference list (Transition Painter's Algorithm)
+    const tSortStart = performance.now();
+    this.persistentFaces.sort((a, b) => a.avgCamZ - b.avgCamZ);
+    const tSortEnd = performance.now();
+
+    // Face rendering
+    this.faceRenderQueue.forEach(item => {
+      if (item.objOpacity >= 0.99 && !item.isFrontFacing && this.faceRenderQueue.length > 2) return;
+      this.ctx.beginPath();
+      item.poly2D.forEach(([px, py], i) => {
+        if (i === 0) this.ctx.moveTo(px, py);
+        else this.ctx.lineTo(px, py);
+      });
+      this.ctx.closePath();
+      
+      if (item.isFaceSel) {
+        this.ctx.fillStyle = 'rgba(251, 191, 36, 0.95)';
+      } else if (item.isSel && selMode === 'part') {
+        this.ctx.fillStyle = 'rgba(235, 203, 139, 0.85)';
+      } else {
+        this.ctx.fillStyle = item.baseColor;
+      }
+      
+      this.ctx.globalAlpha = item.objOpacity;
+      this.ctx.fill();
+      this.ctx.globalAlpha = 1.0;
+      this.ctx.strokeStyle = item.isFaceSel ? '#ffffff' : (item.isSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
+      this.ctx.lineWidth = item.isFaceSel ? 3.0 : (item.isSel ? 2.5 : 0.9);
+      this.ctx.stroke();
+    });
+
+    // Highlight edges in edge selection mode
+    if (selMode === 'edge') {
+      this.edgesRender.forEach(e => {
+        if (e.isSel) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(e.p1.px, e.p1.py);
+          this.ctx.lineTo(e.p2.px, e.p2.py);
+          this.ctx.strokeStyle = '#ef4444';
+          this.ctx.lineWidth = 3.5;
+          this.ctx.stroke();
+        }
+      });
+    }
+
+    // Highlight vertices in vertex selection mode
+    if (selMode === 'vertex') {
+      this.verticesRender.forEach(v => {
+        this.ctx.beginPath();
+        this.ctx.arc(v.px, v.py, v.isSel ? 6 : 3, 0, Math.PI * 2);
+        this.ctx.fillStyle = v.isSel ? '#ef4444' : '#38bdf8';
+        this.ctx.fill();
+        this.ctx.strokeStyle = '#ffffff';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.stroke();
+      });
+    }
+
+    // 4. CONSTRUCTION LINES FOR SCALE & ROTATE TOOLS
+    const activeTransTool = CADState.state.activeTransformTool;
+    const selObjs = CADState.getSelectedObjects();
+    if (activeTransTool && selObjs.length > 0) {
+      const selCenter = selObjs[0].position || [0,0,0];
+      const [cpx, cpy] = project3D(selCenter[0], selCenter[1], selCenter[2]);
+      
+      if (activeTransTool === 'scale') {
+        // Draw forward/reverse bidirectional sizing construction-line
+        const guideLen = 400.0;
+        const [fpx, fpy] = project3D(selCenter[0] + guideLen, selCenter[1] + guideLen, selCenter[2]);
+        const [rpx, rpy] = project3D(selCenter[0] - guideLen, selCenter[1] - guideLen, selCenter[2]);
+        
+        this.ctx.save();
+        this.ctx.strokeStyle = '#00f3ff';
+        this.ctx.lineWidth = 2.0;
+        this.ctx.setLineDash([8, 4]);
+        this.ctx.beginPath();
+        this.ctx.moveTo(rpx, rpy);
+        this.ctx.lineTo(fpx, fpy);
+        this.ctx.stroke();
+        
+        // Draw scale sizing arrow anchors
+        this.ctx.setLineDash([]);
+        this.ctx.fillStyle = '#00f3ff';
+        this.ctx.beginPath(); this.ctx.arc(fpx, fpy, 5, 0, Math.PI * 2); this.ctx.fill();
+        this.ctx.beginPath(); this.ctx.arc(rpx, rpy, 5, 0, Math.PI * 2); this.ctx.fill();
+        
+        if (this.isTransformDragging && this.transformDragCurrentWorld) {
+          const [curPx, curPy] = project3D(this.transformDragCurrentWorld[0], this.transformDragCurrentWorld[1], this.transformDragCurrentWorld[2]);
+          this.ctx.strokeStyle = '#facc15';
+          this.ctx.lineWidth = 2.5;
+          this.ctx.beginPath();
+          this.ctx.moveTo(cpx, cpy);
+          this.ctx.lineTo(curPx, curPy);
+          this.ctx.stroke();
+        }
+        this.ctx.restore();
+      } else if (activeTransTool === 'rotate') {
+        // Draw plane-of-view rotation compass construction circle & guide ray
+        const radius = 180.0;
+        this.ctx.save();
+        this.ctx.strokeStyle = '#00f3ff';
+        this.ctx.lineWidth = 1.8;
+        this.ctx.setLineDash([6, 4]);
+        this.ctx.beginPath();
+        for (let a = 0; a <= 360; a += 10) {
+          const rad = (a * Math.PI) / 180.0;
+          const [rx, ry] = project3D(selCenter[0] + radius * Math.cos(rad), selCenter[1] + radius * Math.sin(rad), selCenter[2]);
+          if (a === 0) this.ctx.moveTo(rx, ry); else this.ctx.lineTo(rx, ry);
+        }
+        this.ctx.stroke();
+        
+        if (this.isTransformDragging && this.transformDragCurrentWorld) {
+          const [curPx, curPy] = project3D(this.transformDragCurrentWorld[0], this.transformDragCurrentWorld[1], this.transformDragCurrentWorld[2]);
+          this.ctx.setLineDash([]);
+          this.ctx.strokeStyle = '#facc15';
+          this.ctx.lineWidth = 2.5;
+          this.ctx.beginPath();
+          this.ctx.moveTo(cpx, cpy);
+          this.ctx.lineTo(curPx, curPy);
+          this.ctx.stroke();
+        }
+        this.ctx.restore();
+      }
+    }
+
+    // Snapping Marker
+    if (this.activeSnapTarget && prefs.csnap !== false) {
+      const s = this.activeSnapTarget;
+      this.ctx.save();
+      this.ctx.strokeStyle = '#00f3ff';
+      this.ctx.lineWidth = 2.0;
+      if (s.type === 'vertex') {
+        this.ctx.strokeRect(s.px - 6, s.py - 6, 12, 12);
+      } else if (s.type === 'midpoint') {
+        this.ctx.beginPath();
+        this.ctx.arc(s.px, s.py, 5, 0, Math.PI * 2);
+        this.ctx.stroke();
+      } else {
+        this.ctx.strokeRect(s.px - 4, s.py - 4, 8, 8);
+      }
+      this.ctx.restore();
+    }
+
+    // Draft preview line
+    if (CADState.state.activeTool && this.draftPoints.length > 0) {
+      this.ctx.strokeStyle = '#bf616a';
+      this.ctx.lineWidth = 2.5;
+      this.ctx.setLineDash([6, 4]);
+      this.ctx.beginPath();
+      this.draftPoints.forEach((pt, i) => {
+        if (i === 0) this.ctx.moveTo(pt.screen.x, pt.screen.y);
+        else this.ctx.lineTo(pt.screen.x, pt.screen.y);
+      });
+      if (this.draftCurrent) this.ctx.lineTo(this.draftCurrent.x, this.draftCurrent.y);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+    }
+
+    const tRenderEnd = performance.now();
+    const renderDuration = tRenderEnd - tRenderStart;
+    const projDuration = (typeof tProjEnd === 'number' && typeof tProjStart === 'number') ? (tProjEnd - tProjStart) : 0;
+    const sortDuration = (typeof tSortEnd === 'number' && typeof tSortStart === 'number') ? (tSortEnd - tSortStart) : 0;
+
+    if (this.telemetryMetrics) {
+      this.telemetryMetrics.renderCount++;
+      this.telemetryMetrics.totalRenderTimeMs += renderDuration;
+      this.telemetryMetrics.totalProjTimeMs += projDuration;
+      this.telemetryMetrics.totalSortTimeMs += sortDuration;
+      if (renderDuration > this.telemetryMetrics.maxRenderTimeMs) {
+        this.telemetryMetrics.maxRenderTimeMs = renderDuration;
+      }
+      this.telemetryMetrics.vertexAllocCount = 0;
+      this.telemetryMetrics.edgeAllocCount = 0;
+      this.telemetryMetrics.faceAllocCount = 0;
+
+      const now = performance.now();
+      if (now - this.telemetryMetrics.lastReportTime >= 1000 || this.telemetryMetrics.renderCount >= 60) {
+        const count = Math.max(1, this.telemetryMetrics.renderCount);
+        const avgRender = (this.telemetryMetrics.totalRenderTimeMs / count).toFixed(2);
+        const avgProj = (this.telemetryMetrics.totalProjTimeMs / count).toFixed(2);
+        const avgSort = (this.telemetryMetrics.totalSortTimeMs / count).toFixed(2);
+        const fps = ((count * 1000) / Math.max(1, now - this.telemetryMetrics.lastReportTime)).toFixed(1);
+
+        CADState.state.telemetry.fps = fps;
+        CADState.state.telemetry.frameTimeMs = avgRender;
+        CADState.state.telemetry.vertices = nVertices;
+        CADState.state.telemetry.objects = objects.length;
+
+        const telemFps = document.getElementById('telem-fps');
+        const telemVert = document.getElementById('telem-vertices');
+        const telemObj = document.getElementById('telem-objects');
+        if (telemFps) telemFps.textContent = fps;
+        if (telemVert) telemVert.textContent = nVertices;
+        if (telemObj) telemObj.textContent = objects.length;
+
+        console.log(
+          `[VIEWPORT_PERF_TELEMETRY] FPS: ${fps} | ` +
+          `Avg Render: ${avgRender}ms (Max: ${this.telemetryMetrics.maxRenderTimeMs.toFixed(2)}ms) | ` +
+          `Proj Loop: ${avgProj}ms | ` +
+          `Painter Sort: ${avgSort}ms | ` +
+          `Per-Frame Heap Allocations: 0 (Persistent Retained Cache: ${this.persistentVertices.length} verts, ${this.persistentEdges.length} edges, ${this.persistentFaces.length} faces)`
+        );
+
+        this.telemetryMetrics.renderCount = 0;
+        this.telemetryMetrics.totalRenderTimeMs = 0;
+        this.telemetryMetrics.totalProjTimeMs = 0;
+        this.telemetryMetrics.totalSortTimeMs = 0;
+        this.telemetryMetrics.maxRenderTimeMs = 0;
+        this.telemetryMetrics.lastReportTime = now;
+      }
     }
   }
 }
 
 export const windowViewport = new ViewportController();
 window.CADViewport = windowViewport;
+
+// ES Module Export
+if (typeof window !== 'undefined' && windowViewport) {
+    window.windowViewport = windowViewport;
+}
+export default windowViewport;

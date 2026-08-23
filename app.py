@@ -5,7 +5,7 @@ import pathlib
 import urllib.request
 import uuid
 import numpy as np
-from quart import Quart, render_template, request, jsonify, send_from_directory, Response
+from quart import Quart, render_template, request, jsonify, send_from_directory
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 
@@ -173,7 +173,12 @@ async def canonical_export():
 @app.route('/GeoParametric3D/api/geometry/binary', methods=['GET', 'POST'])
 @app.route('/cad/api/geometry/binary', methods=['GET', 'POST'])
 async def handle_geometry_binary():
+    """
+    Zero-copy binary transport endpoint.
+    Transports packed float32 vertex coordinates and uint32 index arrays.
+    """
     import struct
+    from quart import Response
     data = (await request.get_json(silent=True)) or {}
     obj_id = data.get('id') or request.args.get('id')
     
@@ -416,8 +421,6 @@ async def handle_import():
             uploaded_file = files['file']
             filename = uploaded_file.filename or "imported_model.stl"
             content_bytes = uploaded_file.read()
-            if asyncio.iscoroutine(content_bytes):
-                content_bytes = await content_bytes
         else:
             content_bytes = await request.get_data()
             filename = request.headers.get("X-File-Name", "import_stream.bin")
@@ -515,13 +518,9 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
 
 @app.route('/api/assistant/chat', methods=['POST'])
 @app.route('/api/assistant', methods=['POST'])
-@app.route('/api/generate', methods=['POST'])
 @app.route('/GeoParametric3D/api/assistant/chat', methods=['POST'])
-@app.route('/GeoParametric3D/api/assistant', methods=['POST'])
-@app.route('/GeoParametric3D/api/generate', methods=['POST'])
 @app.route('/cad/api/assistant/chat', methods=['POST'])
 @app.route('/cad/api/assistant', methods=['POST'])
-@app.route('/cad/api/generate', methods=['POST'])
 async def assistant_chat():
     data = (await request.get_json()) or {}
     user_message = (data.get('message', '') or data.get('prompt', '') or '').strip()
@@ -537,11 +536,9 @@ async def assistant_chat():
     return json_response({
         "status": "success",
         "success": True,
-        "ok": True,
         "message": final_message,
         "reply": final_message,
         "response": final_message,
-        "action_intent": chat_response.action_intent if chat_response.requires_action else {},
         "vertex_ai_project": PROJECT_ID,
         "location": LOCATION,
         "document": global_cad_state.to_dict()

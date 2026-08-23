@@ -1,6 +1,6 @@
 """
 GeoParametric3D Command Engine
-Processes CAD operations, parametric mutations, B-Rep instantiations, script execution, and Universal Imports.
+Processes CAD operations, parametric mutations, B-Rep instantiations, and Universal Imports.
 """
 import uuid
 import time
@@ -10,14 +10,7 @@ import copy
 from typing import Dict, Any, Optional
 from state import global_cad_state, CADObject
 from geometry import generate_geometry, compute_object_volume, DEFAULT_12_INCH_MM
-from universal_byte_parser import (
-    import_bytes,
-    export_xbf_bytes,
-    export_step_bytes,
-    parse_universal_model,
-    parse_universal_model_bytes,
-    CANONICAL_INTERNAL_UNIT
-)
+from universal_byte_parser import import_bytes, export_xbf_bytes, export_step_bytes, parse_universal_model, parse_universal_model_bytes, CANONICAL_INTERNAL_UNIT
 from canonical_geometry import GeometryPipelineException, GeometryPipelineStage
 
 CAD_ALIASES = {
@@ -448,34 +441,6 @@ class CommandEngine:
                     "object_id": obj.object_id, "name": obj.name, "bounding_box": obj.compute_bounds(),
                     "volume_cm3": obj.get_volume_cm3(), "mass_grams": obj.get_mass_grams()
                 }, "document": self.state.to_dict()}
-
-            elif cmd == "execute_script":
-                self.state.save_snapshot()
-                script = params.get("script", "")
-                if not script:
-                    return {"ok": False, "success": False, "error": "No script provided", "command": cmd}
-                try:
-                    local_scope = {"state": self.state, "result": None}
-                    try:
-                        import cadquery as cq
-                        local_scope["cq"] = cq
-                    except ImportError:
-                        pass
-                    exec(script, local_scope)
-                    return {
-                        "ok": True,
-                        "success": True,
-                        "command": cmd,
-                        "message": "Script executed successfully",
-                        "document": self.state.to_dict()
-                    }
-                except Exception as script_err:
-                    return {
-                        "ok": False,
-                        "success": False,
-                        "error": str(script_err),
-                        "command": cmd
-                    }
 
             elif cmd in ("export_xbf", "export_step", "export"):
                 fmt = params.get("format", "xbf").lower()
