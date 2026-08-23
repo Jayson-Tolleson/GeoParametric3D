@@ -807,21 +807,12 @@ export class UIController {
       btnToggle.addEventListener('click', () => {
         drawer.classList.toggle('collapsed');
         btnToggle.textContent = drawer.classList.contains('collapsed') ? '\u25b2' : '\u25bc';
-      });
-    }
+    });
+  }
 
-    const sendPrompt = async () => {
-      if (!input) return;
-      const text = input.value.trim();
-      if (!text) return;
-      
-      const log = document.getElementById('assistant-messages');
-      if (log) {
-        log.innerHTML += `<div style="margin: 4px 0;"><strong>User:</strong> ${text}</div>`;
-      }
-      input.value = '';
-
-      const res = await CADApi.sendAssistantPrompt(text);
+  renderTelemetry() {
+    const telemObj = document.getElementById('telem-objects');
+    const telemVert = document.getElementById('telem-vertices');
     const telemFps = document.getElementById('telem-fps');
 
     if (telemObj) telemObj.textContent = CADState.state.objects.length;
@@ -865,9 +856,8 @@ export class UIController {
     inputMsg.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendMessage();
     });
-
-}
-}
+  }
 }
 
+  }
 export const windowUI = new UIController();
