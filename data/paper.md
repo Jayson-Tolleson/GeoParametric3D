@@ -2,37 +2,64 @@
 **System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
 **Document Version:** 9.0.0-PROD-CONSOLIDATED  
 **Status:** Authoritative Architectural Governing Standard  
-**Classification:** Core CAD/CAM, Native Google Maps 3D & Geospatial Engine Architecture  
+**Classification:** Core CAD/CAM Kernel, Native Google Maps 3D Viewport & True N-Gon Opaque Rendering Engine  
 
 ---
 
-## 1. Executive Summary & System Overview
+## 1. Executive Summary & Forensic System Architecture
 
-GeoParametric3D is an engineering-grade Computer-Aided Design and Manufacturing (CAD/CAM) workstation operating in standard modern web browsers. It unifies two historically divergent computational domains:
-1. **Authoritative Boundary Representation (B-Rep) Solid Modeling:** Exact mathematical surfaces, analytical boundary curves, topological orientation, and non-manifold healing powered by OpenCASCADE (OCCT / OCP) on the backend and WebAssembly clients on the frontend.
-2. **Native Geospatial Photorealistic Viewport Engine (`<gmp-map-3d>`):** Complete elimination of all legacy Three.js WebGL canvas wrappers in favor of direct hardware-accelerated 3D geospatial primitives (`<gmp-polygon-3d>`, `<gmp-polyline-3d>`, `<gmp-marker-3d>`, and 3D Tiles) within the Google Maps 3D ecosystem.
-
-This specification formally addresses the architectural mandate for **100% Opaque Solid N-Gon Face Shading (zero transparency / alpha = 1.0)**, eliminates visual internal triangulation diagonals on planar surfaces, details the mathematical mechanics of the Dual-Route B-Rep rendering pipeline, and provides an exhaustive analysis of geodetic anchoring constraints, establishing Null Island (`[0.0, 0.0, 0.0]`) as the exclusive planetary geodetic origin anchor.
-
----
-
-## 2. 100% Opaque Solid N-Gon Shading & Visual Integrity Standard
-
-### 2.1 Mandatory Opaque Shading Doctrine
-In engineering CAD workstations (e.g., FreeCAD, SolidWorks, CATIA), mechanical solid parts are rendered with **100% opaque shading** by default. Translucent or semi-transparent rendering by default introduces severe visual ambiguities:
-- **Occlusion Confusion:** Internal features, back-facing edges, and inner holes become visually entangled with front-facing boundary surfaces.
-- **Depth Ordering Artifacts:** Sorting translucent coplanar or intersecting polygons on the GPU causes sorting thrash and alpha blending halos.
-- **Inspection Degradation:** Geometric tolerances, bearing faces, and planar alignment cannot be visually confirmed when surface boundaries are indistinct.
-
-### 2.2 N-Gon Polygon Presentation Rules
-1. **Full Opacity Default (`opacity: 1.0`, `alpha: 255`):** All planar N-Gon faces and tessellated parametric surfaces are rasterized with 100% solid opacity.
-2. **Zero Internal Diagonals:** Planar faces (`GeomAbs_Plane`) are extracted as continuous closed outer perimeters (`outerCoordinates`) and inner hole cutout loops (`innerCoordinates`), completely bypassing triangular subdivision.
-3. **Crisp High-Contrast Outlines:** Outer perimeters are rendered with distinct high-contrast edge strokes to provide unambiguous visual boundary definition.
-4. **Depth-Buffer Occlusion:** `<gmp-polygon-3d>` elements participate directly in the hardware Z-buffer depth test against 3D photorealistic terrain, photorealistic 3D buildings, and neighboring solid parts.
+GeoParametric3D is an engineering-grade Computer-Aided Design and Computer-Aided Manufacturing (CAD/CAM) solid modeling workstation operating natively within modern web execution environments. The platform addresses fundamental flaws in traditional browser CAD engines by establishing strict architectural boundaries between:
+1. **Authoritative Boundary Representation (B-Rep) Solid Modeling Truth:** Exact mathematical surfaces (planes, cylinders, cones, spheres, tori, B-splines), topological boundary loops, oriented edges, and 3D vertices managed by OpenCASCADE (OCCT / OCP) on the backend and WebAssembly (WASM) modules on the client.
+2. **Direct Hardware-Accelerated Geospatial Viewport (`<gmp-map-3d>`):** Complete elimination of intermediate 3D graphics libraries (Three.js, Babylon.js) in favor of direct, native Web Components (`<gmp-polygon-3d>`, `<gmp-polyline-3d>`, `<gmp-marker-3d>`) rendering directly into the Google Maps 3D photorealistic Earth ecosystem.
+3. **True Opaque N-Gon Boundary Visualization:** Planar CAD faces are extracted as clean, non-triangulated N-gon perimeter wires and inner cutout loops, rendered with **100% solid opacity (no transparency)**, eliminating distracting internal triangulation diagonals and visual artifacts.
+4. **Canonical Geodetic Tangent Anchor:** Anchored exclusively at Null Island geodetic origin (`[0.0, 0.0, 0.0]`), guaranteeing mathematical isometry, zero longitudinal convergence distortion, and strict millimetric CAD coordinate preservation.
+5. **Domain-Specific AI Engineering Assistant:** Integrated with Google Cloud Vertex AI (Project: `broadcasterfishmap`, Location: `global`), providing topological reasoning, B-Rep feature tree automation, and CAM/G-code generation.
 
 ---
 
-## 3. Dual-Route B-Rep Rendering Pipeline & True N-Gon Extraction
+## 2. Complete Elimination of Three.js & Adoption of Native `<gmp-map-3d>`
+
+### 2.1 Architectural Rationale
+Legacy web CAD applications construct a secondary scene graph using Three.js or WebGL frameworks. In a geospatial CAD workstation, this dual-engine approach creates critical failure points:
+- **Dual Memory Redundancy:** Vertices and triangle indices are replicated across the CAD kernel heap, JavaScript memory, Three.js scene graphs, and GPU buffer caches.
+- **Depth Buffer Z-Fighting:** Overlaying a software or WebGL canvas over photorealistic 3D map tiles prevents shared hardware Z-buffering, resulting in severe visual clipping over multi-kilometer viewing ranges.
+- **Triangulation Diagonals on Planar Slabs:** Traditional tessellators force planar surfaces into triangle meshes. When rendered with wireframe or edge visualizers, internal diagonals clutter mechanical inspection.
+
+### 2.2 Native Viewport Architecture
+All Three.js abstractions are removed. The 3D viewport is driven exclusively by native Web Components:
+- **`<gmp-map-3d>`:** Global Earth camera controller, photorealistic terrain, atmospheric lighting, and continuous Level-of-Detail (LOD) streaming.
+- **`<gmp-polygon-3d>`:** Direct GPU-accelerated rendering of planar N-gon faces with explicit outer perimeter loops and inner cutout holes. Faces are rendered fully opaque with crisp surface materials.
+- **`<gmp-polyline-3d>`:** Direct rendering of construction lines, CAD curve boundaries, toolpaths, and dimension callouts.
+- **`<gmp-marker-3d>`:** Hardware-anchored construction datum points, center-of-mass indicators, and CSnap vertices.
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                 GEOPARAMETRIC3D CLIENT APPLICATION                                |
++---------------------------------------------------------------------------------------------------+
+                                                  |
+                                                  v
++---------------------------------------------------------------------------------------------------+
+|                       NATIVE GOOGLE MAPS 3D VIEWPORT CONTAINER (<gmp-map-3d>)                     |
+|                                                                                                   |
+|   +------------------------------------+      +-----------------------------------------------+   |
+|   |    <gmp-polygon-3d> (Planar N-Gon) |      |     <gmp-polyline-3d> (Curves & Outlines)     |   |
+|   |    - 100% Opaque Solid Shading     |      |     - coordinates: LatLngAlt[]                |   |
+|   |    - outerCoordinates: LatLngAlt[] |      |     - strokeColor / strokeWidth               |   |
+|   |    - innerCoordinates: LatLngAlt[][]|     |     - altitudeMode: 'absolute'                |   |
+|   |    - Zero Internal Diagonals       |      |     - Crisp Boundary Definition               |   |
+|   +------------------------------------+      +-----------------------------------------------+   |
+|                                                                                                   |
+|   +------------------------------------+      +-----------------------------------------------+   |
+|   |    <gmp-marker-3d> (Datums)        |      |     Interactive HUD Overlay (CSnap & Selection)|  |
+|   |    - position: {lat, lng, alt}     |      |     - Screen-space Selection Marquee          |   |
+|   |    - altitudeMode: 'absolute'      |      |     - Bearing Edge Snap Highlight Gizmos      |   |
+|   +------------------------------------+      +-----------------------------------------------+   |
++---------------------------------------------------------------------------------------------------+
+```
+
+---
+
+## 3. Dual-Route B-Rep Rendering Pipeline & True Opaque N-Gon Extraction
 
 ```
                                   [OPEN CASCADE TopoDS_Shape]
@@ -49,7 +76,7 @@ In engineering CAD workstations (e.g., FreeCAD, SolidWorks, CATIA), mechanical s
 | - Extract Outer Wires & Inner Cutout Loops    |   | - Dynamic Linear & Angular Deflection         |   
 | - Quasi-Uniform Deflection on Curved Edges    |   | - Poly_Triangulation Extraction               |   
 | - Zero Internal Triangulation Diagonals       |   | - Hardware-Compact Float32/Uint32 Buffers     |   
-| - 100% Opaque Solid Shading (Alpha = 1.0)     |   | - 100% Opaque Solid Shading (Alpha = 1.0)     |   
+| - 100% Opaque Solid Shading                   |   | - 100% Opaque Solid Shading                   |   
 +-----------------------------------------------+   +-----------------------------------------------+   
                         |                                               |                           
                         v                                               v                           
@@ -73,77 +100,38 @@ In engineering CAD workstations (e.g., FreeCAD, SolidWorks, CATIA), mechanical s
 |               <gmp-polygon-3d>                |   |          ADAPTIVE RENDER MESH BUFFERS         |   
 |  - outerCoordinates: [{lat, lng, alt}, ...]   |   |  - Triangulated Facet Array                   |   
 |  - innerCoordinates: [[{lat, lng, alt}], ...] |   |  - Direct GPU Coplanar Shader Rasterization   |   
-|  - Crisp Solid Shading (100% Opacity)         |   |  - Precise Face Provenance IDs                |   
+|  - 100% Opaque Solid Fill (Alpha = 1.0)       |   |  - Crisp Solid Shading (Alpha = 1.0)          |   
+|  - Unbroken Face Provenance UUIDs             |   |  - Precise Face Provenance UUIDs              |   
 +-----------------------------------------------+   +-----------------------------------------------+   
 ```
 
 ### 3.1 Route A: Planar Faces (`GeomAbs_Plane`)
-1. **Analytical Plane Detection:** For every `TopoDS_Face`, the underlying analytical geometry is queried via `BRepAdaptor_Surface.GetType()`. If `GeomAbs_Plane`, the face is routed directly to the N-Gon extraction pipeline.
-2. **Topological Wire Traversal:** `TopExp_Explorer(TopAbs_WIRE)` and `BRepTools_WireExplorer` extract the outer bounding wire and all internal cutout wires (genus holes).
-3. **Curved Edge Discretization:** Linear edges remain clean 2-point vectors; circular or spline edges are adaptively discretized using chordal deflection sampling (`GCPnts_QuasiUniformDeflection`).
-4. **Direct Vector Binding:** Outer and inner loops are transformed to WGS-84 coordinates and passed directly into `<gmp-polygon-3d>` as `outerCoordinates` and `innerCoordinates` with solid opaque fill.
+1. **Analytical Surface Identification:** Every `TopoDS_Face` is inspected using `BRepAdaptor_Surface.GetType()`. Faces classified as `GeomAbs_Plane` bypass triangulation meshers completely.
+2. **Topological Wire Traversal:** `BRepTools_WireExplorer` traverses the face boundary wires in oriented sequence, capturing the primary outer boundary loop and all internal cutout loops (e.g., bolt holes, pockets).
+3. **Curvilinear Edge Discretization:** Straight edges preserve their exact 2-point endpoints; curved edges (arcs, splines) are sampled under chordal deflection tolerances (`GCPnts_QuasiUniformDeflection`).
+4. **100% Opaque Solid Presentation:** Polygons are rendered with solid opacity (`fillColor: rgba(r, g, b, 1.0)` or hex) without transparency, matching industry CAD standards (FreeCAD, SolidWorks).
 
 ### 3.2 Route B: Curved & Freeform Analytical Surfaces
-1. **Adaptive Deflection Calculation:** For cylinders, cones, spheres, tori, and B-Splines, deflection bounds are computed dynamically from the shape bounding diagonal extent $D_{\text{diag}}$:
+1. **Adaptive Deflection Calculation:** For non-planar surfaces (cylinders, spheres, cones, NURBS), linear deflection $\delta_{\text{linear}}$ and angular deflection $\theta_{\text{angular}}$ are calculated dynamically from the bounding diagonal extent $D_{\text{diag}}$:
    $$\delta_{\text{linear}} = \max\left(0.2, D_{\text{diag}} \times 0.002\right) \quad [\text{mm}], \quad \theta_{\text{angular}} = 0.45 \quad [\text{rad}]$$
-2. **Mesh Generation & Compaction:** `BRepMesh_IncrementalMesh` generates node positions and triangle indices. Degenerate facets and non-finite numbers are culled via `validate_and_compact_mesh`.
-3. **Hardware Mesh Projection:** Faces are rendered as contiguous polygon sets or compact binary buffers with exact face-provenance metadata.
+2. **Numerical Compaction & Healing:** `validate_and_compact_mesh` eliminates non-finite coordinates, removes degenerate zero-area facets, and remaps vertex indices.
+3. **Watertight Facet Projection:** Triangles are mapped into geodetic coordinate sets with 100% opaque solid shading, preserving color metadata extracted from STEP product definition contexts.
 
 ---
 
-## 4. Complete Elimination of Three.js & Adoption of Native `<gmp-map-3d>`
+## 4. Geodetic Tangent Datum: Null Island `[0.0, 0.0, 0.0]`
 
-### 4.1 Architectural Rationale
-Traditional web CAD implementations wrap WebGL or Three.js scene graphs around CAD geometry. In a geospatial CAD system, this creates severe architectural friction:
-- **Dual Memory Overhead:** Triangulated copies of solid geometry reside simultaneously in the CAD kernel heap, the Three.js scene graph, the WebGL buffer cache, and the geospatial map canvas.
-- **Depth Buffer & Z-Fighting Incompatibilities:** Three.js overlay canvases cannot natively interleave depth buffers with Google Maps 3D photorealistic tiles without severe precision loss (logarithmic depth buffer artifacts over multi-kilometer viewing ranges).
-- **Triangulation Diagonals on Planar Slabs:** Forcing planar faces into triangle meshes introduces visual meshing diagonals that degrade mechanical inspection.
+### 4.1 Geodetic Anchoring Principle
+Local CAD modeling takes place in flat Euclidean space $\mathbb{R}^3$ measured in linear millimeters (mm). The Google Maps 3D runtime operates in the ellipsoidal WGS-84 reference frame. A geodetic anchor $\mathbf{A} = (\phi_0, \lambda_0, h_0)$ transforms local Cartesian coordinates to the Earth's surface.
 
-### 4.2 Native Viewport Architecture
-All Three.js dependencies are eliminated. Viewport presentation is handled by native Web Components:
-- **`<gmp-map-3d>`:** Authoritative 3D camera controller, photorealistic Earth surface, real-world atmospheric lighting, and continuous level-of-detail (LOD) streaming.
-- **`<gmp-polygon-3d>`:** Direct rendering of exact planar polygons (`outerCoordinates`, `innerCoordinates`) with GPU-driven rasterization, zero meshing diagonals, and hardware depth testing against 3D buildings and terrain.
-- **`<gmp-polyline-3d>`:** Direct rendering of drafting lines, toolpaths, and boundary wire edges.
-- **`<gmp-marker-3d>`:** Hardware-anchored construction datum points, center-of-mass indicators, and CSnap vertices.
+### 4.2 Standard Anchor: Null Island `[0.0, 0.0, 0.0]`
+GeoParametric3D standardizes on **Null Island** (Latitude $\phi_0 = 0.0^\circ$, Longitude $\lambda_0 = 0.0^\circ$, Altitude $h_0 = 0.0\text{ m}$) as the master origin datum:
+1. **Zero Longitudinal Convergence:** At the equator ($\phi_0 = 0.0^\circ$), $\cos(\phi_0) = 1.0$. Longitudinal meridians are parallel, eliminating latitude-dependent shearing.
+2. **Isotropic Metric Scale:** Millimeter displacements along local $X$ (East) and $Y$ (North) maintain orthogonal metric symmetry across all scales.
+3. **Condition Number Minimization:** Forward and inverse Jacobian matrices achieve optimal numerical stability, preventing rounding drift during transformation roundtrips.
 
----
-
-## 5. Exclusive Geodetic Anchoring Analysis: Null Island `[0.0, 0.0, 0.0]`
-
-### 5.1 Necessity of a Geodetic Datum
-Web CAD solid modeling kernels operate in flat Euclidean $\mathbb{R}^3$ space (Local Cartesian ENU coordinates in millimeters), whereas `<gmp-map-3d>` operates in an ellipsoidal WGS-84 reference frame (Earth-Centered, Earth-Fixed / ECEF coordinates). A geodetic anchor point $\mathbf{A} = (\phi_0, \lambda_0, h_0)$ is mathematically required to map local CAD coordinates $[x, y, z]^T$ to the planetary surface.
-
-### 5.2 Exclusive Standardization on Null Island `[0.0, 0.0, 0.0]`
-Under the governing architecture, GeoParametric3D anchors exclusively to **Null Island** (Latitude $\phi_0 = 0.0^\circ$, Longitude $\lambda_0 = 0.0^\circ$, Altitude $h_0 = 0.0\text{ m}$).
-
-#### Mathematical Mechanics of the Null Island Datum
-Under the Local Tangent Plane (East-North-Up / ENU) projection at $(\phi_0 = 0.0^\circ, \lambda_0 = 0.0^\circ, h_0 = 0.0\text{ m})$:
-
-$$\phi = \frac{y_{\text{m}}}{M(0)} \times \left(\frac{180^\circ}{\pi}\right)$$
-$$\lambda = \frac{x_{\text{m}}}{N(0)} \times \left(\frac{180^\circ}{\pi}\right)$$
-$$h = z_{\text{m}}$$
-
-At the Equator and Prime Meridian intersection:
-1. **Maximum Curvature Radius:** $N(0) = a = 6,378,137.0\text{ m}$.
-2. **Minimum Meridional Curvature:** $M(0) = a(1 - e^2) \approx 6,335,439.327\text{ m}$.
-3. **Zero Longitudinal Convergence Distortion:** The cosine convergence term $\cos(\phi_0) = \cos(0^\circ) \equiv 1.0$, completely eliminating latitude-dependent longitudinal shearing and preserving pure Cartesian orthogonality across all mechanical part dimensions.
-4. **Singularity-Free Geometric Isometry:** The tangent plane at Null Island provides optimal condition numbers for the forward and inverse Jacobian matrices across engineering dimensions (sub-millimeter to kilometer scale).
-
----
-
-## 6. Mathematical Formulations of the WGS-84 ENU Pipeline
-
-### 6.1 Ellipsoidal Parameters (WGS-84)
-- Semi-major axis: $a = 6,378,137.0\text{ m}$
-- Reciprocal flattening: $1/f = 298.257223563$
-- First eccentricity squared: $e^2 = 2f - f^2 \approx 0.00669437999014$
-
-### 6.2 Curvature Radii
-$$N(\phi) = \frac{a}{\sqrt{1 - e^2 \sin^2(\phi)}}$$
-$$M(\phi) = \frac{a(1 - e^2)}{\left(1 - e^2 \sin^2(\phi)\right)^{3/2}}$$
-
-### 6.3 Local Cartesian (mm) to Geodetic Conversion
-For any local CAD point $\mathbf{P} = [x_{\text{mm}}, y_{\text{mm}}, z_{\text{mm}}]^T$ and rotation angle $\theta_z$ around the vertical axis:
+### 4.3 Mathematical Transformation Formulation
+For local CAD point $\mathbf{P} = [x_{\text{mm}}, y_{\text{mm}}, z_{\text{mm}}]^T$ and rotation angle $\theta_z$:
 
 $$\begin{bmatrix} x' \\ y' \\ z' \end{bmatrix} = \begin{bmatrix} \cos\theta_z & -\sin\theta_z & 0 \\ \sin\theta_z & \cos\theta_z & 0 \\ 0 & 0 & 1 \end{bmatrix} \begin{bmatrix} x_{\text{mm}} \times 10^{-3} \\ y_{\text{mm}} \times 10^{-3} \\ z_{\text{mm}} \times 10^{-3} \end{bmatrix}$$
 
@@ -151,70 +139,73 @@ $$\phi = \phi_0 + \left(\frac{y'}{M(\phi_0) + h_0}\right) \times \left(\frac{180
 $$\lambda = \lambda_0 + \left(\frac{x'}{(N(\phi_0) + h_0) \cos(\phi_0)}\right) \times \left(\frac{180}{\pi}\right)$$
 $$h = h_0 + z'$$
 
----
-
-## 7. Coordinate Snapping (CSnap) Bearing Edge Engine
-
-```
-                        [Cursor Hover / Pointer Move]
-                                      |
-                                      v
-                         [Screen-Space Ray Casting]
-                                      |
-                                      v
-                 +------------------------------------------+
-                 |     1. Candidate Edge Proximity Test     |
-                 |     d_2d = || p_cursor - Segment_2D ||   |
-                 |     Filter: d_2d <= 16 pixels            |
-                 +------------------------------------------+
-                                      |
-                                      v
-                 +------------------------------------------+
-                 |     2. Normal & View-Direction Dot Test  |
-                 |     cos_alpha = Normal_Face . View_Dir   |
-                 |     Cull: Back-facing edges (cos > 0.05) |
-                 +------------------------------------------+
-                                      |
-                                      v
-                 +------------------------------------------+
-                 |     3. Bearing Edge Weight Maximization  |
-                 |     Weight = (1 / d_2d) * (|cos| + 0.1)  |
-                 |     Best Edge = argmax(Weight)           |
-                 +------------------------------------------+
-                                      |
-                                      v
-                 +------------------------------------------+
-                 |     4. Draw Dynamic Highlight Gizmo      |
-                 |     Vertex: Circle (R=8px, #fbbf24)      |
-                 |     Midpoint: Square (12x12px, #fbbf24)  |
-                 +------------------------------------------+
-```
-
-CSnap eliminates selection ambiguity across adjacent coplanar and non-coplanar boundaries by maximizing a combined proximity and view-normal metric.
+Where ellipsoidal radii of curvature are defined as:
+$$N(\phi) = \frac{a}{\sqrt{1 - e^2 \sin^2(\phi)}}, \quad M(\phi) = \frac{a(1 - e^2)}{\left(1 - e^2 \sin^2(\phi)\right)^{3/2}}$$
+Using WGS-84 parameters $a = 6,378,137.0\text{ m}$ and $e^2 \approx 0.00669437999014$.
 
 ---
 
-## 8. Verification Test Matrix
+## 5. Universal Byte Import Normalizer & Format Support
 
-| Verification Target | Test Suite | Governing Spec Section | Verification Metric | Status |
+The universal ingestion engine (`universal_byte_parser.py`) processes all standard CAD exchange and mesh formats through automated signature detection and linear scale factor resolution:
+
+```
+FOREIGN BYTES (Binary / Text)
+     |
+     v
+[FORMAT DETECTION & MAGIC INSPECTION]
+     |-- STEP (AP203 / AP214 / AP242) -> Native OCCT B-Rep TopoDS_Shape Transfer
+     |-- FreeCAD (.FCStd)             -> Zip Container / Document.xml & B-Rep Recovery
+     |-- STL (Binary & ASCII)         -> Vectorized C-Level Decoding & Manifold Vertex Welding
+     |-- Wavefront OBJ                -> Polyhedron Reconstruction & Planar Dissolving
+     |-- 3MF (3D Manufacturing)       -> Model XML Ingestion & Material Mapping
+     |-- GLTF / GLB                   -> Direct Binary Accessor Extraction & Meter-to-mm Normalization
+     |-- Stanford PLY / DAE / WRL     -> Structured Mesh Extraction & Scale Adaptation
+     |-- XBF (Native Binary Format)   -> Zero-Copy Binary B-Rep Payload Unpacking
+```
+
+### 5.1 Authoritative Single-Conversion Unit Policy
+- **Canonical Internal Linear Unit:** Linear millimeter (`mm`).
+- **Unit Detection:** Automatic inspection of STEP headers (`SI_UNIT(.MILLI., .METRE.)`, `CONVERSION_BASED_UNIT('INCH', ...)`), GLTF/DAE meter units, and STL unitless bounds.
+- **Presentation Boundary Isolation:** Imperial (`in`, `ft`) and metric conversions occur strictly at the UI display layer; internal state remains mathematically immutable in canonical millimeters.
+
+---
+
+## 6. Coordinate Snapping (CSnap) Bearing Edge Engine
+
+CSnap provides precise object snapping without ray-casting ambiguity:
+1. **Screen-Space Proximity:** Evaluates cursor distance to projected 2D edges ($d_{\text{2D}} \le 16\text{ px}$).
+2. **View Normal Weighting:** Back-facing edges are culled via surface normal dot product with view direction ($\mathbf{N} \cdot \mathbf{V} > 0.05$).
+3. **Bearing Edge Optimization:** The candidate edge with maximum weighting metric $W = (1 / d_{\text{2D}}) \times (|\mathbf{N} \cdot \mathbf{V}| + 0.1)$ is selected.
+4. **Dynamic Visual Gizmos:** Highlights midpoints (square) and vertices (circle) with high-contrast styling.
+
+---
+
+## 7. AI Engineering Assistant Integration
+
+- **Vertex AI Gateway:** Directly communicates with Google Cloud Vertex AI REST endpoints under Project `broadcasterfishmap` and Location `global`.
+- **CAD Context Awareness:** Automatically serializes active assembly structure, B-Rep solid volume, mass properties, and selected face/edge/vertex metadata into the engineering prompt context.
+- **Executable Command Intent:** Translates natural language engineering requests into executable CadQuery scripts, parametric feature mutations, or G-code toolpaths.
+
+---
+
+## 8. Verification & Architectural Compliance Matrix
+
+| Verification Target | Test Suite | Standard Section | Metric / Acceptance Criteria | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **Canonical Box B-Rep** | `test_canonical_geometry.py` | Sec. 1–10 | 8 Vertices, 12 Edges, 6 Loops, 6 Faces, 1 Shell, 1 Solid | **PASS** |
-| **Unit Conversion Invariance** | `test_cad_architecture.py` | Sec. 11–20 | $1\text{ in} = 25.4\text{ mm}$, $1\text{ ft} = 304.8\text{ mm}$, round-trip error $< 10^{-6}$ | **PASS** |
-| **STEP B-Rep Ingestion** | `test_cad_architecture.py` | Sec. 21–30 | `MANIFOLD_SOLID_BREP` entity hierarchy and finite coordinates | **PASS** |
-| **Mesh Compaction & Culling** | `test_cad_architecture.py` | Sec. 31–40 | Removal of NaNs, Infs, degenerate triangles, index remapping | **PASS** |
-| **Scale Dimensionless Invariance** | `test_workstation_repair.py` | Sec. 41–50 | $\mathbf{P}_{\text{before}} \equiv \mathbf{P}_{\text{after}}$ under scaling | **PASS** |
-| **SDF Golden Equivalence** | `test_kernel_math.py` | Sec. 51–60 | $G(\mathbf{x}) = 0$ on boundary, volume $W \times D \times H$ exact | **PASS** |
-| **Native `<gmp-map-3d>` Sync** | Client Viewport Pipeline | Sec. 61–70 | Direct DOM synchronization without Three.js overhead | **PASS** |
+| **Canonical Box B-Rep** | `test_canonical_geometry.py` | Sec. 1\u201310 | 8 Vertices, 12 Edges, 6 Loops, 6 Faces, 1 Shell, 1 Solid | **PASS** |
+| **Unit Conversion Invariance** | `test_cad_architecture.py` | Sec. 11\u201320 | $1\text{ in} = 25.4\text{ mm}$, $1\text{ ft} = 304.8\text{ mm}$, round-trip error $< 10^{-6}$ | **PASS** |
+| **STEP B-Rep Ingestion** | `test_cad_architecture.py` | Sec. 21\u201330 | `MANIFOLD_SOLID_BREP` entity hierarchy and finite coordinates | **PASS** |
+| **Mesh Compaction & Culling** | `test_cad_architecture.py` | Sec. 31\u201340 | Removal of NaNs, Infs, degenerate triangles, index remapping | **PASS** |
+| **Scale Dimensionless Invariance** | `test_workstation_repair.py` | Sec. 41\u201350 | $\mathbf{P}_{\text{before}} \equiv \mathbf{P}_{\text{after}}$ under scaling mutations | **PASS** |
+| **SDF Golden Equivalence** | `test_kernel_math.py` | Sec. 51\u201360 | $G(\mathbf{x}) = 0$ on boundary, volume $W \times D \times H$ exact | **PASS** |
+| **True N-Gon Opaque Rendering** | Viewport Pipeline | Sec. 61\u201370 | 100% Opaque Solid Shading, zero triangulation diagonals | **PASS** |
 
 ---
 
-## 9. Conclusion & Production Guidelines
+## 9. Conclusion
 
-1. **100% Opaque Solid Shading:** Solid faces and N-Gon perimeters render with opacity 1.0 (no transparency) to guarantee crisp inspection and occlusion parity with industry-standard CAD workstations.
-2. **Zero External Render Engines:** `<gmp-map-3d>` is the sole 3D viewport provider. No Three.js, Babylon.js, or intermediate scene graphs exist in the runtime stack.
-3. **B-Rep Authoritative Primacy:** Visual polygons are derived presentations; all geometric operations mutate authoritative B-Rep topology.
-4. **Universal Internal Millimeters:** All geometry is stored in canonical linear millimeters (`mm`). Display unit conversions occur strictly at the UI presentation boundary.
-5. **Exclusive Null Island Geodetic Anchor:** The entire workstation is anchored exclusively to Null Island `[0.0, 0.0, 0.0]` for zero longitudinal distortion and optimal isometric mapping.
+GeoParametric3D establishes a unified solid modeling architecture where exact mathematical B-Rep topology remains authoritative, planar surfaces render as clean 100% opaque N-gon polygons without meshing diagonals, and all viewport rendering routes directly through native Google Maps 3D Web Components without intermediate WebGL libraries.
 
 ---  
 *End of Master Architectural Specification.*
