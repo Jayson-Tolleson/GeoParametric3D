@@ -1,26 +1,38 @@
 # MASTER ARCHITECTURAL SPECIFICATION & SYSTEM DESIGN REPORT
 **System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
-**Document Version:** 9.0.0-PROD-CONSOLIDATED  
+**Document Version:** 10.0.0-PROD-CONSOLIDATED  
 **Status:** Authoritative Architectural Governing Standard  
 **Classification:** Core CAD/CAM, Native Google Maps 3D & Geospatial Engine Architecture  
 
 ---
 
-## 1. Executive Summary & Forensic System Architecture
+## 1. Executive Summary & Forensic System Overview
 
-GeoParametric3D is an engineering-grade Computer-Aided Design and Manufacturing (CAD/CAM) workstation operating natively in modern web browsers. It eliminates legacy rendering middle-layers (such as Three.js, Babylon.js, or disconnected software canvas rasterizers) and establishes direct throughput between an authoritative Boundary Representation (B-Rep) solid modeling kernel and the native Google Maps 3D Web Component (`<gmp-map-3d>`).
+GeoParametric3D is an engineering-grade Computer-Aided Design and Manufacturing (CAD/CAM) workstation operating in standard modern web browsers without intermediate WebGL wrappers. It establishes an unbroken mathematical pipeline between an authoritative Boundary Representation (B-Rep) solid modeling kernel and the native Google Maps 3D Web Component (`<gmp-map-3d>`).
 
 ### Primary Architectural Tenets
-1. **Dual-Route B-Rep Pipeline with True N-Gon Boundary Extraction:** Planar solid faces (`GeomAbs_Plane`) are never degraded by internal meshing diagonals or arbitrary triangulation. Boundary loops (outer perimeters and inner multiply-connected genus holes) are extracted as clean $N$-sided polygonal manifolds (`<gmp-polygon-3d>`).
-2. **100% Opaque Solid Shading (FreeCAD Parity):** All imported and primitive solids render with 100% opaque surface fills (`opacity: 1.0`, full alpha channel occlusion). Ghosted semi-transparency and wireframe-only artifacts are strictly eliminated from default solid representations.
-3. **Infinite 1' $\times$ 1' (304.8 mm) Ground Grid Plane:** The ground datum is projected across the Local Tangent Plane (ENU) to visual horizon extents, rendering crisp 1-foot grid cells centered at the geodetic anchor.
-4. **Exclusive Null Island Geodetic Origin Anchor (`[0.0, 0.0, 0.0]`):** Local Cartesian millimeter CAD coordinates map isometrically into WGS-84 ellipsoidal coordinates at the Prime Meridian/Equator intersection, guaranteeing zero longitudinal convergence distortion $(\cos(0^\circ) = 1.0)$.
-5. **Authoritative B-Rep Primacy vs. Derived Render Mesh:** Exact mathematical surfaces, edges, and topology are the immutable source of truth; render representations are transient, derived projections.
-6. **Vertex AI Engineering Assistant:** Integrated with project `broadcasterfishmap` (location: `global`), providing real-time mechanical engineering calculations, parametric script synthesis, and B-Rep inspection.
+
+1. **Dual-Route B-Rep Pipeline with True N-Gon Boundary Extraction:**  
+   Planar solid faces (`GeomAbs_Plane`) are never degraded by internal meshing diagonals or arbitrary triangulation. Boundary loops (outer perimeters and inner multiply-connected genus holes) are extracted directly from authoritative B-Rep topological wires as clean $N$-sided polygonal manifolds (`<gmp-polygon-3d>`).
+
+2. **100% Opaque Solid Shading (FreeCAD Parity):**  
+   All imported and primitive solids render with 100% opaque surface fills (`opacity: 1.0`, full alpha channel occlusion, `fillColor: rgb/hex`, alpha = 1.0). Ghosted semi-transparency, wireframe-only visuals, and unrendered face voids are strictly eliminated from default solid representations.
+
+3. **Infinite 1' $\times$ 1' ($304.8\text{ mm}$) Ground Grid Plane:**  
+   The ground datum is projected across the Local Tangent Plane (ENU) to visual horizon extents, rendering crisp 1-foot grid cells centered at the geodetic anchor.
+
+4. **Exclusive Null Island Geodetic Origin Anchor ($[0.0, 0.0, 0.0]$):**  
+   Local Cartesian millimeter CAD coordinates map isometrically into WGS-84 ellipsoidal coordinates at the Prime Meridian/Equator intersection, guaranteeing zero longitudinal convergence distortion ($\cos(0^\circ) = 1.0$).
+
+5. **Authoritative B-Rep Primacy vs. Derived Render Mesh:**  
+   Exact mathematical surfaces, boundary edges, and topology are the immutable source of truth; render representations are transient, derived projections.
+
+6. **Vertex AI Engineering Assistant:**  
+   Integrated with Google Cloud Vertex AI under project `broadcasterfishmap` (location: `global`), providing real-time mechanical engineering derivations, parametric script synthesis, and topological B-Rep inspection.
 
 ---
 
-## 2. Complete Elimination of Three.js & Adoption of Native `<gmp-map-3d>`
+## 2. Elimination of Three.js & Adoption of Native `<gmp-map-3d>`
 
 ### 2.1 The Architectural Flaw of Intermediate WebGL Scene Graphs
 Traditional web CAD systems construct a Three.js scene graph atop WebGL canvases. When integrated with geospatial photorealistic 3D map tiles, this dual-stack design introduces critical failure points:
@@ -130,7 +142,7 @@ All Three.js dependencies are eliminated. Viewport presentation is handled by na
 - Multi-solid compounds retain native STEP header presentation colors (`COLOUR_RGB`) or distinct high-contrast palette assignments.
 - Sub-element highlighting (face, edge, vertex) overlays crisp high-contrast outlines (`#fbbf24` gold selection borders) without rendering the underlying body transparent.
 
-### 4.2 Infinite 1' $\times$ 1' (304.8 mm) Ground Grid Plane
+### 4.2 Infinite 1' $\times$ 1' ($304.8\text{ mm}$) Ground Grid Plane
 - The ground grid is projected across the entire viewport extent from the local origin out to the visual horizon.
 - Grid cell spacing is calibrated to exactly **1 foot ($304.8\text{ mm}$)** in imperial mode and **$300\text{ mm}$** in metric mode.
 - Grid lines are rendered via hardware-accelerated overlay canvas with adaptive line antialiasing, providing an expansive drafting floor.
