@@ -515,9 +515,13 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
 
 @app.route('/api/assistant/chat', methods=['POST'])
 @app.route('/api/assistant', methods=['POST'])
+@app.route('/api/generate', methods=['POST'])
 @app.route('/GeoParametric3D/api/assistant/chat', methods=['POST'])
+@app.route('/GeoParametric3D/api/assistant', methods=['POST'])
+@app.route('/GeoParametric3D/api/generate', methods=['POST'])
 @app.route('/cad/api/assistant/chat', methods=['POST'])
 @app.route('/cad/api/assistant', methods=['POST'])
+@app.route('/cad/api/generate', methods=['POST'])
 async def assistant_chat():
     data = (await request.get_json()) or {}
     user_message = (data.get('message', '') or data.get('prompt', '') or '').strip()
@@ -533,6 +537,7 @@ async def assistant_chat():
     return json_response({
         "status": "success",
         "success": True,
+        "ok": True,
         "message": final_message,
         "reply": final_message,
         "response": final_message,

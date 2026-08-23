@@ -97,34 +97,7 @@ export class AIAssistantController {
         bounding_box: activeSel.bounding_box
       } : null;
 
-      let res = null;
-      try {
-        res = await CADApi.requestJSON('/generate', {
-          method: 'POST',
-          body: JSON.stringify({
-            prompt: promptText,
-            message: promptText,
-            target_selection: selContext
-          })
-        });
-      } catch (e) {
-        res = null;
-      }
-
-      if (!res || (!res.ok && !res.success)) {
-        try {
-          res = await CADApi.requestJSON('/assistant/chat', {
-            method: 'POST',
-            body: JSON.stringify({
-              message: promptText,
-              prompt: promptText,
-              target_selection: selContext
-            })
-          });
-        } catch (e) {
-          res = await CADApi.sendAssistantPrompt(promptText);
-        }
-      }
+      let res = await CADApi.sendAssistantPrompt(promptText, selContext);
 
       if (res && res.document) {
         CADState.setDocument(res.document);
