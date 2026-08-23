@@ -1,5 +1,5 @@
 """
-GeoParametric3D \u2014 Canonical Geometry, Adaptive Tessellation, and Native Maps 3D Pipeline
+GeoParametric3D — Canonical Geometry, Adaptive Tessellation, and Native Maps 3D Pipeline
 
 Architectural Invariants:
   1. SOURCE GEOMETRY IS NOT THE RENDER MESH.
