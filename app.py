@@ -31,9 +31,9 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 command_engine = CommandEngine()
 USE_VERTEX_AI = True
-PROJECT_ID = "broadcasterfishmap"
-LOCATION = "global"
-VERTEX_PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", PROJECT_ID)
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "broadcasterfishmap")
+LOCATION = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
+VERTEX_PROJECT = PROJECT_ID
 MAPS_API_KEY = os.environ.get("MAPS_API_KEY", os.environ.get("GOOGLE_API_KEY", ""))
 
 def json_response(data: dict, status_code: int = 200):

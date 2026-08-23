@@ -334,7 +334,7 @@ class CommandEngine:
                     "kernel": "GeoParametric3D lightweight kernel"
                 }
 
-                if "_features" not in obj.parameters:
+                if "_features" not in obj.parameters or not isinstance(obj.parameters["_features"], list):
                     obj.parameters["_features"] = []
                 obj.parameters["_features"].append(feature)
 
