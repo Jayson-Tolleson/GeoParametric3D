@@ -1,6 +1,6 @@
 """
 GeoParametric3D Command Engine
-Processes CAD operations, parametric mutations, B-Rep instantiations, and Universal Imports.
+Processes CAD operations, parametric mutations, B-Rep instantiations, script execution, and Universal Imports.
 """
 import uuid
 import time
