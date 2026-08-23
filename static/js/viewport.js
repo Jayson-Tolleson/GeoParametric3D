@@ -1,11 +1,12 @@
 "use strict";
 
 /**
- * GeoParametric3D Viewport Controller (V5.1.0 Production Architecture)
+ * GeoParametric3D Viewport Controller (V6.0.0 Master Architecture)
  * Full B-Rep Solid Rendering & Dual-Route Maps 3D Integration:
  *  - Planar Faces (GeomAbs_Plane): Rendered as clean N-Gon boundaries (<gmp-polygon-3d>) with ZERO internal diagonals.
  *  - 100% Opaque Solid Shading (FreeCAD parity): solids default to full opacity with hardware depth buffer occlusion.
  *  - Multi-solid color assignment preserved directly from STEP header metadata.
+ *  - CSnap Bearing Edge Disambiguation with Normal Weighting and Depth Ordering.
  *  - Bidirectional property panel reaction.
  *  - Full 2D Canvas & WebGL hybrid overlay for selection, vertex/edge manipulation, drafting, and Csnap.
  */
@@ -128,25 +129,11 @@ export class ViewportController {
     this.edgesRender = [];
     this.snaps = [];
 
-    this.persistentFaces = this.faceRenderQueue;
-    this.persistentVertices = this.verticesRender;
-    this.persistentEdges = this.edgesRender;
-    this.persistentSnaps = this.snaps;
-
     this.lastRenderQueue = this.faceRenderQueue;
     this.lastRenderVertices = this.verticesRender;
     this.lastRenderEdges = this.edgesRender;
     this.snapCandidates = this.snaps;
     this.activeSnapTarget = null;
-
-    this.telemetryMetrics = {
-      renderCount: 0,
-      lastReportTime: performance.now(),
-      totalRenderTimeMs: 0,
-      totalProjTimeMs: 0,
-      totalSortTimeMs: 0,
-      maxRenderTimeMs: 0
-    };
 
     this.initMap3D();
     this.initTrackball();
@@ -489,12 +476,31 @@ export class ViewportController {
   findCsnapCandidate(mx, my, maxPixelDistance = 16) {
     if (CADState.state.preferences.csnap === false) return null;
     let best = null;
-    let bestDist = maxPixelDistance;
+    let bestWeight = -Infinity;
+    
+    const cam = CADState.state.camera || { heading: 30, tilt: 65 };
+    const hdgRad = ((cam.heading || 30) * Math.PI) / 180;
+    const tiltRad = ((cam.tilt || 65) * Math.PI) / 180;
+    const viewDir = [
+      -Math.sin(hdgRad) * Math.cos(tiltRad),
+      -Math.cos(hdgRad) * Math.cos(tiltRad),
+      -Math.sin(tiltRad)
+    ];
+
     for (const snap of this.snapCandidates) {
       const d = Math.hypot(mx - snap.px, my - snap.py);
-      if (d < bestDist) {
-        bestDist = d;
-        best = snap;
+      if (d <= maxPixelDistance) {
+        let normalWeight = 1.0;
+        if (snap.normal) {
+          const dot = snap.normal[0] * viewDir[0] + snap.normal[1] * viewDir[1] + snap.normal[2] * viewDir[2];
+          if (dot > 0.05) continue;
+          normalWeight = Math.abs(dot) + 0.1;
+        }
+        const weight = (1.0 / (d + 1e-3)) * normalWeight;
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          best = snap;
+        }
       }
     }
     return best;
@@ -1017,7 +1023,6 @@ export class ViewportController {
 
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
-    const tStart = performance.now();
     const ctx = this.ctx;
     const w = this.cssWidth || 800;
     const h = this.cssHeight || 600;
@@ -1105,13 +1110,25 @@ export class ViewportController {
           return { wx, wy, wz, px: p2d.px, py: p2d.py, depth: p2d.depth };
         });
 
+        // Compute face normal
+        let fNorm = [0, 0, 1];
+        if (worldPts.length >= 3) {
+          const v10 = [worldPts[1].wx - worldPts[0].wx, worldPts[1].wy - worldPts[0].wy, worldPts[1].wz - worldPts[0].wz];
+          const v20 = [worldPts[2].wx - worldPts[0].wx, worldPts[2].wy - worldPts[0].wy, worldPts[2].wz - worldPts[0].wz];
+          const cx = v10[1]*v20[2] - v10[2]*v20[1];
+          const cy = v10[2]*v20[0] - v10[0]*v20[2];
+          const cz = v10[0]*v20[1] - v10[1]*v20[0];
+          const nLen = Math.hypot(cx, cy, cz) || 1.0;
+          fNorm = [cx / nLen, cy / nLen, cz / nLen];
+        }
+
         for (let i = 0; i < worldPts.length; i++) {
           const p1 = worldPts[i];
           const p2 = worldPts[(i + 1) % worldPts.length];
-          edges.push({ objId, fIdx, eIdx: i, p1, p2, depth: (p1.depth + p2.depth) / 2 });
+          edges.push({ objId, fIdx, eIdx: i, p1, p2, depth: (p1.depth + p2.depth) / 2, normal: fNorm });
           const midW = [(p1.wx + p2.wx)/2, (p1.wy + p2.wy)/2, (p1.wz + p2.wz)/2];
           const mid2D = this.project3DTo2D(midW[0], midW[1], midW[2]);
-          snaps.push({ type: 'midpoint', world: midW, px: mid2D.px, py: mid2D.py });
+          snaps.push({ type: 'midpoint', world: midW, px: mid2D.px, py: mid2D.py, normal: fNorm });
         }
 
         const avgDepth = sumDepth / pts.length;

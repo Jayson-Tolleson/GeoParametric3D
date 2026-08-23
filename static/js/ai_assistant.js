@@ -109,7 +109,7 @@ export class AIAssistantController {
 
       if (res && res.action_intent && res.action_intent.action) {
         const intent = res.action_intent;
-        if (intent.action.startsWith('feature_') || intent.action.startsWith('create_') || intent.action === 'transform') {
+        if (intent.action.startsWith('feature_') || intent.action.startsWith('create_') || intent.action === 'transform' || intent.action === 'draft_tool') {
           await CADCommands.execute(intent.action, intent.parameters || intent.params || {});
         }
       }
