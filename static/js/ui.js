@@ -50,6 +50,8 @@ export class UIController {
       lblPos.textContent = `Position (X, Y, Z - ${unitLabel})`;
     }
 
+  }
+
   logServerEvent(msg) {
     const logs = document.getElementById('server-terminal-logs');
     if (!logs) return;
@@ -844,7 +846,6 @@ export class UIController {
     inputMsg.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendMessage();
     });
-}
 }
 }
 }
