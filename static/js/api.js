@@ -280,18 +280,7 @@ class APIClient {
   async sendAssistantPrompt(message, context = null) {
     return this.requestJSON('/assistant/chat', {
       method: 'POST',
-      body: JSON.stringify({
-        message,
-        prompt: message,
-        target_selection: context,
-        canonical_unit: 'mm',
-        geodetic_anchor: { lat: 33.8704, lng: -117.9242, altitude: 1609.34 },
-        vertex_ai: {
-          project_id: 'broadcasterfishmap',
-          location: 'global',
-          model: 'gemini-1.5-flash'
-        }
-      })
+      body: JSON.stringify({ message, prompt: message, target_selection: context })
     });
   }
 

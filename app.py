@@ -184,16 +184,11 @@ async def handle_geometry_binary():
     flat_verts = []
     flat_indices = []
     v_idx = 0
-    scale = obj.scale or [1.0, 1.0, 1.0]
-    pos = obj.position or [0.0, 0.0, 0.0]
     for face in obj.faces:
         if len(face) >= 3:
             base = v_idx
             for pt in face:
-                wx = pos[0] + float(pt.get('x', 0)) * scale[0]
-                wy = pos[1] + float(pt.get('y', 0)) * scale[1]
-                wz = pos[2] + float(pt.get('z', 0)) * scale[2]
-                flat_verts.extend([wx, wy, wz])
+                flat_verts.extend([float(pt.get('x', 0)), float(pt.get('y', 0)), float(pt.get('z', 0))])
                 v_idx += 1
             for i in range(1, len(face) - 1):
                 flat_indices.extend([base, base + i, base + i + 1])
@@ -421,7 +416,7 @@ async def handle_import():
             uploaded_file = files['file']
             filename = uploaded_file.filename or "imported_model.stl"
             content_bytes = uploaded_file.read()
-            if hasattr(content_bytes, '__await__') or asyncio.iscoroutine(content_bytes):
+            if asyncio.iscoroutine(content_bytes):
                 content_bytes = await content_bytes
         else:
             content_bytes = await request.get_data()
@@ -439,38 +434,15 @@ async def get_telemetry():
     total_vertices = sum(len(obj.get('faces', [])) * 4 for obj in objs)
     return json_response({
         "success": True,
-        "system": "GeoParametric3D Workstation",
-        "version": "10.0.0-PROD",
-        "canonical_base": "metric_linear_mm",
-        "canonical_unit": CANONICAL_INTERNAL_UNIT,
-        "geodetic_anchor": {
-            "name": "Fullerton Geodetic Anchor",
-            "lat": 33.8704,
-            "lng": -117.9242,
-            "altitude": 1609.34,
-            "elevation_datum": "1.0 international mile (1609.34 m MSL)"
-        },
         "objects": len(objs),
         "objectsCount": len(objs),
         "vertices": total_vertices,
         "totalVertices": total_vertices,
         "fps": 60,
         "status": "READY",
-        "shading": {
-            "mode": "100% Opaque Solid",
-            "default_opacity": 1.0,
-            "depth_test": True
-        },
-        "grid": {
-            "mesh_spacing": "1 ft (304.8 mm)",
-            "max_extent": "2000 ft (609600 mm)"
-        },
-        "vertex_ai": {
-            "enabled": USE_VERTEX_AI,
-            "project_id": PROJECT_ID,
-            "location": LOCATION,
-            "model": "gemini-1.5-flash"
-        }
+        "vertex_ai": USE_VERTEX_AI,
+        "project_id": PROJECT_ID,
+        "location": LOCATION
     })
 
 async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
@@ -560,7 +532,7 @@ async def assistant_chat():
     if chat_response.requires_action:
         final_message = f"{chat_response.text}\n\n{ai_reply}" if ai_reply else chat_response.text
     else:
-        final_message = ai_reply if ai_reply else f"[Vertex AI ({PROJECT_ID}/{LOCATION})]: Analyzed active CAD assembly state ({len(cad_ctx.get('objects', []))} bodies). Ready for parametric modeling and B-Rep queries."
+        final_message = ai_reply if ai_reply else f"Engineering Assistant ({PROJECT_ID}/{LOCATION}): Analyzed model state with {len(cad_ctx.get('objects', []))} bodies."
         
     return json_response({
         "status": "success",
@@ -572,7 +544,6 @@ async def assistant_chat():
         "action_intent": chat_response.action_intent if chat_response.requires_action else {},
         "vertex_ai_project": PROJECT_ID,
         "location": LOCATION,
-        "canonical_unit": CANONICAL_INTERNAL_UNIT,
         "document": global_cad_state.to_dict()
     })
 

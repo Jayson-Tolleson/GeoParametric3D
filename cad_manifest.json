@@ -1,25 +1,14 @@
 {
   "name": "GeoParametric3D",
-  "manifest_version": "10.0.0-PROD",
-  "purpose": "Native web CAD workstation manifest: Dual-route B-Rep pipeline, 100% opaque solid shading, 2,000-ft 1-ft ground grid, Fullerton geodetic origin anchor (33.8704 N, -117.9242 W, 1609.34 m MSL), and Vertex AI engineering assistant (broadcasterfishmap/global).",
-  "canonical_origin": {
-    "name": "Fullerton Geodetic Anchor",
-    "latitude": 33.8704,
-    "longitude": -117.9242,
-    "altitude_meters_msl": 1609.34,
-    "elevation_datum": "1.0 international mile"
-  },
+  "manifest_version": "1.0.0",
+  "purpose": "Native web CAD workstation manifest: UI controls, authoritative state, parametric actions, and viewport ownership.",
   "viewport": {
     "renderer": "Google Maps 3D Web Component (<gmp-map-3d>) with WebGL/Canvas Overlay",
     "google_maps_3d_tiles": true,
     "gmp_map_3d": true,
     "external_map_dependency": true,
     "coordinate_system": "Geospatial WGS84 Geodetic & ENU Cartesian CAD",
-    "canonical_unit": "mm",
-    "shading": "100% Opaque Solid",
-    "depth_test": true,
-    "grid_extent_feet": 2000,
-    "grid_spacing_feet": 1
+    "canonical_unit": "mm"
   },
   "architecture": {
     "document_state": "state.py",

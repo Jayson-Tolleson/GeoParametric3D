@@ -26,11 +26,20 @@ export function fitCameraToModel(options = {}) {
   const tilt = typeof options.tilt === 'number' ? options.tilt : (CADState.state.camera.tilt || 65);
   const roll = 0;
 
-  // Enforce native camera projection parameters for Google Maps 3D viewport
-  CADState.state.camera.near = 0.001;
-  CADState.state.camera.far = 1000000;
-  CADState.state.camera.minDistance = 0.001;
-  CADState.state.camera.maxDistance = 1000000;
+  // Unlock camera frustum and projection settings if Three.js/Perspective camera is active
+  if (window.camera) {
+    window.camera.near = 0.001;
+    window.camera.far = 1000000;
+    if (typeof window.camera.updateProjectionMatrix === 'function') {
+      window.camera.updateProjectionMatrix();
+    }
+  }
+
+  // Override camera controller zoom clamps
+  if (window.controls) {
+    window.controls.minDistance = 0.001;
+    window.controls.maxDistance = 1000000;
+  }
 
   CADState.state.camera.center = geoCenter;
   CADState.state.camera.heading = heading;

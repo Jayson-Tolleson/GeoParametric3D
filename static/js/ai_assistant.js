@@ -109,16 +109,13 @@ export class AIAssistantController {
 
       if (res && res.action_intent && res.action_intent.action) {
         const intent = res.action_intent;
-        if (intent.action.startsWith('feature_') || intent.action.startsWith('create_') || intent.action === 'transform' || intent.action === 'draft_tool') {
+        if (intent.action.startsWith('feature_') || intent.action.startsWith('create_') || intent.action === 'transform') {
           await CADCommands.execute(intent.action, intent.parameters || intent.params || {});
         }
       }
 
-      const reply = res?.message || res?.reply || res?.response || res?.code || `[Vertex AI Assistant (broadcasterfishmap/global)]: Active CAD context analyzed (${CADState.state.objects.length} solid bodies). Authoritative B-Rep geometry ready for parametric modeling, feature trees, and topological queries.`;
-      this.appendAssistantMessage(reply, res?.success === false || res?.ok === false);
-      if (window.uiController) {
-        window.uiController.logServerEvent(`[VERTEX AI] Response received from broadcasterfishmap/global`);
-      }
+      const reply = res?.message || res?.reply || res?.response || res?.code || 'Analyzed CAD assembly state.';
+      this.appendAssistantMessage(reply, !res?.success && res?.ok === false);
     } catch (err) {
       this.appendAssistantMessage(`Error contacting Vertex AI Assistant: ${err.message}`, true);
     } finally {

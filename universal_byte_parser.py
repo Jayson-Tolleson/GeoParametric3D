@@ -82,12 +82,11 @@ logger = logging.getLogger("GeoParametric3D.GeometryEngine")
 DEFAULT_TOLERANCE_MM = 1e-4
 EPSILON_AREA = 1e-9
 
-SITE_ANCHOR: Dict[str, Any] = {
-    'name': 'Fullerton Geodetic Anchor',
-    'lat': 33.8704,
-    'lng': -117.9242,
-    'altitude': 1609.34,
-    'elevation_datum': '1.0 international mile (1609.34 m MSL)'
+SITE_ANCHOR = {
+    'name': 'Hillcrest Park, Fullerton, CA',
+    'lat': 33.8814,
+    'lng': -117.9213,
+    'altitude': 95.0
 }
 
 _OCCT_AVAILABLE = False

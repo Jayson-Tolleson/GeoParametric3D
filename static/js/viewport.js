@@ -1,12 +1,11 @@
 "use strict";
 
 /**
- * GeoParametric3D Viewport Controller (V6.0.0 Master Architecture)
+ * GeoParametric3D Viewport Controller (V5.1.0 Production Architecture)
  * Full B-Rep Solid Rendering & Dual-Route Maps 3D Integration:
  *  - Planar Faces (GeomAbs_Plane): Rendered as clean N-Gon boundaries (<gmp-polygon-3d>) with ZERO internal diagonals.
  *  - 100% Opaque Solid Shading (FreeCAD parity): solids default to full opacity with hardware depth buffer occlusion.
  *  - Multi-solid color assignment preserved directly from STEP header metadata.
- *  - CSnap Bearing Edge Disambiguation with Normal Weighting and Depth Ordering.
  *  - Bidirectional property panel reaction.
  *  - Full 2D Canvas & WebGL hybrid overlay for selection, vertex/edge manipulation, drafting, and Csnap.
  */
@@ -129,11 +128,25 @@ export class ViewportController {
     this.edgesRender = [];
     this.snaps = [];
 
+    this.persistentFaces = this.faceRenderQueue;
+    this.persistentVertices = this.verticesRender;
+    this.persistentEdges = this.edgesRender;
+    this.persistentSnaps = this.snaps;
+
     this.lastRenderQueue = this.faceRenderQueue;
     this.lastRenderVertices = this.verticesRender;
     this.lastRenderEdges = this.edgesRender;
     this.snapCandidates = this.snaps;
     this.activeSnapTarget = null;
+
+    this.telemetryMetrics = {
+      renderCount: 0,
+      lastReportTime: performance.now(),
+      totalRenderTimeMs: 0,
+      totalProjTimeMs: 0,
+      totalSortTimeMs: 0,
+      maxRenderTimeMs: 0
+    };
 
     this.initMap3D();
     this.initTrackball();
@@ -235,10 +248,10 @@ export class ViewportController {
     this.isSyncingFromState = true;
     try {
       const cam = CADState.state.camera;
-      const c = cam.center || { lat: 0.0, lng: 0.0, altitude: 0.0 };
+      const c = cam.center || { lat: 33.8814, lng: -117.9213, altitude: 95.0 };
       const lat = c.lat !== undefined ? c.lat : c[0];
       const lng = c.lng !== undefined ? c.lng : c[1];
-      const alt = c.altitude !== undefined ? c.altitude : (c[2] || 0.0);
+      const alt = c.altitude !== undefined ? c.altitude : (c[2] || 95.0);
       this.map3d.setAttribute('center', `${lat},${lng},${alt}`);
       if (typeof cam.heading === 'number') this.map3d.setAttribute('heading', String(cam.heading));
       if (typeof cam.tilt === 'number') this.map3d.setAttribute('tilt', String(cam.tilt));
@@ -476,32 +489,12 @@ export class ViewportController {
   findCsnapCandidate(mx, my, maxPixelDistance = 16) {
     if (CADState.state.preferences.csnap === false) return null;
     let best = null;
-    let bestWeight = -Infinity;
-    
-    const cam = CADState.state.camera || { heading: 30, tilt: 65 };
-    const hdgRad = ((cam.heading || 30) * Math.PI) / 180;
-    const tiltRad = ((cam.tilt || 65) * Math.PI) / 180;
-    const viewDir = [
-      -Math.sin(hdgRad) * Math.cos(tiltRad),
-      -Math.cos(hdgRad) * Math.cos(tiltRad),
-      -Math.sin(tiltRad)
-    ];
-
-    const epsilon = 1e-3;
+    let bestDist = maxPixelDistance;
     for (const snap of this.snapCandidates) {
       const d = Math.hypot(mx - snap.px, my - snap.py);
-      if (d <= maxPixelDistance) {
-        let normalWeight = 1.0;
-        if (snap.normal) {
-          const dot = snap.normal[0] * viewDir[0] + snap.normal[1] * viewDir[1] + snap.normal[2] * viewDir[2];
-          if (dot > 0.05) continue;
-          normalWeight = Math.abs(dot) + 0.1;
-        }
-        const weight = (1.0 / (d + epsilon)) * normalWeight;
-        if (weight > bestWeight) {
-          bestWeight = weight;
-          best = snap;
-        }
+      if (d < bestDist) {
+        bestDist = d;
+        best = snap;
       }
     }
     return best;
@@ -928,17 +921,6 @@ export class ViewportController {
     const selFaceIdx = CADState.state.selectedFaceIndex;
     const selMode = CADState.state.selectionMode || 'part';
 
-    const enforceLoopClosure = (coords) => {
-      if (!coords || coords.length < 3) return coords || [];
-      const arr = [...coords];
-      const first = arr[0], last = arr[arr.length - 1];
-      const d = Math.hypot((first.lat || 0) - (last.lat || 0), (first.lng || 0) - (last.lng || 0), (first.altitude || 0) - (last.altitude || 0));
-      if (d > 1e-7) {
-        arr.push({ lat: first.lat, lng: first.lng, altitude: first.altitude !== undefined ? first.altitude : 0.0 });
-      }
-      return arr;
-    };
-
     objects.forEach(object => {
       if (object.visible === false) return;
       const objId = object.manifest_id || object.id || object.object_id;
@@ -951,21 +933,18 @@ export class ViewportController {
           const isFaceSel = isObjSel && (selFaceIdx === polyIndex || (CADState.state.selectedFaceInfo && CADState.state.selectedFaceInfo.face_id === poly.face_id));
           const baseColor = poly.color || object.color || '#38bdf8';
           const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
-          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.45)');
-          const strokeWidth = isFaceSel ? 2.5 : (isObjSel ? 1.8 : 0.8);
+          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
+          const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
 
           let polygon = polygonPool.get(key);
-          const outerCoords = enforceLoopClosure(poly.outer_coordinates || poly.outer || []);
-          const innerCoords = ((poly.inner_coordinates && poly.inner_coordinates.length > 0) ? poly.inner_coordinates : (poly.inner || [])).map(enforceLoopClosure);
           if (polygon) {
-            polygon.outerCoordinates = outerCoords;
-            if (innerCoords.length > 0) {
-              polygon.innerCoordinates = innerCoords;
+            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
+            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
+              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
             }
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
             polygon.strokeWidth = strokeWidth;
-            polygon.drawsOccludedSegments = true;
             polygonPool.delete(key);
           } else {
             polygon = document.createElement('gmp-polygon-3d');
@@ -975,13 +954,12 @@ export class ViewportController {
             polygon.dataset.faceId = poly.face_id || `Face_${polyIndex + 1}`;
             polygon.setAttribute('altitude-mode', 'absolute');
             polygon.altitudeMode = 'absolute';
-            polygon.drawsOccludedSegments = true;
             polygon.fillColor = fillColor;
             polygon.strokeColor = strokeColor;
             polygon.strokeWidth = strokeWidth;
-            polygon.outerCoordinates = outerCoords;
-            if (innerCoords.length > 0) {
-              polygon.innerCoordinates = innerCoords;
+            polygon.outerCoordinates = poly.outer_coordinates || poly.outer;
+            if ((poly.inner_coordinates && poly.inner_coordinates.length > 0) || (poly.inner && poly.inner.length > 0)) {
+              polygon.innerCoordinates = poly.inner_coordinates || poly.inner;
             }
             map3dElement.appendChild(polygon);
           }
@@ -998,12 +976,12 @@ export class ViewportController {
         const isFaceSel = isObjSel && selFaceIdx === faceIndex;
         const baseColor = face.color || object.color || '#38bdf8';
         const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
-        const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.45)');
-        const strokeWidth = isFaceSel ? 2.5 : (isObjSel ? 1.8 : 0.8);
+        const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
+        const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
 
         const geodeticCoords = pts.map(pt => {
           if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
-            return { lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 0.0 };
+            return { lat: pt.lat, lng: pt.lng, altitude: pt.altitude !== undefined ? pt.altitude : 95.0 };
           }
           const wx = (object.position?.[0] || 0) + (pt.x || 0) * (object.scale?.[0] || 1);
           const wy = (object.position?.[1] || 0) + (pt.y || 0) * (object.scale?.[1] || 1);
@@ -1011,14 +989,12 @@ export class ViewportController {
           return enuToGeodetic(wx, wy, wz);
         });
 
-        const closedGeodetic = enforceLoopClosure(geodeticCoords);
         let polygon = polygonPool.get(key);
         if (polygon) {
-          polygon.outerCoordinates = closedGeodetic;
+          polygon.outerCoordinates = geodeticCoords;
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
           polygon.strokeWidth = strokeWidth;
-          polygon.drawsOccludedSegments = true;
           polygonPool.delete(key);
         } else {
           polygon = document.createElement('gmp-polygon-3d');
@@ -1027,27 +1003,21 @@ export class ViewportController {
           polygon.dataset.faceIndex = String(faceIndex);
           polygon.setAttribute('altitude-mode', 'absolute');
           polygon.altitudeMode = 'absolute';
-          polygon.drawsOccludedSegments = true;
           polygon.fillColor = fillColor;
           polygon.strokeColor = strokeColor;
           polygon.strokeWidth = strokeWidth;
-          polygon.outerCoordinates = closedGeodetic;
+          polygon.outerCoordinates = geodeticCoords;
           map3dElement.appendChild(polygon);
         }
       });
     });
 
-          polygonPool.forEach(polygon => polygon.remove());
-  }
-
-  refreshView() {
-    this.geometryCacheDirty = true;
-    this.syncNativeDOM();
-    this.render();
+    polygonPool.forEach(polygon => polygon.remove());
   }
 
   render() {
     if (!this.ctx || !this.canvasOverlay) return;
+    const tStart = performance.now();
     const ctx = this.ctx;
     const w = this.cssWidth || 800;
     const h = this.cssHeight || 600;
@@ -1057,25 +1027,12 @@ export class ViewportController {
     const isImp = CADState.isImperial();
     const gridStep = isImp ? 304.8 : 300.0;
     
-    // 1. Draw 2,000-Foot Extended Horizon Ground Grid & XYZ Datum Axes
+    // 1. Draw Grid & Axes
     if (prefs.showGrid !== false) {
-      const maxGridFt = 2000;
-      const gridExtent = maxGridFt * gridStep;
-      const cam = CADState.state.camera || { range: 1828.8 };
-      const rangeMeters = (cam.range || 1828.8) / 1000.0;
-      
-      // Adaptive stride to maintain sustained 60 FPS while covering 2,000 ft grid
-      let stride = 1;
-      if (rangeMeters > 500) stride = 50;
-      else if (rangeMeters > 150) stride = 20;
-      else if (rangeMeters > 50) stride = 5;
-      else if (rangeMeters > 20) stride = 2;
-
-      const step = gridStep * stride;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       ctx.lineWidth = 1;
-
-      for (let x = -gridExtent; x <= gridExtent; x += step) {
+      const gridExtent = gridStep * 10;
+      for (let x = -gridExtent; x <= gridExtent; x += gridStep) {
         const p1 = this.project3DTo2D(x, -gridExtent, 0);
         const p2 = this.project3DTo2D(x, gridExtent, 0);
         ctx.beginPath();
@@ -1083,7 +1040,7 @@ export class ViewportController {
         ctx.lineTo(p2.px, p2.py);
         ctx.stroke();
       }
-      for (let y = -gridExtent; y <= gridExtent; y += step) {
+      for (let y = -gridExtent; y <= gridExtent; y += gridStep) {
         const p1 = this.project3DTo2D(-gridExtent, y, 0);
         const p2 = this.project3DTo2D(gridExtent, y, 0);
         ctx.beginPath();
@@ -1148,25 +1105,13 @@ export class ViewportController {
           return { wx, wy, wz, px: p2d.px, py: p2d.py, depth: p2d.depth };
         });
 
-        // Compute face normal
-        let fNorm = [0, 0, 1];
-        if (worldPts.length >= 3) {
-          const v10 = [worldPts[1].wx - worldPts[0].wx, worldPts[1].wy - worldPts[0].wy, worldPts[1].wz - worldPts[0].wz];
-          const v20 = [worldPts[2].wx - worldPts[0].wx, worldPts[2].wy - worldPts[0].wy, worldPts[2].wz - worldPts[0].wz];
-          const cx = v10[1]*v20[2] - v10[2]*v20[1];
-          const cy = v10[2]*v20[0] - v10[0]*v20[2];
-          const cz = v10[0]*v20[1] - v10[1]*v20[0];
-          const nLen = Math.hypot(cx, cy, cz) || 1.0;
-          fNorm = [cx / nLen, cy / nLen, cz / nLen];
-        }
-
         for (let i = 0; i < worldPts.length; i++) {
           const p1 = worldPts[i];
           const p2 = worldPts[(i + 1) % worldPts.length];
-          edges.push({ objId, fIdx, eIdx: i, p1, p2, depth: (p1.depth + p2.depth) / 2, normal: fNorm });
+          edges.push({ objId, fIdx, eIdx: i, p1, p2, depth: (p1.depth + p2.depth) / 2 });
           const midW = [(p1.wx + p2.wx)/2, (p1.wy + p2.wy)/2, (p1.wz + p2.wz)/2];
           const mid2D = this.project3DTo2D(midW[0], midW[1], midW[2]);
-          snaps.push({ type: 'midpoint', world: midW, px: mid2D.px, py: mid2D.py, normal: fNorm });
+          snaps.push({ type: 'midpoint', world: midW, px: mid2D.px, py: mid2D.py });
         }
 
         const avgDepth = sumDepth / pts.length;
