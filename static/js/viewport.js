@@ -939,8 +939,8 @@ export class ViewportController {
           const isFaceSel = isObjSel && (selFaceIdx === polyIndex || (CADState.state.selectedFaceInfo && CADState.state.selectedFaceInfo.face_id === poly.face_id));
           const baseColor = poly.color || object.color || '#38bdf8';
           const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
-          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.85)');
-          const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1.2);
+          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.45)');
+          const strokeWidth = isFaceSel ? 2.5 : (isObjSel ? 1.8 : 0.8);
 
           let polygon = polygonPool.get(key);
           if (polygon) {
@@ -982,8 +982,8 @@ export class ViewportController {
         const isFaceSel = isObjSel && selFaceIdx === faceIndex;
         const baseColor = face.color || object.color || '#38bdf8';
         const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
-        const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
-        const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
+        const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.45)');
+        const strokeWidth = isFaceSel ? 2.5 : (isObjSel ? 1.8 : 0.8);
 
         const geodeticCoords = pts.map(pt => {
           if (typeof pt.lat === 'number' && typeof pt.lng === 'number') {
