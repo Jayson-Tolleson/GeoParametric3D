@@ -1,231 +1,271 @@
-# MASTER ARCHITECTURAL SPECIFICATION & SYSTEM DESIGN REPORT
+# GeoParametric3D Engineering Architectural Specification
+## Canonical Unit Invariance, Sub-Element Csnap Selection, Toolbar Gateway Protocols, and Vertex AI Conversational Assistant Architecture
 
-**System Name:** GeoParametric3D (CascadeCAD High-Precision Workstation)
-**Document Version:** 6.0.0 (Consolidated Master Technical Paper)
-**Author:** Principal CAD Systems Architect & Computational Geometry Governor
-**Target Platforms:** Google Maps 3D Web Component (`<gmp-map-3d>`), WebGL/WebGPU Hardware Pipeline, OpenCASCADE (OCCT/OCP) Kernel, Vertex AI Assistant Engine
-
----
-
-## Table of Contents
-1. [Executive Summary & Core Architectural Tenets](#1-executive-summary--core-architectural-tenets)
-2. [Mathematical & Canonical Geometry Foundations](#2-mathematical--canonical-geometry-foundations)
-3. [Coordinate Systems, Dynamic Geodetic Anchoring & Infinite CAD Space](#3-coordinate-systems-dynamic-geodetic-anchoring--infinite-cad-space)
-4. [Units Detection, Ingestion, and Multiscale Pipeline](#4-units-detection-ingestion-and-multiscale-pipeline)
-5. [B-Rep Authority vs. Derived Render Mesh Separation](#5-b-rep-authority-vs-derived-render-mesh-separation)
-6. [OpenCASCADE Dual-Route Extraction & Planar N-Gon Topology](#6-opencascade-dual-route-extraction--planar-n-gon-topology)
-7. [Hybrid Rendering Pipeline: `<gmp-map-3d>` & WebGL Overlay](#7-hybrid-rendering-pipeline-gmp-map-3d--webgl-overlay)
-8. [Camera Frustum, Dynamic Framing, and Infinite 1'x1' Ground Grid](#8-camera-frustum-dynamic-framing-and-infinite-1x1-ground-grid)
-9. [Vertex AI Assistant & REST API Integration](#9-vertex-ai-assistant--rest-api-integration)
-10. [Verification, Telemetry, and Diagnostics](#10-verification-telemetry-and-diagnostics)
+**Author:** Principal CAD Systems Architect & Computational Geometry Governor  
+**System Target:** GeoParametric3D Authoritative CAD Workstation  
+**Document Version:** 5.2.0  
+**Status:** Governing Master Architecture  
 
 ---
 
-## 1. Executive Summary & Core Architectural Tenets
+## Executive Summary & System Invariants
 
-GeoParametric3D is a cloud-native, browser-executable parametric CAD workstation engineered for high-precision mechanical, architectural, and civil engineering modeling. The workstation bridges exact Boundary Representation (B-Rep) topological solids with geospatial visualization engines—specifically Google Maps 3D Web Components (`<gmp-map-3d>`) augmented by a synchronized WebGL/Canvas hardware overlay.
+GeoParametric3D operates as an authoritative, high-performance web-native computer-aided design (CAD) workstation engineered atop exact Boundary Representation (B-Rep) topological definitions, an asynchronous command execution gateway, an adaptive dual-route rendering engine integrated with the Google Maps 3D Web Component (`<gmp-map-3d>`), and an autonomous Vertex AI Engineering Assistant.
 
-### Primary Directives & Invariants
-1. **Exact B-Rep Geometric Truth:** The source CAD geometry (`GeoPart`, `GeoSolid`, `GeoShell`, `GeoFace`, `GeoLoop`, `GeoEdge`, `GeoVertex`) is the immutable mathematical truth. Triangulated meshes are ephemeral derived views.
-2. **Arbitrary Scale Operational Domain:** The system seamlessly spans scales from sub-millimeter precision parts (5 mm screws, micro-fluidics) to civil structures (2,000 ft skyscrapers and infrastructure corridors) without visual clipping, floating-point jitter, or coordinate collapse.
-3. **Decoupled Geospatial & Cartesian Space:** The internal modeling kernel operates in pure, canonical metric millimeters ($mm$) at Cartesian origin $(0, 0, 0)$. Dynamic projection maps Cartesian ENU (East-North-Up) offsets to Earth-Centered Earth-Fixed (ECEF) / WGS84 coordinates on demand, removing hardcoded regional site anchors.
-4. **Dual-Route Planar Extraction:** Planar faces (`GeomAbs_Plane`) are preserved as pristine N-Gon perimeter and hole loops, eliminating diagonal triangulation artifacts. Non-planar surfaces are discretized under adaptive chordal and angular deflection controls.
-5. **High-Efficiency Memory Contract:** Zero-copy binary serialization and typed arrays (`Float32Array`, `Uint32Array`) ensure 60 FPS viewport throughput and instant memory compaction.
+To ensure flawless dimensional fidelity, sub-millimeter interaction precision, and zero-defect UI reactivity across engineering teams, this specification defines the consolidated architecture addressing four core workstation subsystems:
+
+1. **Canonical Unit Invariant & Viewport Preference Authority:** All geometric entities, calculations, and kernel transformations maintain authoritative internal representation in **linear millimeters ($1.0\text{ mm}$)**. User interface preferences (US/Imperial `[in, ft]` vs. Metric `[mm, cm, m]`) act strictly as non-destructive view/input lenses. Universal byte importers (STEP AP203/214/242, FCStd, STL, GLTF/GLB, 3MF, OBJ, PLY, DAE, WRL, XBF) inspect foreign units and transform geometries into canonical millimeters at the entry boundary.
+2. **Bearing Edge Pointer Contact & Csnap Sub-Element Selection:** Exact mathematical point-to-segment distance formulas and angular deflection filters eliminate mis-selection and bleed across adjacent edges. Spatial priority sorting guarantees that pointer contact selects only the specific bearing edge nearest the cursor ray.
+3. **Complete 79-Button Toolbar Gateway & Parametric History:** Complete functional wiring and bidirectional command binding across all 79 toolbar actions, ensuring snapshot-backed undo/redo, modal dialog inputs, and real-time state mutation.
+4. **Vertex AI Conversational Assistant Integration:** Architectural expansion of the collapsible assistant drawer (`#assistant-drawer`) and its up-triangle toggle (`#btn-toggle-assistant`), integrating bidirectional assembly B-Rep inspection with the Google Cloud Vertex AI REST gateway (`broadcasterfishmap`, location: `global`).
 
 ---
 
-## 2. Mathematical & Canonical Geometry Foundations
+## Section 1: Canonical Unit Invariant & Dual-System Viewport Preferences
 
-### 2.1 B-Rep Topological Hierarchy
-Every solid in GeoParametric3D adheres to standard Euler-Poincaré topological characteristics:
-$$\mathcal{V} - \mathcal{E} + \mathcal{F} = 2(\mathcal{S} - \mathcal{G}) + \mathcal{H}$$
-where $\mathcal{V}$ is vertices, $\mathcal{E}$ is edges, $\mathcal{F}$ is faces, $\mathcal{S}$ is shells, $\mathcal{G}$ is genus (through-holes), and $\mathcal{H}$ is internal void cavities.
+### 1.1 Mathematical Principle of the Canonical Unit Invariant
+In multi-format CAD systems, mixing spatial representations leads to catastrophic scaling drift, catastrophic cancellation in geometric predicates, and degenerate boolean intersections. GeoParametric3D strictly enforces the **Canonical Linear Millimeter ($1.0\text{ mm}$)** internal invariant across the entire computational pipeline:
+
+$$\mathbf{p}_{\text{canonical}} = \mathbf{p}_{\text{source}} \cdot s_{\text{source}\to\text{mm}}$$
+
+$$\mathbf{p}_{\text{display}} = \mathbf{p}_{\text{canonical}} \cdot s_{\text{mm}\to\text{user}}$$
+
+Where the scale factors $s$ are determined from explicit lookup tables and unit conversion calculus:
+
+| Unit Identifier | Normalization Symbol | Linear Scale Factor to mm ($s_{\text{source}\to\text{mm}}$) | Area Factor ($s^2$) | Volume Factor ($s^3$) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Millimeter** | `mm`, `millimetre` | $1.0$ | $1.0$ | $1.0$ |
+| **Centimeter** | `cm`, `centimetre` | $10.0$ | $100.0$ | $1{,}000.0$ |
+| **Meter** | `m`, `metre` | $1{,}000.0$ | $1{,}000{,}000.0$ | $1{,}000{,}000{,}000.0$ |
+| **Micron / Micrometer** | `um`, `micron` | $0.001$ | $10^{-6}$ | $10^{-9}$ |
+| **Inch** | `in`, `inch`, `"` | $25.4$ | $645.16$ | $16{,}387.064$ |
+| **Foot** | `ft`, `foot`, `'` | $304.8$ | $92{,}903.04$ | $28{,}316{,}846.592$ |
+| **Yard** | `yd`, `yard` | $914.4$ | $836{,}127.36$ | $764{,}554{,}857.984$ |
+
+### 1.2 Viewport Preference Setting & UI Tone
+The user preference stored in `CADState.state.preferences.units` (`'imperial'` vs `'metric'`) controls:
+- **Grid Line Spacing:** Ground plane grid adapts to $12\text{ in}$ ($304.8\text{ mm}$) squares in US/Imperial mode vs $300.0\text{ mm}$ or $100.0\text{ mm}$ in Metric mode.
+- **Toolbar Section Labels:** Dynamic label `#label-primitives-section` displays `12" PRIMITIVES` or `300mm PRIMITIVES`.
+- **Inspector & Action Panel Labels:** Position, extents, bounding dimensions, slice thickness, and draft extrusion parameters dynamically format with unit suffixes `(in)` or `(mm)`.
+- **Lossless Value Roundtripping:** Conversion functions `toUserLength(mmVal)` and `fromUserLength(userVal)` prevent compounding floating-point drift by performing single-conversion projections on demand.
+
+---
+
+## Section 2: Universal Import Unit Analysis & Ingestion Normalization
 
 ```
-GeoAssembly (Hierarchical Scene Graph / Lightweight Transforms)
-  └── GeoInstance (4x4 Affine Matrix M, Material, Visibility)
-        └── GeoPart (Topological Container, Canonical Unit = mm)
-              └── GeoSolid (Closed Manifold Domain)
-                    └── GeoShell (Oriented Face Manifold)
-                          └── GeoFace (Parametric Surface Manifold)
-                                ├── Outer GeoLoop (Winding Order CCW)
-                                │     └── [GeoEdge -> GeoCurve]
-                                └── Inner GeoLoops (Winding Order CW - Holes)
-                                      └── [GeoEdge -> GeoCurve]
+ FOREIGN BYTE STREAM (Binary, Mesh, Solid B-Rep)
+       |
+       +--> [PHASE 1: MAGIC BYTE & SCHEMA IDENTIFIER]
+       |    - STEP: ISO-10303-21 header, AP203/214/242 detection
+       |    - FCStd: PK0304 ZIP container with Document.xml
+       |    - STL: 80-byte binary header vs ASCII 'solid' token
+       |    - GLTF/GLB: 'glTF' chunk layout, asset.unit = meter
+       |    - 3MF / OBJ / PLY / DAE / WRL / XBF
+       |
+       +--> [PHASE 2: UNIT & COLOR METADATA EXTRACTION]
+       |    - STEP: SI_UNIT(.MILLI., .METRE.) vs CONVERSION_BASED_UNIT('INCH')
+       |    - GLTF/GLB/DAE/WRL: Meter-to-mm scaling (1000.0x)
+       |    - STEP CAF / XCAF: Color mapping (COLOUR_RGB -> hex)
+       |
+       +--> [PHASE 3: OUT-OF-SCALE GEOMETRIC ADAPTATION]
+       |    - Diagonal extent sanity: D < 0.15 -> 1000x | D > 5e7 -> 0.001x
+       |
+       +--> [PHASE 4: TOPOLOGY NORMALIZATION & MESH COMPACTION]
+       |    - Validate finite vertices: isnan() / isinf() rejection
+       |    - Welded vertex indexing & degenerate facet elimination
+       |
+       +--> [PHASE 5: CANONICAL GEOPART & GEOASSEMBLY PROJECTION]
+            - GeoAssembly tree construction -> Native <gmp-map-3d> Viewport
 ```
 
-### 2.2 Analytical Surface & Curve Mathematics
-- **Planar Face:**
-  $$\mathbf{P}(u, v) = \mathbf{P}_0 + u \mathbf{D}_u + v \mathbf{D}_v, \quad \mathbf{N} = \frac{\mathbf{D}_u \times \mathbf{D}_v}{\|\mathbf{D}_u \times \mathbf{D}_v\|}$$
-- **Cylindrical Surface:**
-  $$\mathbf{P}(u, v) = \mathbf{P}_0 + R (\cos(2\pi u) \mathbf{X} + \sin(2\pi u) \mathbf{Y}) + v \mathbf{Z}$$
-- **Signed Distance Field (SDF) Formulation for Solid Validation:**
-  $$\Phi_{\text{Box}}(\mathbf{p}) = \|\max(|\mathbf{p} - \mathbf{c}| - \mathbf{h}, \mathbf{0})\| + \min(\max(|\mathbf{p} - \mathbf{c}| - \mathbf{h}), 0.0)$$
-  where $\mathbf{c}$ is the center vector and $\mathbf{h} = \left(\frac{w}{2}, \frac{d}{2}, \frac{h}{2}\right)$ represents the half-extents.
+### 2.1 File Format Ingestion Matrix
 
----
-
-## 3. Coordinate Systems, Dynamic Geodetic Anchoring & Infinite CAD Space
-
-### 3.1 Unanchored CAD Space & Dynamic Global Origin
-Prior implementations coupled CAD rendering to a static site anchor in Fullerton, California (`33.8814° N, 117.9213° W, 95.0m`). This caused severe distortion and rendering failures when viewing local Cartesian models at $(0, 0, 0)$.
-
-The modernized architecture adopts a **Dynamic World Reference Point (DWRP)**:
-1. The user workspace operates at a pure, unconstrained local Cartesian origin: $(x, y, z) = (0.0, 0.0, 0.0)$.
-2. When projecting to `<gmp-map-3d>`, an arbitrary base geodetic datum $(\phi_0, \lambda_0, h_0)$ acts solely as a smooth mathematical carrier frame.
-3. The mapping converts local metric millimeter offsets $\Delta x, \Delta y, \Delta z$ to WGS84 ellipsoidal coordinates using the meridian and prime vertical radii of curvature:
-
-$$M = \frac{a(1 - e^2)}{(1 - e^2 \sin^2 \phi_0)^{3/2}}, \quad N = \frac{a}{\sqrt{1 - e^2 \sin^2 \phi_0}}$$
-$$\phi = \phi_0 + \left(\frac{\Delta y \cdot 10^{-3}}{M + h_0}\right) \left(\frac{180}{\pi}\right)$$
-$$\lambda = \lambda_0 + \left(\frac{\Delta x \cdot 10^{-3}}{(N + h_0) \cos \phi_0}\right) \left(\frac{180}{\pi}\right)$$
-$$h = h_0 + \Delta z \cdot 10^{-3}$$
-
-where $a = 6378137.0\,\text{m}$ (WGS84 semi-major axis) and $e^2 = 0.00669437999014$ (first eccentricity squared).
-
-### 3.2 Dynamic Extent Scaling (5 mm to 2,000 ft)
-To avoid WebGL single-precision depth buffer degradation (Z-fighting) and `<gmp-map-3d>` near/far plane clipping, camera distance and clipping ranges scale dynamically:
-$$R_{\text{fit}} = 60 \cdot \max\left(r_{\text{bbox}}, 25.0\,\text{mm}\right)$$
-$$\text{near} = \max(0.001\,\text{m}, 10^{-5} \cdot R_{\text{fit}}), \quad \text{far} = \min(10^9\,\text{m}, 10^4 \cdot R_{\text{fit}})$$
-
----
-
-## 4. Units Detection, Ingestion, and Multiscale Pipeline
-
-### 4.1 Authoritative Single-Conversion Rule
-All geometry across every parser and input pipe is converted **strictly once** upon ingestion into canonical internal linear millimeters ($mm$). Display formatting applies user preferences (Imperial vs. Metric) only at the presentation layer.
-
-```
-Incoming Stream (STEP, FCStd, XBF, STL, 3MF, OBJ, GLB, PLY)
-     │
-     ├──> Header / Unit Entity Parser
-     │     ├── SI_UNIT (.MILLI., .METRE.)     ──> Scale: 1.0
-     │     ├── SI_UNIT (.CENTI., .METRE.)     ──> Scale: 10.0
-     │     ├── SI_UNIT ($, .METRE.)           ──> Scale: 1000.0
-     │     ├── CONVERSION_BASED_UNIT ('INCH') ──> Scale: 25.4
-     │     └── CONVERSION_BASED_UNIT ('FOOT') ──> Scale: 304.8
-     │
-     ├──> Scale Normalization Engine (v_canonical = v_raw * scale)
-     │
-     └──> Canonical Store: GeoPart (Linear Unit: mm)
-```
-
-### 4.2 Multi-Format Scale Factors
-| Unit Key | Scale to Canonical ($mm$) | Dimensionality Factor ($D=2$) | Dimensionality Factor ($D=3$) |
+| Format | Header / Entity Signature | Unit Resolution Rule | Default Scale Factor to Canonical (mm) |
 | :--- | :--- | :--- | :--- |
-| `mm`, `millimeter` | $1.0$ | $1.0$ | $1.0$ |
-| `cm`, `centimeter` | $10.0$ | $100.0$ | $1,000.0$ |
-| `m`, `meter` | $1000.0$ | $1,000,000.0$ | $1,000,000,000.0$ |
-| `in`, `inch` | $25.4$ | $645.16$ | $16,387.064$ |
-| `ft`, `foot` | $304.8$ | $92,903.04$ | $28,316,846.592$ |
-| `yd`, `yard` | $914.4$ | $836,127.36$ | $764,554,857.984$ |
-| `um`, `micron` | $0.001$ | $10^{-6}$ | $10^{-9}$ |
+| **STEP (AP203/214/242)** | `ISO-10303-21;` | `SI_UNIT($, .METRE.)` $\to 1000.0$<br>`SI_UNIT(.MILLI., .METRE.)` $\to 1.0$<br>`CONVERSION_BASED_UNIT('INCH', ...)` $\to 25.4$ | Analytical header entity detection; fallback $1.0$ |
+| **FreeCAD (.FCStd)** | `PK\x03\x04` containing `Document.xml` & `.brp` | XML properties & embedded OpenCASCADE Brep records | Native FreeCAD canonical mm ($1.0$) |
+| **Binary STL** | 80-byte header + `uint32` triangle count | Unitless mesh header $\to$ Extent inspection | $1.0$ (adapted if extents $< 0.15$ mm) |
+| **ASCII STL** | `solid <name>` $\dots$ `endsolid` | Unitless text $\to$ Extent inspection | $1.0$ (adapted if extents $< 0.15$ mm) |
+| **GLTF / GLB** | `glTF` magic (`0x46546C67`) or JSON `"asset"` | GLTF specification standard unit is **Meter** | **$1000.0$** |
+| **COLLADA (.dae)** | `<COLLADA>` ... `<asset><unit meter="...">` | `<unit meter="x"/>` $\to x \cdot 1000.0$ | XML meter attribute; fallback $1000.0$ |
+| **VRML (.wrl)** | `#VRML V2.0 utf8` | Standard VRML unit is **Meter** | **$1000.0$** |
+| **3D Manufacturing (.3mf)** | `PK\x03\x04` with `3D/3dmodel.model` | XML unit attribute (`unit="millimeter"`, `"inch"`) | XML unit mapping; default $1.0$ |
+| **Wavefront (.obj)** | `v x y z` vertex lists | Unitless coordinate arrays $\to$ Extent inspection | $1.0$ |
+| **Polygon File (.ply)** | `ply
+format binary_little_endian` | Unitless coordinate arrays $\to$ Extent inspection | $1.0$ |
+| **CascadeCAD Binary (.xbf)** | `XBF1`, `XBF2`, `XBFA` magic bytes | Native B-Rep serialization container | Direct canonical mm ($1.0$) |
 
 ---
 
-## 5. B-Rep Authority vs. Derived Render Mesh Separation
+## Section 3: Bearing Edge Selection & Precise Csnap Architecture
 
-### 5.1 The Anti-Corruption Principle
-Under no circumstance does client-side rendering alter the underlying `GeoPart` data structures. Tessellation buffers (`RenderMesh`, `Float32Array` positions, `Uint32Array` indices) are derived representations cached for display.
+### 3.1 Edge Selection Diagnostic & Pointer Bearing Point Calculus
+In legacy implementations, sub-element edge selection exhibited cursor bleed—selecting arbitrary back-edges or adjacent non-bearing segments. The root cause was unweighted 2D projected distance evaluation without ray-distance depth sorting or bearing segment alignment.
 
-### 5.2 Compaction & Validation Pipeline
-Before render data reaches the viewport, it passes through `validate_and_compact_mesh`:
-1. **Finite Verification:** Coordinates containing `NaN` or `±Inf` are stripped.
-2. **Index Re-mapping:** Vertex gaps are compacted into contiguous zero-indexed buffers.
-3. **Degenerate Triangle Elimination:** Zero-area triangles ($\|(p_1 - p_0) \times (p_2 - p_0)\| < 10^{-8}$) and self-referencing indices are pruned.
-4. **Manifold Continuity:** Normals and face provenance IDs are preserved.
+To ensure that clicking on or near an edge selects exclusively the bearing edge of pointer contact, the selection pipeline applies a two-stage geometric filter:
 
----
+#### Stage 1: Point-to-Segment Orthogonal Projection
+For a mouse cursor position $\mathbf{p}_m = (x_m, y_m)$ and a projected 2D edge segment bounded by $\mathbf{a} = (x_1, y_1)$ and $\mathbf{b} = (x_2, y_2)$:
 
-## 6. OpenCASCADE Dual-Route Extraction & Planar N-Gon Topology
+$$\mathbf{v} = \mathbf{b} - \mathbf{a}, \quad l^2 = \|\mathbf{v}\|^2$$
 
-### 6.1 Route A: Planar Faces (`GeomAbs_Plane`)
-1. OpenCASCADE adaptor queries `adaptor.GetType() == GeomAbs_Plane`.
-2. `BRepTools_WireExplorer` extracts ordered loops of edges without internal diagonals.
-3. Continuous curves on boundary edges are discretized using chordal deflection.
-4. Output is rendered directly via `<gmp-polygon-3d>` as clean N-Gons.
+$$t = \mathrm{clamp}\left( \frac{(\mathbf{p}_m - \mathbf{a}) \cdot \mathbf{v}}{l^2}, 0.0, 1.0 \right)$$
 
-### 6.2 Route B: Curved & Analytical Solids
-1. Curved surfaces (Cylinders, Cones, Spheres, Tori, B-Splines, NURBS) undergo adaptive meshing (`BRepMesh_IncrementalMesh`).
-2. Linear deflection $\delta_L$ and angular deflection $\theta_A$ scale with solid diagonal:
-   $$\delta_L = \max(0.2, d_{\text{diag}} \cdot 0.002)\,\text{mm}, \quad \theta_A = 0.45\,\text{rad}$$
-3. High-density watertight triangle meshes are packed into binary base64 buffers.
+$$\mathbf{p}_{\text{proj}} = \mathbf{a} + t \mathbf{v}$$
 
----
+$$d_{\text{pixel}} = \|\mathbf{p}_m - \mathbf{p}_{\text{proj}}\|$$
 
-## 7. Hybrid Rendering Pipeline: `<gmp-map-3d>` & WebGL Overlay
+#### Stage 2: Depth-Weighted Bearing Score
+When multiple edges fall within the hit threshold ($d_{\text{pixel}} < 10\text{ px}$), candidate edges are scored by combining orthogonal pixel distance and camera depth $z_{\text{depth}}$:
 
-### 7.1 Multi-Layer Architecture
+$$S_{\text{bearing}} = d_{\text{pixel}} + \alpha \cdot \left( \frac{z_{\text{depth}} - z_{\text{min}}}{z_{\text{max}} - z_{\text{min}} + \epsilon} \right)$$
+
+Where $\alpha = 4.0\text{ px}$. The edge segment with the minimum score $S_{\text{bearing}}$ is uniquely selected as the authoritative bearing edge.
+
+### 3.2 Csnap Spatial Priority Hierarchy
+Object snapping (Csnap) operates across three distinct topological feature classes evaluated in strict order of geometric precedence:
 
 ```
-+--------------------------------------------------------------------------+
-|                       USER BROWSER VIEWPORT                              |
-+--------------------------------------------------------------------------+
-|  LAYER 2: Canvas / WebGL Interactive Overlay (Z-Index: 2)                |
-|   - Interactive Sub-element Highlighting (Vertex, Edge, Face)            |
-|   - Csnap Snapping Targets (Vertex, Midpoint, Center)                    |
-|   - Transform Gizmos (Move, Rotate, Scale, Align)                        |
-|   - 1'x1' Infinite Ground Grid & Origin Coordinate Axes                  |
-|   - 2D Drag-Select Box & Construction Lines                              |
-+--------------------------------------------------------------------------+
-|  LAYER 1: Google Maps 3D Web Component `<gmp-map-3d>` (Z-Index: 1)       |
-|   - Native Photorealistic Photogrammetry / 3D Tiles                      |
-|   - Native `<gmp-polygon-3d>` for Planar CAD Faces (Zero Diagonals)      |
-|   - Hardware Depth Buffering & GPU Occlusion                             |
-+--------------------------------------------------------------------------+
+ 1. VERTEX SNAP (Circle Marker, Radius 8px, Tol = 14px)  [HIGHEST PRIORITY]
+       |
+       v (if no vertex in tolerance)
+ 2. EDGE MIDPOINT SNAP (Square Marker, 12x12px, Tol = 12px)
+       |
+       v (if no midpoint in tolerance)
+ 3. CONTINUOUS EDGE BEARING SNAP (Orthogonal Projection, Tol = 10px)
 ```
 
-### 7.2 Initial Primitive Display Resolution
-To ensure default 1-Foot ($304.8\,\text{mm}$) reference cubes and imported solids display immediately upon load:
-1. Solids are registered in `CADState` and projected via local ENU coordinates.
-2. `<gmp-polygon-3d>` nodes are attached to `<gmp-map-3d>` with `altitude-mode="absolute"`.
-3. The synchronized 2D/WebGL canvas overlay performs immediate depth-sorted polygonal projection so parts are visible even if Web component tiles are loading.
+---
+
+## Section 4: 79-Button Toolbar Gateway & Parametric History
+
+The GeoParametric3D user interface contains exactly 79 functionally wired buttons partitioned into clear operational sections, all bound through `static/js/toolbar.js`, `static/js/ui.js`, and `command_engine.py`:
+
+```
++-------------------------------------------------------------------------------------------------------+
+|                                        CAD TOOLBAR (79 BUTTONS)                                       |
++-------------------+--------------------+--------------------+--------------------+--------------------+
+| 1. SESSION (8)    | 2. SHARE (4)       | 3. PRIMITIVES (13) | 4. TRANSFORM (5)   | 5. DRAFT (7)       |
+| - toolbar-new     | - btn-share-snap   | - btn-add-box      | - toolbar-move     | - btn-draft-line   |
+| - toolbar-open    | - btn-share-all    | - btn-add-cylinder | - toolbar-rotate   | - btn-draft-rect   |
+| - toolbar-save    | - btn-share-rec    | - btn-add-sphere   | - toolbar-scale    | - btn-draft-circle |
+| - toolbar-import  | - btn-open-share   | - btn-add-cone     | - toolbar-duplicate| - btn-draft-arc    |
+| - toolbar-export  |                    | - btn-add-torus    | - toolbar-align    | - btn-draft-pline  |
+| - toolbar-undo    |                    | - btn-add-prism    |                    | - btn-draft-poly   |
+| - toolbar-redo    |                    | - btn-add-polygon  |                    | - btn-draft-ellip  |
+| - toolbar-prefs   |                    | - btn-add-ellipse  |                    |                    |
+|                   |                    | - btn-add-wedge    |                    |                    |
+|                   |                    | - btn-add-pyramid  |                    |                    |
+|                   |                    | - btn-add-ellip    |                    |                    |
+|                   |                    | - btn-add-tube     |                    |                    |
+|                   |                    | - btn-add-plane    |                    |                    |
++-------------------+--------------------+--------------------+--------------------+--------------------+
+| 6. SELECTION (5)  | 7. FEATURES (4)    | 8. BOOLEAN (3)     | 9. MODIFY (2)      | 10. INSPECT/CNC (4)|
+| - btn-toggle-csnap| - btn-feat-extrude | - btn-bool-union   | - btn-mod-fillet   | - btn-insp-measure |
+| - btn-sel-part    | - btn-feat-xsect   | - btn-bool-sub     | - btn-mod-chamfer  | - btn-insp-mass    |
+| - btn-sel-face    | - btn-feat-hole    | - btn-bool-inter   |                    | - btn-tool-cnc     |
+| - btn-sel-edge    | - btn-feat-revolve |                    |                    | - btn-tool-script  |
+| - btn-sel-vertex  |                    |                    |                    |                    |
++-------------------+--------------------+--------------------+--------------------+--------------------+
+| 11. MODALS & UI PANELS (24 Buttons: Retract, Preferences, Social Share, Mass, CNC, Script, Assistant) |
++-------------------------------------------------------------------------------------------------------+
+```
+
+### 4.1 Command Execution Protocol
+Every mutating operation creates an undo snapshot before execution. Snapshots store complete deep copies of `CADState.objects`, `assemblyTree`, and document metadata in memory, enabling full single-step undo (`Ctrl+Z`) and redo (`Ctrl+Y`).
 
 ---
 
-## 8. Camera Frustum, Dynamic Framing, and Infinite 1'x1' Ground Grid
+## Section 5: Conversational Engineering Assistant Architecture
 
-### 8.1 Infinite 1-Foot Grid Construction
-The ground plane features an infinite procedural grid calibrated in 1-foot increments ($304.8\,\text{mm}$ in Imperial, $300.0\,\text{mm}$ in Metric):
-- Grid lines span radially across the view frustum on the $XY$ plane ($Z = 0$).
-- Orthogonal RGB coordinate axes denote $+X$ (Red), $+Y$ (Green), and $+Z$ (Blue).
-- Grid line rendering adjusts dynamic alpha fading based on camera altitude to eliminate aliasing at glancing angles.
+### 5.1 Drawer UI & Toggle Kinematics
+The Engineering Assistant dock (`#assistant-drawer`) is anchored at the bottom-center of the viewport. Its toggle button (`#btn-toggle-assistant`) contains a directional triangle indicator that dynamically updates:
+- **Collapsed State:** Drawer body is hidden (`.collapsed`), toggle icon displays `▲` (up triangle).
+- **Expanded State:** Drawer body displays live chat history and prompt input, toggle icon displays `▼` (down triangle).
 
-### 8.2 Spherical Trackball Gizmo & Quick Presets
-An enlarged Viridian-teal spherical gizmo with a neon-blue outer glow provides intuitive 3D orientation tracking:
-- Displays Top, Bottom, North, South, East, West face tags.
-- Instant alignment chips: `FIT`, `ISO`, `TOP`, `FRONT`, `SIDE`.
+### 5.2 Vertex AI Gateway Payload & Context Injection
+Assistant queries invoke the backend `/api/assistant/chat`, `/cad/api/assistant/chat`, or `/api/generate` endpoints, which connect to Google Cloud Vertex AI under project `broadcasterfishmap` and location `global`.
 
----
+The system context automatically injects the live assembly B-Rep state:
 
-## 9. Vertex AI Assistant & REST API Integration
-
-### 9.1 Environment & Model Configuration
-- **GCP Project ID:** `broadcasterfishmap`
-- **Location:** `global`
-- **Model:** `gemini-1.5-flash`
-- **System Prompt:** Configured as a specialized Senior CAD Systems Engineer with deep knowledge of B-Rep topology, material densities, stress formulas, LinuxCNC toolpath generation, and CadQuery script generation.
-
-### 9.2 Context Injection
-Every chat interaction automatically serializes the active assembly scene context:
-- Total body count, names, materials, bounding boxes, volume ($cm^3$), and mass ($g$).
-- Active selection status (Part ID, Face ID, Surface Type, Normal Vector, Area $mm^2$).
-
----
-
-## 10. Verification, Telemetry, and Diagnostics
-
-### 10.1 Automated Test Suite Coverage
-1. `test_canonical_geometry.py`: Verifies B-Rep structure, instance transforms, adaptive tessellation, and representation selection.
-2. `test_cad_architecture.py`: Verifies universal byte parsing, STEP AP203/214/242 schemas, unit conversions, and binary STL scaling.
-3. `test_kernel_math.py`: Validates Box SDF golden reference equivalence, prism geometries, and boolean scalar fields.
-4. `test_workstation_repair.py`: Validates scale-invariance of world coordinates, XBF roundtrip integrity, and FreeCAD FCStd archive extraction.
-
-### 10.2 Real-Time Diagnostic Dashboard
-The system reports live telemetry metrics via the inspector terminal:
-- Active Object Count & Vertex Counts.
-- Live FPS Counter (60 FPS baseline target).
-- Pipeline Execution Logs (`STEP_BUFFER_STAGED`, `OCCT_TOPODS_TRANSFER`, `UNIT_RESOLUTION`, `DUAL_ROUTE_EXTRACTION`).
+```json
+{
+  "contents": [
+    {
+      "parts": [
+        {
+          "text": "You are the dedicated Engineering Assistant for GeoParametric3D (Project: broadcasterfishmap, Location: global).\
+Provide substantive, technically precise engineering reasoning, CAD/CAM/CAE guidance, mechanical/structural analysis, B-Rep topological insight, material selection, and mathematical derivations.\
+B-Rep geometry is authoritative; render meshes are derived representations.\
+\
+Current Active Assembly Scene (1 bodies, canonical unit: mm): 1-Foot Reference Block (ID: obj_box_1, Material: Steel, Faces: 6, Volume: 28316.85 cm³)\
+\
+User Query: Calculate principal moment of inertia and generate CNC facing path."
+        }
+      ]
+    }
+  ]
+}
+```
 
 ---
 
-*Master Architectural Specification authored and verified for GeoParametric3D production workstation deployment.*
+## Section 6: Dual-Route B-Rep & Native `<gmp-map-3d>` Viewport Rendering
+
+```
+            +--------------------------------------------------+
+            |           CAD TOPOLOGICAL FACE SEPARATION        |
+            +-------------------------+------------------------+
+                                      |
+             +------------------------+------------------------+
+             |                                                 |
+             v (GeomAbs_Plane)                                 v (Curved Surface)
++------------------------------------------+      +------------------------------------------+
+|     N-GON PLANAR POLYGON ROUTE           |      |      ADAPTIVE DEFLECTION MESH ROUTE      |
+|  \u2022 Extract outer & inner boundary loops   |      |  \u2022 Compute optimal chordal deflection    |
+|  \u2022 Zero internal triangulation diagonals  |      |  \u2022 Discretize quad/triangle meshes       |
+|  \u2022 Direct <gmp-polygon-3d> DOM component |      |  \u2022 Contiguous ArrayBuffer / WebGL shader |
++--------------------+---------------------+      +--------------------+---------------------+
+                     |                                                 |
+                     +------------------------+------------------------+
+                                              |
+                                              v
+                        +------------------------------------------+
+                        |  100% OPAQUE SHADING & DEPTH BUFFERING   |
+                        |  \u2022 FreeCAD-standard solid opacity (1.0)  |
+                        |  \u2022 Authoritative STEP header hex colors  |
+                        |  \u2022 Full hardware occlusion in <gmp-map-3d>|
+                        +------------------------------------------+
+```
+
+### 6.1 Planar Face Rendering via `<gmp-polygon-3d>`
+Planar CAD faces (`GeomAbs_Plane`) bypass triangulation and instantiate native `<gmp-polygon-3d>` elements with exact outer and inner hole coordinates. This delivers zero diagonal artifacts and direct hardware acceleration in the 3D map environment.
+
+### 6.2 Curved Surface Adaptive Tessellation
+Non-planar faces (Cylinders, Cones, Spheres, Toroids, NURBS) undergo curvature-adaptive deflection. The chordal deflection $\delta$ and angular tolerance $\theta$ scale dynamically with the bounding diagonal $D_{\text{diag}}$:
+
+$$\delta = \max\left(0.2\text{ mm}, D_{\text{diag}} \cdot 0.002\right), \quad \theta = 0.45\text{ rad} \approx 25.8^\circ$$
+
+---
+
+## Section 7: System Verification Matrix
+
+| Verification Dimension | Governing Test Suite | Acceptance Criteria | Status |
+| :--- | :--- | :--- | :--- |
+| **Unit Conversion Invariance** | `test_cad_architecture.py` | Exact single-conversion calculations across in, ft, cm, m, mm; zero compounding drift. | **PASS** |
+| **STEP B-Rep Hierarchy** | `test_cad_architecture.py` | Complete topology recovery (Solid $\to$ Shell $\to$ Face $\to$ Loop $\to$ Edge $\to$ Vertex). | **PASS** |
+| **Vertex Mesh Compaction** | `test_cad_architecture.py` | Strict finite coordinate validation, remapping out-of-bounds indices, degenerate rejection. | **PASS** |
+| **Canonical Part Independence** | `test_canonical_geometry.py` | B-Rep data model remains unmodified during adaptive rendering tessellation passes. | **PASS** |
+| **Scale Dimensionless Invariance** | `test_workstation_repair.py` | `transform_object` scale never shifts world coordinates ($x_{\text{after}} = x_{\text{before}}$). | **PASS** |
+| **Binary XBF & FCStd Ingestion** | `test_workstation_repair.py` | Lossless roundtrip byte import/export across proprietary and FreeCAD containers. | **PASS** |
+| **Mathematical Golden Equivalence** | `test_kernel_math.py` | Box SDF distance field aligns with analytic volume ($V = w \cdot d \cdot h$). | **PASS** |
+
+---
+
+## Architectural Sign-Off
+
+This consolidated specification establishes the definitive standard for unit handling, sub-element picking, command gateway routing, and AI assistance within the GeoParametric3D workstation.
+
+**Signed,**  
+*Principal CAD Systems Architect & Computational Geometry Governor*
