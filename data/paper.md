@@ -10,24 +10,25 @@
 
 ## Table of Contents
 1. [Executive Summary & Core Directives](#1-executive-summary--core-directives)
-2. [Mathematical Invariants & Ontological Separation](#2-mathematical-invariants--ontological-separation)
-3. [Geospatial & Cartesian Reference Frames](#3-geospatial--cartesian-reference-frames)
-4. [Authoritative B-Rep Kernel & Dual-Route Extraction Architecture](#4-authoritative-b-rep-kernel--dual-route-extraction-architecture)
-5. [Tessellation, Adaptive Deflection, and Planar Boundary Preservation](#5-tessellation-adaptive-deflection-and-planar-boundary-preservation)
-6. [Rendering Pipeline: Shading, Depth Buffering & FreeCAD Parity](#6-rendering-pipeline-shading-depth-buffering--freecad-parity)
-7. [Universal Ingestion Pipeline & Multi-Format Intelligence](#7-universal-ingestion-pipeline--multi-format-intelligence)
-8. [Transform Invariance & Lightweight Instancing Model](#8-transform-invariance--lightweight-instancing-model)
-9. [Sub-Element Selection & Interactive Inspection Topology](#9-sub-element-selection--interactive-inspection-topology)
-10. [AI Engineering Assistant & Cloud Native Integration](#10-ai-engineering-assistant--cloud-native-integration)
-11. [Verification Test Suite & Performance Matrix](#11-verification-test-suite--performance-matrix)
-12. [Architectural Conclusion](#12-architectural-conclusion)
+2. [Root Cause Analysis: Initial Primitive & Part Rendering Failures](#2-root-cause-analysis-initial-primitive--part-rendering-failures)
+3. [Mathematical Invariants & Ontological Separation](#3-mathematical-invariants--ontological-separation)
+4. [Geospatial & Cartesian Reference Frames](#4-geospatial--cartesian-reference-frames)
+5. [Authoritative B-Rep Kernel & Dual-Route Extraction Architecture](#5-authoritative-b-rep-kernel--dual-route-extraction-architecture)
+6. [Tessellation, Adaptive Deflection, and Planar Boundary Preservation](#6-tessellation-adaptive-deflection-and-planar-boundary-preservation)
+7. [Rendering Pipeline: Solid Shading, Depth Buffering & FreeCAD Parity](#7-rendering-pipeline-solid-shading-depth-buffering--freecad-parity)
+8. [Universal Ingestion Pipeline & Multi-Format Intelligence](#8-universal-ingestion-pipeline--multi-format-intelligence)
+9. [Transform Invariance & Lightweight Instancing Model](#9-transform-invariance--lightweight-instancing-model)
+10. [Sub-Element Selection & Interactive Inspection Topology](#10-sub-element-selection--interactive-inspection-topology)
+11. [AI Engineering Assistant & Cloud Native Integration](#11-ai-engineering-assistant--cloud-native-integration)
+12. [Verification Test Suite & Performance Matrix](#12-verification-test-suite--performance-matrix)
+13. [Architectural Conclusion](#13-architectural-conclusion)
 
 ---
 
 ## 1. Executive Summary & Core Directives
 
 Modern Web CAD workstations operating over geospatial or 3D viewports frequently suffer from a catastrophic structural failure: conflating **authoritative geometric truth** with **derived rendering meshes**. When CAD systems reduce exact parametric boundaries (such as STEP AP203/214/242 solids) into indiscriminate triangle soups upon ingestion:
-- Planar faces acquire ugly visible diagonal triangulation lines.
+- Planar faces acquire visible diagonal triangulation lines.
 - Sharp boundaries and chamfers degenerate under fixed linear tessellation.
 - Memory consumption explodes across multi-solid compounds.
 - Exact geometric queries (area, volume, surface normal, curvature) are permanently lost.
@@ -73,7 +74,22 @@ Modern Web CAD workstations operating over geospatial or 3D viewports frequently
 
 ---
 
-## 2. Mathematical Invariants & Ontological Separation
+## 2. Root Cause Analysis: Initial Primitive & Part Rendering Failures
+
+An exhaustive investigation into the initial failure where primitives (such as the default 12" cube) and imported STEP parts failed to render revealed three critical failure points:
+
+### 2.1 Missing Dynamic Surface Type Extraction in WebGL / DOM Pipeline
+When primitives or imported STEP parts were added to `CADState`, the frontend viewport relied solely on either a 2D canvas raycasting queue or raw polygon coordinates without properly translating local East-North-Up (ENU) coordinates in linear millimeters to geodetic WGS84 coordinates required by the `<gmp-map-3d>` DOM host. When `gmp-polygon-3d` elements lacked explicit `altitude-mode="absolute"` and geodetic coordinate bindings, the Google Maps 3D engine clipped the geometry below the terrain elevation (95m baseline at Fullerton anchor).
+
+### 2.2 Broken Shading & Depth Testing (FreeCAD Parity Discrepancy)
+Unlike FreeCAD, which shades all solid topological faces as 100% opaque planar and curved surfaces with a dedicated depth buffer, previous iterations rendered models as transparent wireframes or unclosed loops. This caused faces to fail alpha blending tests and disappear against the dark workstation background.
+
+### 2.3 Synchronization Gateway Latency
+The client-side state store (`static/js/state.js`) and viewport controller (`static/js/viewport.js`) previously decoupled geometry updates from DOM element creation. The solution establishes a synchronous `syncNativeDOM` pipeline that converts `CADObject` faces directly into `<gmp-polygon-3d>` elements with full fill opacity and contrasting boundary strokes.
+
+---
+
+## 3. Mathematical Invariants & Ontological Separation
 
 The fundamental invariant governing `GeoParametric3D` is formulated as:
 
@@ -91,11 +107,11 @@ The render mesh $\mathcal{M}_{\text{render}}$ is strictly a derived projection o
 
 ---
 
-## 3. Geospatial & Cartesian Reference Frames
+## 4. Geospatial & Cartesian Reference Frames
 
 To bridge mechanical CAD modeling with real-world geospatial visualization, `GeoParametric3D` implements a high-precision geodetic transformation engine grounded on the **WGS84 Ellipsoid** ($a = 6,378,137.0\,\text{m}$, $f = 1/298.257223563$).
 
-### 3.1 Local Tangent Plane (ENU) to WGS84 Geodetic Formulation
+### 4.1 Local Tangent Plane (ENU) to WGS84 Geodetic Formulation
 Given an anchor origin $(\phi_0, \lambda_0, h_0)$ at Hillcrest Park, Fullerton, CA ($33.8814^\circ\,\text{N}, -117.9213^\circ\,\text{W}, 95.0\,\text{m}$):
 
 $$N(\phi_0) = \frac{a}{\sqrt{1 - e^2 \sin^2 \phi_0}}$$
@@ -107,14 +123,14 @@ $$\phi = \phi_0 + \left(\frac{180}{\pi}\right) \Delta \phi, \quad \lambda = \lam
 
 ---
 
-## 4. Authoritative B-Rep Kernel & Dual-Route Extraction Architecture
+## 5. Authoritative B-Rep Kernel & Dual-Route Extraction Architecture
 
 The solid modeling kernel leverages Open CASCADE Technology (`OCP` / `python-occ`) to unpack complex compounds and STEP assemblies into topological primitives.
 
-### 4.1 Compound & Solid Traversal
+### 5.1 Compound & Solid Traversal
 Compounds are unpacked via `TopExp_Explorer` over `TopAbs_SOLID` and `TopAbs_SHELL`. Multi-solid parts are parallelized across a multi-worker `ThreadPoolExecutor`, yielding individual subpart records with unique UUIDs, source colors, and bounding extents.
 
-### 4.2 Dual-Route Surface Routing
+### 5.2 Dual-Route Surface Routing
 Every `TopoDS_Face` is evaluated using `BRepAdaptor_Surface`:
 
 ```python
@@ -137,25 +153,25 @@ else:
 
 ---
 
-## 5. Tessellation, Adaptive Deflection, and Planar Boundary Preservation
+## 6. Tessellation, Adaptive Deflection, and Planar Boundary Preservation
 
-### 5.1 Dynamic Deflection Scaling
+### 6.1 Dynamic Deflection Scaling
 To prevent polygon explosion on massive structures while preventing coarse polygonization on miniature mechanisms, deflection parameters scale adaptively with shape diagonal extent $D_{\text{diag}}$:
 
 $$\delta_{\text{linear}} = \begin{cases} \max(2.5, D_{\text{diag}} \times 0.003) & D_{\text{diag}} > 5000\,\text{mm} \\ \max(1.0, D_{\text{diag}} \times 0.002) & 1000 < D_{\text{diag}} \le 5000\,\text{mm} \\ \max(0.5, D_{\text{diag}} \times 0.002) & 200 < D_{\text{diag}} \le 1000\,\text{mm} \\ \max(0.2, D_{\text{diag}} \times 0.003) & D_{\text{diag}} \le 200\,\text{mm} \end{cases}$$
 
 $$\delta_{\text{angular}} = \begin{cases} 0.65\,\text{rad} & D_{\text{diag}} > 5000\,\text{mm} \\ 0.52\,\text{rad} & 1000 < D_{\text{diag}} \le 5000\,\text{mm} \\ 0.45\,\text{rad} & 200 < D_{\text{diag}} \le 1000\,\text{mm} \\ 0.40\,\text{rad} & D_{\text{diag}} \le 200\,\text{mm} \end{cases}$$
 
-### 5.2 Planar Wire Discretization & Ear-Clipping Fallback
+### 6.2 Planar Wire Discretization & Ear-Clipping Fallback
 Edge curves bounding planar faces are discretized via `GCPnts_QuasiUniformDeflection`. When non-indexed triangulation is necessary for export or fallback rendering, `triangulate_polygon_3d` applies a robust 3D-to-2D projected ear-clipping algorithm with area preservation.
 
 ---
 
-## 6. Rendering Pipeline: Shading, Depth Buffering & FreeCAD Parity
+## 7. Rendering Pipeline: Solid Shading, Depth Buffering & FreeCAD Parity
 
-A critical finding in previous revisions was that imported solids appeared as unshaded wireframes or semi-transparent phantoms. In CAD systems like FreeCAD, solid bodies are shaded **100% opaque** with full surface fill and hardware depth testing.
+To match desktop CAD systems like FreeCAD, solid bodies are shaded **100% opaque** with full surface fill and hardware depth testing.
 
-### 6.1 Viewport Hybrid Rendering Rules
+### 7.1 Viewport Hybrid Rendering Rules
 1. **Full Solid Coverage:** Every face of every solid (both planar polygons and curved meshes) is rendered with opaque material shading (`opacity: 1.0`).
 2. **Native `<gmp-polygon-3d>` Direct DOM Injection:** Planar faces are mounted directly as `<gmp-polygon-3d>` child elements in `<gmp-map-3d>`. The WebGL engine handles depth testing against photorealistic terrain and adjacent solids.
 3. **Color Metadata Inheritance:** Colors defined in STEP headers (`COLOUR_RGB`) or XCAF documents are assigned directly to the rendered entities, preventing monochromatic grey-outs.
@@ -163,7 +179,7 @@ A critical finding in previous revisions was that imported solids appeared as un
 
 ---
 
-## 7. Universal Ingestion Pipeline & Multi-Format Intelligence
+## 8. Universal Ingestion Pipeline & Multi-Format Intelligence
 
 The universal ingestion engine (`universal_byte_parser.py`) inspects raw file bytes to determine file type, schema, units, and assembly hierarchy before triggering the appropriate parser:
 
@@ -179,7 +195,7 @@ The universal ingestion engine (`universal_byte_parser.py`) inspects raw file by
 
 ---
 
-## 8. Transform Invariance & Lightweight Instancing Model
+## 9. Transform Invariance & Lightweight Instancing Model
 
 Transforms in `GeoParametric3D` operate strictly via 4x4 homogenous matrices $\mathbf{M} \in \mathbb{R}^{4 \times 4}$:
 
@@ -193,7 +209,7 @@ $$\mathbf{M} = \begin{bmatrix} r_{00} & r_{01} & r_{02} & t_x \\ r_{10} & r_{11}
 
 ---
 
-## 9. Sub-Element Selection & Interactive Inspection Topology
+## 10. Sub-Element Selection & Interactive Inspection Topology
 
 `GeoParametric3D` supports four discrete selection granularities with bidirectional Viewport \u2194 Assembly Tree synchronization:
 
@@ -204,7 +220,7 @@ $$\mathbf{M} = \begin{bmatrix} r_{00} & r_{01} & r_{02} & t_x \\ r_{10} & r_{11}
 
 ---
 
-## 10. AI Engineering Assistant & Cloud Native Integration
+## 11. AI Engineering Assistant & Cloud Native Integration
 
 The engineering assistant links the client workstation to Google Cloud Vertex AI (`project='broadcasterfishmap'`, `location='global'`):
 - System prompt injects live CAD context (active parts, material specifications, volume, bounding extents, face counts).
@@ -213,7 +229,7 @@ The engineering assistant links the client workstation to Google Cloud Vertex AI
 
 ---
 
-## 11. Verification Test Suite & Performance Matrix
+## 12. Verification Test Suite & Performance Matrix
 
 | Test Module | Coverage Scope | Verified Directives |
 | :--- | :--- | :--- |
@@ -229,6 +245,6 @@ The engineering assistant links the client workstation to Google Cloud Vertex AI
 
 ---
 
-## 12. Architectural Conclusion
+## 13. Architectural Conclusion
 
 `GeoParametric3D` establishes an authoritative, mathematically rigorous CAD architecture for web and geospatial computing. By maintaining strict ontological separation between B-Rep geometric truth and adaptive rendering representations, the system eliminates rendering artifacts, achieves full solid shading parity with desktop CAD suites like FreeCAD, and delivers sub-millimeter precision across browser and cloud runtime environments.
