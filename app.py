@@ -416,6 +416,8 @@ async def handle_import():
             uploaded_file = files['file']
             filename = uploaded_file.filename or "imported_model.stl"
             content_bytes = uploaded_file.read()
+            if asyncio.iscoroutine(content_bytes):
+                content_bytes = await content_bytes
         else:
             content_bytes = await request.get_data()
             filename = request.headers.get("X-File-Name", "import_stream.bin")

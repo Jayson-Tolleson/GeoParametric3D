@@ -329,7 +329,7 @@ def extract_step_colors_from_header(header_text: str) -> List[str]:
             pass
     return colors
 
-def adapt_out_of_scale_geometry(vertices: np.ndarray, source_unit: str = "mm") -> Tuple[np.ndarray, float, str]:
+def adapt_out_of_scale_geometry(vertices: np.ndarray, source_unit: str = "mm", is_unitless: bool = False) -> Tuple[np.ndarray, float, str]:
     if len(vertices) == 0:
         return vertices, 1.0, source_unit
     
@@ -344,7 +344,8 @@ def adapt_out_of_scale_geometry(vertices: np.ndarray, source_unit: str = "mm") -
     extents = max_v - min_v
     diag = float(np.linalg.norm(extents))
     
-    if 0.0 < diag < 0.15:
+    # Only apply heuristic adaptation if unitless or if explicit scale anomaly is detected
+    if is_unitless and 0.0 < diag < 0.15:
         adapted_scale = 1000.0
         adapted_unit = "meter (adapted to mm)"
         return v_arr * adapted_scale, adapted_scale, adapted_unit
@@ -480,6 +481,8 @@ def validate_and_compact_mesh(
             "final_triangle_count": 0,
             "index_validation": "PASS",
             "finite_coordinates": "PASS",
+            "index_validation_result": "PASS",
+            "finite_coordinates_result": "PASS",
             "coordinate_bounds": compute_bounding_box(np.empty((0, 3), dtype=np.float64)),
             "normals": None,
             "triangle_provenance": []
@@ -1126,7 +1129,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 if len(final_t) == 0 and not s_item.get("planar_polygons"):
                     continue
                     
-                final_v, adapted_s, display_unit = adapt_out_of_scale_geometry(final_v, source_unit=source_u)
+                final_v, adapted_s, display_unit = adapt_out_of_scale_geometry(final_v, source_unit=source_u, is_unitless=False)
                 
                 total_vertices_extracted += len(final_v)
                 total_triangles_extracted += len(final_t)
@@ -1169,7 +1172,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "name": subpart_name,
                     "primitive_type": "solid_imported",
                     "color": part_color,
-                    "material": "Structural Steel A36 (7.85 g/cm\u00b3)",
+                    "material": "Structural Steel A36 (7.85 g/cm³)",
                     "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0],
                     "rotation": [0.0, 0.0, 0.0],
@@ -1283,7 +1286,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         entity_map: Dict[str, Tuple[str, str]] = {e[0]: (e[1], e[2]) for e in entity_matches}
         
         prod_name = "STEP_Part"
-        material_name = "Structural Steel A36 (7.85 g/cm\u00b3)"
+        material_name = "Structural Steel A36 (7.85 g/cm³)"
         header_colors = extract_step_colors_from_header(text[:65536])
         part_color = header_colors[0] if header_colors else "#38bdf8"
         
@@ -1339,7 +1342,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         final_v, final_t, diag = validate_and_compact_mesh(global_verts, global_tris)
         if len(final_t) == 0: return None
         
-        final_v, adapted_s, display_unit = adapt_out_of_scale_geometry(final_v, source_unit=source_u)
+        final_v, adapted_s, display_unit = adapt_out_of_scale_geometry(final_v, source_unit=source_u, is_unitless=False)
             
         body_faces = [enu_to_wgs84(final_v[[i0, i1, i2]], face_id=part_id) for (i0, i1, i2) in final_t]
         bbox = compute_bounding_box(final_v)
@@ -1429,7 +1432,7 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
         unique_q, unique_first_indices, inverse_indices = np.unique(quantized, axis=0, return_index=True, return_inverse=True)
         unique_vertices = clean_v_flat[unique_first_indices]
         
-        unique_vertices, adapted_s, display_u = adapt_out_of_scale_geometry(unique_vertices, "mm")
+        unique_vertices, adapted_s, display_u = adapt_out_of_scale_geometry(unique_vertices, "mm", is_unitless=True)
         
         tri_indices = inverse_indices.reshape(-1, 3)
         non_deg_mask = (tri_indices[:, 0] != tri_indices[:, 1]) & (tri_indices[:, 1] != tri_indices[:, 2]) & (tri_indices[:, 2] != tri_indices[:, 0])
@@ -1719,10 +1722,8 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\
-': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\
-': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
@@ -1960,8 +1961,7 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "\
-".join(step_lines).encode('utf-8')
+    return "\n".join(step_lines).encode('utf-8')
 
 
 # ============================================================
