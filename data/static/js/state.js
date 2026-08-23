@@ -142,9 +142,6 @@ class StateStore {
         return {
           ...obj,
           manifest_id: obj.manifest_id ?? obj.id ?? obj.object_id,
-          opacity: obj.opacity !== undefined ? Number(obj.opacity) : 1.0,
-          color: obj.color || '#38bdf8',
-          material: obj.material || 'Steel',
           geodetic: geo
         };
       });

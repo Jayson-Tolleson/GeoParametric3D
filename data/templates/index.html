@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="night">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoParametric3D - Authoritative B-Rep &amp; Interactive 3D Workstation</title>
+    <link rel="stylesheet" href="/GeoParametric3D/static/css/app.css">
+</head>
+
+<body>
+
+<div id="app-container">
+    <input type="file" id="import-file-input" style="display:none;" accept=".step,.stp,.fcstd,.FCStd,.brep,.xbf,.stl,.3mf,.gltf,.glb,.dae,.wrl,.obj,.ply,*/*">
+
+    <!-- MAIN SLIDING TOP CONTAINER -->
+    <div id="top-slide-container" class="slide-panel top-bar-slide locked-slid-out" data-locked="true">
+        
+        <!-- CAD TOOLBAR WRAPPER -->
+        <section id="toolbar-container">
+            <div class="toolbar-rows-wrapper vertical-scrollable-toolbar">
+                <!-- ROW 1: SESSION, PRIMITIVES & SHARE TOOLBAR -->
+                <div class="toolbar-row">
+                    <div class="toolbar-section">
+                        <span class="section-label">SESSION</span>
+                        <button class="btn tool-btn" id="toolbar-new">📄 New</button>
+                        <button class="btn tool-btn" id="toolbar-open">📂 Open UUID</button>
+                        <button class="btn tool-btn" id="toolbar-save">💾 Save UUID</button>
+                        <button class="btn tool-btn" id="toolbar-import">📥 Universal Import</button>
+                        <button class="btn tool-btn" id="toolbar-export">📤 Export</button>
+                        <button class="btn tool-btn" id="toolbar-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
+                        <button class="btn tool-btn" id="toolbar-redo" title="Redo (Ctrl+Y)">↪ Redo</button>
+                        <button class="btn tool-btn primary-btn" id="toolbar-prefs" title="Workstation Preferences">⚙️ Preferences</button>
+                    </div>
+
+                    <!-- SHARE & CAPTURE TOOLBAR -->
+                    <div class="toolbar-section share-toolbar-section">
+                        <span class="section-label" style="color: #fb923c;">SHARE &amp; CAPTURE</span>
+                        <button class="btn tool-btn share-action-btn" id="btn-share-snapshot" title="Snapshot current 3D viewport and auto-download">📸 Snapshot</button>
+                        <button class="btn tool-btn share-action-btn" id="btn-share-snapshot-all" title="Snapshot viewport with workstation toolbars overlay">🖼️ Snap+Bars</button>
+                        <button class="btn tool-btn rec-btn share-action-btn" id="btn-share-record" title="Record up to 1-minute HD video (.mp4) for Bluesky, Instagram, Facebook">🎥 Record MP4</button>
+                        <button class="btn tool-btn share-action-btn" id="btn-open-share-modal" title="Share guidelines &amp; formatting for Bluesky, Instagram, Facebook">🌐 Share...</button>
+                    </div>
+
+                    <div class="toolbar-section">
+                        <span class="section-label" id="label-primitives-section">12" PRIMITIVES</span>
+                        <button class="btn tool-btn" id="btn-add-box">📦 Box (1')</button>
+                        <button class="btn tool-btn" id="btn-add-cylinder">🛢️ Cylinder (1')</button>
+                        <button class="btn tool-btn" id="btn-add-sphere">🔮 Sphere (1')</button>
+                        <button class="btn tool-btn" id="btn-add-cone">🔺 Cone (1')</button>
+                        <button class="btn tool-btn" id="btn-add-torus">🍩 Torus (1')</button>
+                        <button class="btn tool-btn" id="btn-add-prism">🔷 Prism</button>
+                        <button class="btn tool-btn" id="btn-add-polygon">⬡ Polygon</button>
+                        <button class="btn tool-btn" id="btn-add-ellipse">⬯ Ellipse</button>
+                        <button class="btn tool-btn" id="btn-add-wedge">◢ Wedge</button>
+                        <button class="btn tool-btn" id="btn-add-pyramid">🔻 Pyramid</button>
+                        <button class="btn tool-btn" id="btn-add-ellipsoid">🥚 Ellipsoid</button>
+                        <button class="btn tool-btn" id="btn-add-tube">◎ Tube</button>
+                        <button class="btn tool-btn" id="btn-add-plane">▱ Plane</button>
+                    </div>
+                </div>
+
+                <!-- ROW 2: TRANSFORM, DRAFT, CSNAP & SELECTION -->
+                <div class="toolbar-row">
+                    <div class="toolbar-section">
+                        <span class="section-label">TRANSFORM</span>
+                        <button class="btn tool-btn" id="toolbar-move">✥ Move...</button>
+                        <button class="btn tool-btn" id="toolbar-rotate">🔄 Rotate...</button>
+                        <button class="btn tool-btn" id="toolbar-scale">⤢ Scale...</button>
+                        <button class="btn tool-btn" id="toolbar-duplicate">⧉ Duplicate...</button>
+                        <button class="btn tool-btn" id="toolbar-align">⇥ Align...</button>
+                    </div>
+
+                    <div class="toolbar-section">
+                        <span class="section-label">DRAFT TOOLS</span>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-line" data-tool="line">✏️ Line</button>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-rect" data-tool="rect">▭ Rectangle</button>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-circle" data-tool="circle">◯ Circle</button>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-arc" data-tool="arc">◜ Arc</button>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-polyline" data-tool="polyline">⌇ P-Line</button>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-polygon" data-tool="polygon">⬡ PolyDraft</button>
+                        <button class="btn tool-btn draft-tool-btn" id="btn-draft-ellipse" data-tool="ellipse">⬯ EllipseDraft</button>
+                    </div>
+
+                    <div class="toolbar-section">
+                        <span class="section-label">SNAP &amp; SELECTION</span>
+                        <button class="btn tool-btn" id="btn-toggle-csnap" title="Csnap: Object Edge, Midpoint &amp; Vertex Snap">🎯 Csnap</button>
+                        <button class="btn tool-btn sel-mode-btn active" id="btn-sel-part" data-mode="part">🧊 Part</button>
+                        <button class="btn tool-btn sel-mode-btn" id="btn-sel-face" data-mode="face">▱ Face</button>
+                        <button class="btn tool-btn sel-mode-btn" id="btn-sel-edge" data-mode="edge">╱ Edge</button>
+                        <button class="btn tool-btn sel-mode-btn" id="btn-sel-vertex" data-mode="vertex">• Vertex</button>
+                    </div>
+                </div>
+
+                <!-- ROW 3: FEATURES, BOOLEAN, MODIFY & INSPECT -->
+                <div class="toolbar-row">
+                    <div class="toolbar-section">
+                        <span class="section-label">FEATURES</span>
+                        <button class="btn tool-btn action-trigger-btn" id="btn-feat-extrude" data-action="extrude">⬆ Extrude...</button>
+                        <button class="btn tool-btn action-trigger-btn" id="btn-feat-cross-sections" data-action="cross-sections">◧ Cross Sections...</button>
+                        <button class="btn tool-btn action-trigger-btn" id="btn-feat-hole" data-action="hole">🕳️ Hole...</button>
+                        <button class="btn tool-btn action-trigger-btn" id="btn-feat-revolve" data-action="revolve">↻ Revolve...</button>
+                    </div>
+
+                    <div class="toolbar-section">
+                        <span class="section-label">BOOLEAN</span>
+                        <button class="btn tool-btn" id="btn-bool-union">∪ Union</button>
+                        <button class="btn tool-btn" id="btn-bool-sub">− Subtract</button>
+                        <button class="btn tool-btn" id="btn-bool-intersect">∩ Intersect</button>
+                    </div>
+
+                    <div class="toolbar-section">
+                        <span class="section-label">MODIFY</span>
+                        <button class="btn tool-btn action-trigger-btn" id="btn-mod-fillet" data-action="fillet">╭ Fillet...</button>
+                        <button class="btn tool-btn action-trigger-btn" id="btn-mod-chamfer" data-action="chamfer">◤ Chamfer...</button>
+                    </div>
+
+                    <div class="toolbar-section">
+                        <span class="section-label">INSPECT &amp; CNC</span>
+                        <button class="btn tool-btn" id="btn-insp-measure">📏 Measure</button>
+                        <button class="btn tool-btn" id="btn-insp-mass">⚖️ Mass</button>
+                        <button class="btn tool-btn" id="btn-tool-cnc">🏭 LinuxCNC</button>
+                        <button class="btn tool-btn" id="btn-tool-script">📜 Script</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TOP BAR RETRACT BUTTON -->
+        <button class="slide-retract-btn top-retract-btn" id="btn-top-retract" title="Slide Top Panel">
+            <span class="triangle-icon">▲</span>
+        </button>
+    </div>
+
+    <!-- MAIN CAD WORKSPACE -->
+    <div id="main-workspace">
+
+        <!-- LEFT SLIDING CONTAINER: WORKSPACE TREE -->
+        <aside id="left-slide-container" class="slide-panel sidebar-panel left-panel locked-slid-out" data-locked="true">
+            <div class="panel-header">
+                <h3>Workspace Assembly Tree</h3>
+            </div>
+            <div class="panel-content" id="assembly-tree-container">
+                <ul id="assembly-tree" class="tree-root"></ul>
+            </div>
+            <button class="slide-retract-btn left-retract-btn" id="btn-left-retract" title="Slide Left Panel">
+                <span class="triangle-icon">◀</span>
+            </button>
+        </aside>
+
+        <!-- AUTHORITATIVE CAD VIEWPORT WITH DIRECT <gmp-map-3d> THROUGHPUT -->
+        <main id="viewport-container">
+            <gmp-map-3d id="boatscreen" mode="" center="34.2,-120,120" range="1800000" tilt="42" heading="10" default-ui-hidden></gmp-map-3d>
+            <canvas id="viewport-overlay-canvas" style="position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: auto;"></canvas>
+
+            <!-- SPHERICAL TRACKBALL GIZMO OVERLAY (Enlarged + Neon Glow Border) -->
+            <div id="viewcube-wrapper">
+                <div id="view-gizmo-container" class="trackball-container">
+                    <svg id="spherical-trackball-svg" width="115" height="115" viewBox="0 0 115 115" class="trackball-gizmo">
+                        <defs>
+                            <radialGradient id="viridianSphereGrad" cx="35%" cy="35%" r="65%">
+                                <stop offset="0%" stop-color="#40E0D0" />
+                                <stop offset="50%" stop-color="#00A877" />
+                                <stop offset="100%" stop-color="#004d40" />
+                            </radialGradient>
+                            <filter id="neonBlueGlow" x="-30%" y="-30%" width="160%" height="160%">
+                                <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
+                                <feMerge>
+                                    <feMergeNode in="blur" />
+                                    <feMergeNode in="blur" />
+                                    <feMergeNode in="SourceGraphic" />
+                                </feMerge>
+                            </filter>
+                            <filter id="gizmoShadow" x="-20%" y="-20%" width="140%" height="140%">
+                                <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="#000" flood-opacity="0.5"/>
+                            </filter>
+                        </defs>
+                        <!-- Base Sphere -->
+                        <circle cx="57.5" cy="57.5" r="48" fill="url(#viridianSphereGrad)" filter="url(#gizmoShadow)" stroke="#00251a" stroke-width="2"/>
+                        <!-- Circumferential Neon-Blue Glow Ring -->
+                        <circle cx="57.5" cy="57.5" r="47" fill="none" stroke="#00f3ff" stroke-width="1.8" filter="url(#neonBlueGlow)" opacity="0.9"/>
+                        <circle cx="57.5" cy="57.5" r="48" fill="none" stroke="rgba(255,255,255,0.3)" stroke-dasharray="3,3" stroke-width="1"/>
+                        <g id="gizmo-faces" transform="translate(57.5, 57.5)">
+                            <text id="gizmo-label-top" x="0" y="-28" text-anchor="middle" fill="#e0f2f1" font-size="10" font-weight="bold">TOP</text>
+                            <text id="gizmo-label-bot" x="0" y="36" text-anchor="middle" fill="#e0f2f1" font-size="10" font-weight="bold">BOT</text>
+                            <text id="gizmo-label-w" x="-30" y="4" text-anchor="middle" fill="#e0f2f1" font-size="10" font-weight="bold">W</text>
+                            <text id="gizmo-label-e" x="30" y="4" text-anchor="middle" fill="#e0f2f1" font-size="10" font-weight="bold">E</text>
+                            <text id="gizmo-label-n" x="0" y="-9" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold">N</text>
+                            <text id="gizmo-label-s" x="0" y="18" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold">S</text>
+                        </g>
+                    </svg>
+                    <div class="gizmo-quick-presets">
+                        <span class="preset-chip" data-dir="fit" title="Fit Scene Viewport Content (+25&quot; Margin)">FIT</span>
+                        <span class="preset-chip" data-dir="iso" title="Isometric View">ISO</span>
+                        <span class="preset-chip" data-dir="top" title="Top View">TOP</span>
+                        <span class="preset-chip" data-dir="front" title="Front View">FRONT</span>
+                        <span class="preset-chip" data-dir="side" title="Side View">SIDE</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- RIGHT SLIDING CONTAINER: ACTION PANEL + PROPERTIES + TELEMETRY -->
+        <aside id="right-slide-container" class="slide-panel sidebar-panel right-panel locked-slid-out" data-locked="true">
+            <div class="panel-header">
+                <h3>Properties &amp; Action Panel</h3>
+            </div>
+            <div class="panel-content" id="inspector-container">
+                
+                <!-- TOP ACTION PANEL -->
+                <div id="action-panel-box" class="action-panel-container hidden">
+                    <div class="action-panel-header">
+                        <span class="action-icon">⚡</span>
+                        <h4 id="action-panel-title">Active Feature</h4>
+                        <button class="btn icon-btn mini-close" id="btn-close-action-panel" title="Dismiss Action">✖</button>
+                    </div>
+                    <div id="action-panel-body" class="action-panel-content"></div>
+                    <div class="action-panel-footer">
+                        <button class="btn primary-btn" id="btn-commit-action-panel">Apply / Commit</button>
+                        <button class="btn tool-btn" id="btn-cancel-action-panel">Cancel</button>
+                    </div>
+                </div>
+
+                <div id="sub-element-selection-badge" class="sub-element-badge hidden">
+                    Selection: <span id="sub-elem-type">None</span>
+                </div>
+
+                <div id="no-selection-notice" class="placeholder-text">Select a vertex, continuous edge, face, or entire solid part to inspect properties.</div>
+                
+                <div id="inspector-form" class="hidden">
+                    <div class="form-group">
+                        <label>Part / Entity Name</label>
+                        <input type="text" id="prop-name" class="input-text">
+                    </div>
+                    <div class="form-group">
+                        <label for="prop-material">Engineering Material</label>
+                        <select id="prop-material" class="input-select">
+                            <option value="Steel">Structural Steel A36 (7.85 g/cm³)</option>
+                            <option value="StainlessSteel_316">Stainless Steel 316 (8.00 g/cm³)</option>
+                            <option value="Aluminum_6061">Aluminum 6061-T6 (2.70 g/cm³)</option>
+                            <option value="Aluminum_7075">Aluminum 7075-T6 (2.81 g/cm³)</option>
+                            <option value="Titanium_Grade5">Titanium Ti-6Al-4V Grade 5 (4.43 g/cm³)</option>
+                            <option value="Brass_C360">Free-Cutting Brass C360 (8.50 g/cm³)</option>
+                            <option value="Copper_110">Electrolytic Copper 110 (8.96 g/cm³)</option>
+                            <option value="Bronze_Phosphor">Phosphor Bronze (8.80 g/cm³)</option>
+                            <option value="Inconel_718">Inconel 718 Nickel Superalloy (8.19 g/cm³)</option>
+                            <option value="CastIron_Gray">Gray Cast Iron (7.20 g/cm³)</option>
+                            <option value="ABS">ABS Engineering Plastic (1.04 g/cm³)</option>
+                            <option value="PLA">PLA 3D Filament (1.24 g/cm³)</option>
+                            <option value="PETG">PETG Tough Thermoplastic (1.27 g/cm³)</option>
+                            <option value="Nylon_PA12">Nylon PA12 Polyamide (1.01 g/cm³)</option>
+                            <option value="Polycarbonate">Polycarbonate Lexan (1.20 g/cm³)</option>
+                            <option value="PEEK">PEEK High-Performance Polymer (1.32 g/cm³)</option>
+                            <option value="Delrin_Acetal">Delrin Acetal POM (1.42 g/cm³)</option>
+                            <option value="CarbonFiber_CFRP">Carbon Fiber Composite CFRP (1.60 g/cm³)</option>
+                            <option value="Oak_Wood">Hard Oak Wood (0.75 g/cm³)</option>
+                            <option value="Pine_Wood">Structural Pine (0.50 g/cm³)</option>
+                            <option value="Glass_Borosilicate">Borosilicate Optical Glass (2.23 g/cm³)</option>
+                            <option value="Rubber_Nitrile">Nitrile NBR Rubber (1.20 g/cm³)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label id="lbl-prop-pos">Position (X, Y, Z - in)</label>
+                        <div class="input-row">
+                            <input type="number" id="prop-pos-x" class="manifest-input" data-prop="position" data-idx="0" step="0.1">
+                            <input type="number" id="prop-pos-y" class="manifest-input" data-prop="position" data-idx="1" step="0.1">
+                            <input type="number" id="prop-pos-z" class="manifest-input" data-prop="position" data-idx="2" step="0.1">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label id="lbl-prop-rot">Rotation (X, Y, Z - Degrees °)</label>
+                        <div class="input-row">
+                            <input type="number" id="prop-rot-x" class="manifest-input" data-prop="rotation" data-idx="0" step="1.0">
+                            <input type="number" id="prop-rot-y" class="manifest-input" data-prop="rotation" data-idx="1" step="1.0">
+                            <input type="number" id="prop-rot-z" class="manifest-input" data-prop="rotation" data-idx="2" step="1.0">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label id="lbl-prop-scale">Scale Multipliers (X, Y, Z)</label>
+                        <div class="input-row">
+                            <input type="number" id="prop-scale-x" class="manifest-input" data-prop="scale" data-idx="0" step="0.0001" value="1.0000">
+                            <input type="number" id="prop-scale-y" class="manifest-input" data-prop="scale" data-idx="1" step="0.0001" value="1.0000">
+                            <input type="number" id="prop-scale-z" class="manifest-input" data-prop="scale" data-idx="2" step="0.0001" value="1.0000">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Working Color</label>
+                        <div class="input-row" style="align-items: center;">
+                            <input type="color" id="prop-color" class="input-color" style="height: 32px; width: 60px;">
+                            <span id="prop-color-hex" style="font-size: 11px; font-family: monospace;">#38bdf8</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="prop-opacity">Transparency / Opacity (<span id="opacity-val">100</span>%)</label>
+                        <input type="range" id="prop-opacity" min="0.05" max="1.0" step="0.05" value="1.0" class="input-range">
+                        <div class="property-section">
+                            <div class="section-label">PARAMETRIC DEFINITION</div>
+                            <div id="prop-parameters" class="parameter-grid"></div>
+                            <button class="btn primary-btn" id="btn-apply-parameters" type="button">Apply Geometry Parameters</button>
+                        </div>
+                    </div>
+                    <div class="input-row">
+                        <button class="btn tool-btn" id="btn-hide-selected" style="flex:1;">👁️ Toggle Hide (Space)</button>
+                        <button class="btn danger-btn" id="btn-delete-selected" style="flex:1;">🗑️ Delete (Del)</button>
+                    </div>
+                </div>
+
+                <hr class="divider" style="margin: 12px 0; border: none; border-top: 1px solid var(--border-color);">
+
+                <!-- SYSTEM TELEMETRY -->
+                <div class="telemetry-section">
+                    <h4>System Telemetry</h4>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-item">Objects: <span id="telem-objects">0</span></div>
+                        <div class="telemetry-item">Vertices: <span id="telem-vertices">0</span></div>
+                        <div class="telemetry-item">FPS: <span id="telem-fps">60</span></div>
+                    </div>
+
+                    <div id="server-telemetry-window" class="server-terminal">
+                        <div class="server-terminal-header">
+                            <span class="terminal-dot red"></span>
+                            <span class="terminal-dot yellow"></span>
+                            <span class="terminal-dot green"></span>
+                            <span class="terminal-title">sys_telemetry.log :: workstation</span>
+                        </div>
+                        <div id="server-terminal-logs" class="server-terminal-logs">
+                            <div class="log-line">[SYS] GeoParametric3D authoritative workstation initialized.</div>
+                            <div class="log-line">[STORAGE] Local project persistence active.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <button class="slide-retract-btn right-retract-btn" id="btn-right-retract" title="Slide Right Panel">
+                <span class="triangle-icon">▶</span>
+            </button>
+        </aside>
+
+    </div>
+
+    <!-- PREFERENCES MODAL -->
+    <div id="preferences-modal" class="modal-overlay hidden">
+        <div class="modal-box" style="width: min(520px, 92vw);">
+            <div class="modal-header">
+                <h3>⚙️ Workstation Preferences</h3>
+                <button class="btn icon-btn" id="btn-close-prefs">✖</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="pref-theme-selector">Color Theme</label>
+                    <select id="pref-theme-selector" class="input-select">
+                        <option value="night">Night (Dark Mode)</option>
+                        <option value="day">Day (Light Mode)</option>
+                        <option value="nord">Nord</option>
+                        <option value="nord-hc">Nord HIGH-Contrast</option>
+                        <option value="nord-hc-light">Nord High Contrast --light</option>
+                        <option value="gnome-hc">Gnome High-Contrast</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="pref-unit-selector">Unit System</label>
+                    <select id="pref-unit-selector" class="input-select">
+                        <option value="imperial" selected>US / Imperial (in, ft)</option>
+                        <option value="metric">Metric (mm, cm, m)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Viewport Display &amp; Canvas Options</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;">
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer;">
+                            <input type="checkbox" id="pref-toggle-grid" checked> Show Ground Grid (1-ft Squares)
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer;">
+                            <input type="checkbox" id="pref-toggle-axes" checked> Show XYZ Origin Coordinate Axes
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 11px; cursor: pointer;">
+                            <input type="checkbox" id="pref-toggle-csnap" checked> Enable Csnap (Snap to Vertices &amp; Midpoints)
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Active Project Session UUID</label>
+                    <input type="text" id="pref-session-uuid" class="input-text" readonly>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn primary-btn" id="btn-save-prefs">Save Preferences</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SOCIAL SHARE & RECORDING MODAL -->
+    <div id="share-social-modal" class="modal-overlay hidden">
+        <div class="modal-box" style="width: min(560px, 92vw);">
+            <div class="modal-header">
+                <h3>🌐 Share to Bluesky, Instagram &amp; Facebook</h3>
+                <button class="btn icon-btn" id="btn-close-share-modal">✖</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size: 12px; line-height: 1.5; color: var(--text-color);">
+                    Capture snapshots or record up to 1-minute video of your 3D CAD design. The files download automatically to your device so you can upload directly to social media!
+                </p>
+                <div class="share-cards-grid">
+                    <div class="share-platform-card">
+                        <div class="platform-header">
+                            <span class="platform-icon">🦋</span>
+                            <strong>Bluesky</strong>
+                        </div>
+                        <p>Upload video clips (.mp4) up to 60s or high-res CAD PNG snapshots.</p>
+                        <button class="btn primary-btn mini-btn" id="btn-share-modal-rec">🎥 Record 1m .mp4</button>
+                    </div>
+                    <div class="share-platform-card">
+                        <div class="platform-header">
+                            <span class="platform-icon">📸</span>
+                            <strong>Instagram</strong>
+                        </div>
+                        <p>Perfect for Reels, Stories, or carousel posts of parametric engineering.</p>
+                        <button class="btn tool-btn mini-btn" id="btn-share-modal-snap">📸 Snapshot PNG</button>
+                    </div>
+                    <div class="share-platform-card">
+                        <div class="platform-header">
+                            <span class="platform-icon">📘</span>
+                            <strong>Facebook</strong>
+                        </div>
+                        <p>Share design progress, LinuxCNC digests, and full workstation views.</p>
+                        <button class="btn tool-btn mini-btn" id="btn-share-modal-snap-bars">🖼️ Snap + Toolbars</button>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 8px;">
+                    <label>Keyboard Shortcuts Cheat-Sheet</label>
+                    <div style="font-size: 11px; line-height: 1.6; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); font-family: monospace;">
+                        <div><strong>Ctrl + Arrows:</strong> Pan Viewport (same-direction)</div>
+                        <div><strong>Shift + Arrows:</strong> Orbit / Rotate Viewport</div>
+                        <div><strong>Two-Finger Pinch:</strong> Smooth Zoom &amp; Pan on Touch</div>
+                        <div><strong>Space Bar:</strong> Hide / Toggle Part Visibility</div>
+                        <div><strong>Delete / Backspace:</strong> Erase Selected Part</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn primary-btn" id="btn-close-share-footer">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CNC & SCRIPTING MODALS -->
+    <div id="mass-props-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header">
+                <h3 id="mass-props-title">⚖️ Mass &amp; Physical Properties</h3>
+                <button class="btn icon-btn" id="btn-close-mass-props">✖</button>
+            </div>
+            <div class="modal-body">
+                <div class="telemetry-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="telemetry-item">Total Volume: <span id="mass-val-vol">0 cm³</span></div>
+                    <div class="telemetry-item">Total Mass: <span id="mass-val-g">0 g</span></div>
+                    <div class="telemetry-item">Kilograms: <span id="mass-val-kg">0 kg</span></div>
+                    <div class="telemetry-item">Pounds: <span id="mass-val-lbs">0 lbs</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="cnc-modal" class="modal-overlay hidden">
+        <div class="modal-box" style="width: min(600px, 92vw);">
+            <div class="modal-header">
+                <h3>🏭 LinuxCNC &amp; G-Code Instructions Digest</h3>
+                <button class="btn icon-btn" id="btn-close-cnc">✖</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>LinuxCNC Instructions / Code Input</label>
+                    <textarea id="cnc-instructions-input" class="input-text" style="height: 80px; font-family: monospace;" placeholder="Input custom machining instructions, spindle parameters, or G-Code prompt to digest..."></textarea>
+                </div>
+                <div class="input-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label>Spindle Speed (RPM)</label>
+                        <input type="number" id="cnc-spindle" value="12000" class="input-text">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Feed Rate (mm/min)</label>
+                        <input type="number" id="cnc-feedrate" value="1200" class="input-text">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Digested LinuxCNC G-Code Preview</label>
+                    <textarea id="cnc-gcode-preview" class="input-text" style="height: 150px; font-family: monospace;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer" style="gap: 8px;">
+                <button class="btn tool-btn" id="btn-digest-cnc">⚡ Digest Instructions</button>
+                <button class="btn primary-btn" id="btn-download-gcode">💾 Download .gcode</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="scripting-modal" class="modal-overlay hidden">
+        <div class="modal-box" style="width: min(720px, 94vw);">
+            <div class="modal-header">
+                <h3>📜 Python3 CAD Scripting &amp; CadQuery Engine</h3>
+                <button class="btn icon-btn" id="btn-close-scripting">✖</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="script-code-editor" class="input-text" style="height: 220px; font-family: monospace;"># CadQuery / GeoParametric3D Parametric Script
+import cadquery as cq
+
+result = cq.Workplane("XY").box(304.8, 304.8, 152.4).faces(">Z").hole(50.8)
+</textarea>
+            </div>
+            <div class="modal-footer" style="gap: 8px;">
+                <button class="btn primary-btn" id="btn-run-script">▶ Run Script</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ENGINEERING ASSISTANT -->
+    <div id="assistant-drawer" class="collapsed">
+        <div class="drawer-header">
+            <span>🤖 Engineering Assistant &amp; AI Script Engine</span>
+            <button class="btn icon-btn" id="btn-toggle-assistant">▲</button>
+        </div>
+        <div class="drawer-content">
+            <div id="assistant-messages" class="chat-log" style="height: 140px;"></div>
+            <div class="chat-input-row">
+                <input type="text" id="assistant-input" placeholder="Ask assistant for modeling math, drafting scripts, or drafting assistance...">
+                <button class="btn primary-btn" id="btn-send-assistant">Send</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- APPLICATION MODULES -->
+<script type="module" src="/GeoParametric3D/static/js/wasm_kernel.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/state.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/api.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/commands.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/viewport.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/share.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/ui.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/toolbar.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/assembly_tree.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/ai_assistant.js"></script>
+<script type="module" src="/GeoParametric3D/static/js/app.js"></script>
+</body>
+</html>

@@ -276,9 +276,9 @@ export class UIController {
       updateState();
     };
 
-    setupBar('top-slide-container', 'btn-top-retract', { open: '\u25b2', closed: '\u25bc' });
-    setupBar('left-slide-container', 'btn-left-retract', { open: '\u25c0', closed: '\u25b6' });
-    setupBar('right-slide-container', 'btn-right-retract', { open: '\u25b6', closed: '\u25c0' });
+    setupBar('top-slide-container', 'btn-top-retract', { open: '▲', closed: '▼' });
+    setupBar('left-slide-container', 'btn-left-retract', { open: '◀', closed: '▶' });
+    setupBar('right-slide-container', 'btn-right-retract', { open: '▶', closed: '◀' });
   }
 
   initImportHandler() {
@@ -310,7 +310,7 @@ export class UIController {
         if (res && res.ok && res.document) {
           CADState.setDocument(res.document);
           windowViewport.centerViewport();
-          this.logServerEvent(`[IMPORT SUCCESS] Loaded 3D geometry hierarchy with ${res.document.objects ? res.document.objects.length : 1} body/bodies.`);
+          this.logServerEvent(`[IMPORT SUCCESS] Loaded 3D geometry hierarchy with ${res.document.objects ? res.document.objects.length : 1} body/bodies (Opaque shaded & STEP colored).`);
         } else {
           const err = (res && res.error) || 'Import failed';
           this.logServerEvent(`[IMPORT ERROR] ${err}`);
@@ -470,16 +470,20 @@ export class UIController {
 
     if (propName) {
       propName.addEventListener('change', () => {
-        const sel = CADState.getSelectedObject();
-        if (sel) sel.name = propName.value;
         CADCommands.setProperty('name', propName.value);
       });
     }
+    
+    // Bidirectional Material & Density Wiring
     if (propMaterial) {
       propMaterial.addEventListener('change', () => {
+        const newMat = propMaterial.value;
+        CADCommands.setProperty('material', newMat);
         const sel = CADState.getSelectedObject();
-        if (sel) sel.material = propMaterial.value;
-        CADCommands.setProperty('material', propMaterial.value);
+        if (sel) {
+          sel.material = newMat;
+          this.logServerEvent(`[PROPERTY] Material updated to ${newMat} for ${sel.name}`);
+        }
       });
     }
 
@@ -490,8 +494,6 @@ export class UIController {
       const x = CADState.fromUserLength(xUser);
       const y = CADState.fromUserLength(yUser);
       const z = CADState.fromUserLength(zUser);
-      const sel = CADState.getSelectedObject();
-      if (sel) sel.position = [x, y, z];
       CADCommands.setProperty('position', [x, y, z]);
     };
     if (propPosX) propPosX.addEventListener('change', updatePos);
@@ -502,8 +504,6 @@ export class UIController {
       const x = parseFloat(propRotX ? propRotX.value : 0) || 0;
       const y = parseFloat(propRotY ? propRotY.value : 0) || 0;
       const z = parseFloat(propRotZ ? propRotZ.value : 0) || 0;
-      const sel = CADState.getSelectedObject();
-      if (sel) sel.rotation = [x, y, z];
       CADCommands.setProperty('rotation', [x, y, z]);
     };
     if (propRotX) propRotX.addEventListener('change', updateRot);
@@ -514,45 +514,45 @@ export class UIController {
       const x = parseFloat(propScaleX ? propScaleX.value : 1.0) || 1.0;
       const y = parseFloat(propScaleY ? propScaleY.value : 1.0) || 1.0;
       const z = parseFloat(propScaleZ ? propScaleZ.value : 1.0) || 1.0;
-      const sel = CADState.getSelectedObject();
-      if (sel) sel.scale = [x, y, z];
       CADCommands.setProperty('scale', [x, y, z]);
     };
     if (propScaleX) propScaleX.addEventListener('change', updateScale);
     if (propScaleY) propScaleY.addEventListener('change', updateScale);
     if (propScaleZ) propScaleZ.addEventListener('change', updateScale);
 
+    // Bidirectional Working Color Wiring
     if (propColor) {
       propColor.addEventListener('input', () => {
-        if (propColorHex) propColorHex.textContent = propColor.value;
+        const colVal = propColor.value;
+        if (propColorHex) propColorHex.textContent = colVal;
+        CADCommands.setProperty('color', colVal);
         const sel = CADState.getSelectedObject();
-        if (sel) sel.color = propColor.value;
-        if (window.CADViewport) {
-          window.CADViewport.geometryCacheDirty = true;
-          window.CADViewport.syncNativeDOM();
-          window.CADViewport.render();
+        if (sel) {
+          sel.color = colVal;
+          if (window.CADViewport) {
+            window.CADViewport.geometryCacheDirty = true;
+            window.CADViewport.syncNativeDOM();
+            window.CADViewport.render();
+          }
         }
-      });
-      propColor.addEventListener('change', () => {
-        CADCommands.setProperty('color', propColor.value);
       });
     }
 
+    // Bidirectional Transparency/Opacity Wiring
     if (propOpacity) {
       propOpacity.addEventListener('input', () => {
         const val = parseFloat(propOpacity.value) || 1.0;
         if (opacityVal) opacityVal.textContent = Math.round(val * 100);
-        const sel = CADState.getSelectedObject();
-        if (sel) sel.opacity = val;
-        if (window.CADViewport) {
-          window.CADViewport.geometryCacheDirty = true;
-          window.CADViewport.syncNativeDOM();
-          window.CADViewport.render();
-        }
-      });
-      propOpacity.addEventListener('change', () => {
-        const val = parseFloat(propOpacity.value) || 1.0;
         CADCommands.setProperty('opacity', val);
+        const sel = CADState.getSelectedObject();
+        if (sel) {
+          sel.opacity = val;
+          if (window.CADViewport) {
+            window.CADViewport.geometryCacheDirty = true;
+            window.CADViewport.syncNativeDOM();
+            window.CADViewport.render();
+          }
+        }
       });
     }
 
@@ -619,11 +619,12 @@ export class UIController {
       const matchedObj = objects.find(o => (o.manifest_id === objId || o.id === objId || o.object_id === objId));
       const isSel = objId ? selectedIds.includes(objId) : false;
       const isHidden = matchedObj && matchedObj.visible === false;
+      const partColor = (matchedObj && matchedObj.color) || node.color || '#38bdf8';
 
       li.className = `tree-item ${isSel ? 'selected' : ''} ${isHidden ? 'hidden-part' : ''}`;
       li.style.paddingLeft = `${Math.max(8, depth * 14 + 8)}px`;
       li.innerHTML = `
-        <span class="tree-icon">${isGroup ? '\ud83d\udcc1' : '\u2699\ufe0f'}</span>
+        <span class="tree-icon" style="color: ${partColor};">${isGroup ? '📁' : '⚙️'}</span>
         <span class="tree-name">${node.name || 'Component'} ${isHidden ? '(Hidden)' : ''}</span>
       `;
 
@@ -654,7 +655,7 @@ export class UIController {
         const isHidden = obj.visible === false;
         const li = document.createElement('li');
         li.className = `tree-item ${isSel ? 'selected' : ''} ${isHidden ? 'hidden-part' : ''}`;
-        li.innerHTML = `<span class="tree-icon">\u2699\ufe0f</span><span class="tree-name">${obj.name}</span>`;
+        li.innerHTML = `<span class="tree-icon" style="color: ${obj.color || '#38bdf8'};">⚙️</span><span class="tree-name">${obj.name}</span>`;
         li.addEventListener('click', (e) => {
           CADState.setSelectedId(id, e.ctrlKey || e.metaKey, e.shiftKey);
         });
@@ -681,7 +682,7 @@ export class UIController {
         subElemBadge.classList.remove('hidden');
         if (CADState.state.selectedFaceInfo) {
           const selInfo = CADState.state.selectedFaceInfo;
-          subElemType.textContent = `Face: ${selInfo.face_id} | Type: ${selInfo.surface_type} | Area: ${selInfo.area_mm2.toFixed(2)} mm\u00b2 | Normal: [${selInfo.normal.map(n => n.toFixed(2)).join(', ')}]`;
+          subElemType.textContent = `Face: ${selInfo.face_id} | Type: ${selInfo.surface_type} | Area: ${selInfo.area_mm2.toFixed(2)} mm² | Normal: [${selInfo.normal.map(n => n.toFixed(2)).join(', ')}]`;
         } else {
           subElemType.textContent = `Planar Face #${CADState.state.selectedFaceIndex}`;
         }
@@ -736,8 +737,11 @@ export class UIController {
     if (propScaleY) propScaleY.value = Number(scl[1]).toFixed(4);
     if (propScaleZ) propScaleZ.value = Number(scl[2]).toFixed(4);
 
-    if (propColor) propColor.value = sel.color || '#38bdf8';
-    if (propColorHex) propColorHex.textContent = sel.color || '#38bdf8';
+    // Reflect mapped CAD color and opacity accurately
+    const currentPartColor = sel.color || '#38bdf8';
+    if (propColor) propColor.value = currentPartColor.startsWith('#') ? currentPartColor : '#38bdf8';
+    if (propColorHex) propColorHex.textContent = currentPartColor;
+    
     const op = sel.opacity !== undefined ? sel.opacity : 1.0;
     if (propOpacity) propOpacity.value = op;
     if (opacityVal) opacityVal.textContent = Math.round(op * 100);
@@ -806,7 +810,7 @@ export class UIController {
     if (btnToggle && drawer) {
       btnToggle.addEventListener('click', () => {
         drawer.classList.toggle('collapsed');
-        btnToggle.textContent = drawer.classList.contains('collapsed') ? '\u25b2' : '\u25bc';
+        btnToggle.textContent = drawer.classList.contains('collapsed') ? '▲' : '▼';
       });
     }
 
@@ -827,8 +831,7 @@ export class UIController {
       }
       if (log) {
         const replyText = res.message || res.reply || res.response || 'Command executed.';
-        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\
-/g, '<br>')}</div>`;
+        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\n/g, '<br>')}</div>`;
         log.scrollTop = log.scrollHeight;
       }
     };

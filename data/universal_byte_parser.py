@@ -1,17 +1,17 @@
 """
-GeoParametric3D Universal Geometry Import Normalizer & High-Speed B-Rep Pipeline
+GeoParametric3D Universal Geometry Import Normalizer & High-Speed B-Rep Pipeline (V5.1.0)
 
-Modular Architecture & Ingestion Flow with Detailed Step-by-Step Telemetry (V5.1.0):
+Modular Architecture & Ingestion Flow with Detailed Step-by-Step Telemetry:
   FOREIGN BYTES (Binary, Mesh, Solid B-Rep)
        |
        +--> [STEP 1: FORMAT_DETECTION] Byte signature, Magic byte inspection & Schema Identification
        +--> [STEP 2: UNIT & COLOR INSPECTION] Header SI_UNIT, CONVERSION_BASED_UNIT & COLOUR_RGB resolution
        +--> [STEP 3: OUT-OF-SCALE ADAPTATION] Automatic dimensional sanity check & linear scaling
-       +--> [STEP 4: B-REP_KERNEL_INGESTION] OCCT/OCP / Polyhedron topology recovery with 100% opaque shading & color mapping
+       +--> [STEP 4: B-REP_KERNEL_INGESTION] OCCT/OCP / Polyhedron topology recovery with exact color mapping
        +--> [STEP 5: MULTI_SOLID_COMPOUND_UNPACK] Solid / Shell / Face traversal
        +--> [STEP 6: DUAL_ROUTE_CLASSIFICATION] GeomAbs_Plane -> N-Gon Loops vs Non-Planar -> Adaptive Deflection
        +--> [STEP 7: NUMERIC_COMPACTION] Finite validation, index remapping & zero-copy packing
-       +--> [STEP 8: CANONICAL_ASSEMBLY_PROJECTION] GeoAssembly tree & native <gmp-map-3d> viewport handoff
+       +--> [STEP 8: CANONICAL_ASSEMBLY_PROJECTION] GeoAssembly tree & native <gmp-map-3d> viewport handoff with 100% opaque shading
 """
 
 import re
@@ -305,7 +305,7 @@ def convert_value(val: float, source_unit: str, target_unit: str = CANONICAL_INT
 
 def rgb_to_hex(r: Union[int, float], g: Union[int, float], b: Union[int, float]) -> str:
     if isinstance(r, float) and r <= 1.0 and g <= 1.0 and b <= 1.0:
-        r, g, b = int(round(r * 255)), int(round(g * 255)), int(round(g * 255))
+        r, g, b = int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
     r = max(0, min(255, int(r)))
     g = max(0, min(255, int(g)))
     b = max(0, min(255, int(b)))
@@ -1030,9 +1030,11 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             products = re.findall(r"#(\d+)\s*=\s*PRODUCT\s*\(\s*'([^']*)'\s*,\s*'([^']*)'", header_sample)
             product_names = [p[1] or p[2] or f"Product_{p[0]}" for p in products]
             
+            # Header colors extracted directly from STEP exchange stream (matching CAD definition)
             header_colors = extract_step_colors_from_header(header_sample)
             palette = header_colors if header_colors else ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
 
+            # Parallel process solids with adaptive deflection
             processed_solids = []
             if parallel_process_step_solids is not None:
                 processed_solids = parallel_process_step_solids(shape, scale=scale, worker_count=4)
@@ -1065,7 +1067,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 sub_shape = s_item["solid_shape"]
                 subpart_id = f"part_occt_{s_idx + 1}_{uuid.uuid4().hex[:6]}"
                 subpart_name = product_names[s_idx] if s_idx < len(product_names) else (f"{base_part_name} - Part {s_idx + 1}" if len(processed_solids) > 1 else base_part_name)
-                part_color = extract_occt_shape_color(sub_shape, color_tool) or palette[s_idx % len(palette)]
+                part_color = extract_occt_shape_color(sub_shape, color_tool) or (header_colors[s_idx % len(header_colors)] if header_colors else palette[s_idx % len(palette)])
                 
                 geo_part = GeoPart(subpart_id, subpart_name)
                 exp_face = TopExp_Explorer(sub_shape, TopAbs_FACE)
@@ -1149,6 +1151,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 assembly.add_part(geo_part)
                 inst = assembly.create_instance(geo_part.id, name=geo_part.name)
                 inst.color = part_color
+                inst.opacity = 1.0
                 
                 body_faces = []
                 for t_idx, (i0, i1, i2) in enumerate(final_t):
@@ -1172,6 +1175,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                         pass
                 total_planar_ngons_extracted += len(ngon_loops)
 
+                # Instantiate part strictly as 100% opaque solid body with exact color
                 cad_obj = {
                     "id": geo_part.id,
                     "object_id": geo_part.id,
@@ -1179,7 +1183,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "name": subpart_name,
                     "primitive_type": "solid_imported",
                     "color": part_color,
-                    "material": "Structural Steel A36 (7.85 g/cm\u00b3)",
+                    "material": "Structural Steel A36 (7.85 g/cm³)",
                     "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0],
                     "rotation": [0.0, 0.0, 0.0],
@@ -1292,8 +1296,9 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         entity_matches = entity_pattern.findall(text)
         entity_map: Dict[str, Tuple[str, str]] = {e[0]: (e[1], e[2]) for e in entity_matches}
         
+        # Extract Product metadata & colors directly from header
         prod_name = "STEP_Part"
-        material_name = "Structural Steel A36 (7.85 g/cm\u00b3)"
+        material_name = "Structural Steel A36 (7.85 g/cm³)"
         header_colors = extract_step_colors_from_header(text[:65536])
         part_color = header_colors[0] if header_colors else "#38bdf8"
         
@@ -1322,6 +1327,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         geo_part = GeoPart(part_id, prod_name)
         assembly = GeoAssembly(f"asm_step_{uuid.uuid4().hex[:6]}", filename)
         
+        # Surface analytical recovery
         surfaces_dict = {}
         for eid, (etype, eargs) in entity_map.items():
             if etype == 'CYLINDRICAL_SURFACE':
@@ -1357,6 +1363,7 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         assembly.add_part(geo_part)
         inst = assembly.create_instance(geo_part.id, name=geo_part.name)
         inst.color = part_color
+        inst.opacity = 1.0
         assembly_tree = build_assembly_tree_from_canonical(assembly)
         add_step("CANONICAL_MESH_COMPACTION", (time.perf_counter() - t0) * 1000, f"Triangulated {len(final_t)} faces from {len(final_v)} vertices")
         
@@ -1499,6 +1506,7 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
             assembly.add_part(geo_part)
             inst = assembly.create_instance(geo_part.id, name=comp_name)
             inst.color = part_col
+            inst.opacity = 1.0
             all_faces.extend(comp_faces_wgs)
             
             comp_verts = unique_vertices[np.unique(comp_tris)]
@@ -1559,6 +1567,7 @@ def parse_fcstd(content_bytes: bytes, filename: str = "model.FCStd") -> Optional
                 assembly.add_part(geo_part)
                 inst = assembly.create_instance(geo_part.id, name=obj_name)
                 inst.color = part_color
+                inst.opacity = 1.0
                 all_faces.extend(body_faces)
                 bodies.append({
                     "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": obj_name,
@@ -1604,6 +1613,7 @@ def parse_obj(content_bytes: bytes, filename: str = "model.obj") -> Optional[Dic
             assembly.add_part(geo_part)
             inst = assembly.create_instance(geo_part.id, name=filename)
             inst.color = "#38bdf8"
+            inst.opacity = 1.0
             cad_obj = {
                 "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": filename,
                 "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
@@ -1647,6 +1657,7 @@ def parse_3mf(content_bytes: bytes, filename: str = "model.3mf") -> Optional[Dic
                             assembly.add_part(geo_part)
                             inst = assembly.create_instance(geo_part.id, name=obj_name)
                             inst.color = part_col
+                            inst.opacity = 1.0
                             all_faces.extend(faces_wgs)
                             bodies.append({
                                 "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": obj_name,
@@ -1702,6 +1713,7 @@ def parse_gltf_glb(content_bytes: bytes, filename: str = "model.glb") -> Optiona
                     assembly.add_part(geo_part)
                     inst = assembly.create_instance(geo_part.id, name=mesh_name)
                     inst.color = mesh_color
+                    inst.opacity = 1.0
                     all_faces.extend(faces_wgs)
                     bodies.append({
                         "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": mesh_name,
@@ -1729,10 +1741,8 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\
-': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\
-': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
@@ -1754,6 +1764,7 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             assembly.add_part(geo_part)
             inst = assembly.create_instance(geo_part.id, name=geo_part.name)
             inst.color = "#38bdf8"
+            inst.opacity = 1.0
             return {
                 "headers": {"format": "PLY", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT},
                 "canonical_assembly": assembly.to_dict(), "objects": [{
@@ -1810,6 +1821,7 @@ def parse_dae(content_bytes: bytes, filename: str = "model.dae") -> Optional[Dic
                 assembly.add_part(geo_part)
                 inst = assembly.create_instance(geo_part.id, name=g_name)
                 inst.color = part_col
+                inst.opacity = 1.0
                 all_faces.extend(body_faces)
                 bodies.append({
                     "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": g_name,
@@ -1858,6 +1870,7 @@ def parse_wrl(content_bytes: bytes, filename: str = "model.wrl") -> Optional[Dic
             assembly.add_part(geo_part)
             inst = assembly.create_instance(geo_part.id, name=geo_part.name)
             inst.color = "#38bdf8"
+            inst.opacity = 1.0
             return {
                 "headers": {"format": "VRML_WRL", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT},
                 "canonical_assembly": assembly.to_dict(), "objects": [{
@@ -1889,7 +1902,7 @@ def parse_xbf(content_bytes: bytes, filename: str = "model.xbf") -> Optional[Dic
                 _, r, g, b_col, alpha, tri_count = struct.unpack('<IBBBBI', content_bytes[offset:offset+16])
                 offset += 16
                 color_hex = rgb_to_hex(r, g, b_col)
-                opacity = 1.0
+                opacity = max(0.05, min(1.0, alpha / 255.0)) if alpha > 0 else 1.0
                 part_id = f"body_xbf_{b_idx+1}_{uuid.uuid4().hex[:4]}"
                 geo_part = GeoPart(part_id, body_name)
                 faces_wgs = []
@@ -1907,6 +1920,7 @@ def parse_xbf(content_bytes: bytes, filename: str = "model.xbf") -> Optional[Dic
                     assembly.add_part(geo_part)
                     inst = assembly.create_instance(geo_part.id, name=body_name)
                     inst.color = color_hex
+                    inst.opacity = opacity
                     all_faces.extend(faces_wgs)
                     bodies.append({
                         "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": body_name,
@@ -1970,8 +1984,7 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "\
-".join(step_lines).encode('utf-8')
+    return "\n".join(step_lines).encode('utf-8')
 
 
 # ============================================================
