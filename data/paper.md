@@ -1,153 +1,146 @@
 # MASTER ARCHITECTURAL SPECIFICATION & SYSTEM AUDIT REPORT
 **System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
-**Document Version:** 6.1.0-PROD-GOVERNANCE  
+**Document Version:** 7.0.0-PROD-SPEC  
 **Status:** Authoritative Architectural Governing Standard  
-**Classification:** Core CAD/CAM, B-Rep Kernel & Geospatial Engine Architecture  
+**Classification:** Core CAD/CAM & Geospatial Engine Architecture  
 
 ---
 
-## 1. Executive Summary & Problem Formulation
+## 1. Executive Summary & Forensic Problem Statement
 
-GeoParametric3D represents an advanced paradigm in browser-native Computer-Aided Design (CAD), fusing exact boundary representation (B-Rep) topological solid modeling with the geospatial rendering engine of the Google Maps 3D Web Component (`<gmp-map-3d>`), WebGL canvas overlays, and Vertex AI conversational engineering intelligence (`broadcasterfishmap` / `global`).
+GeoParametric3D fuses exact boundary representation (B-Rep) solid geometry with geospatial rendering in Google Maps 3D Web Component (`<gmp-map-3d>`) and Vertex AI generative engineering intelligence (`broadcasterfishmap` / `global`). Recent user inspection and validation audits identified three high-impact visual and spatial rendering defects:
 
-Recent integration audits and forensic engineering analyses identified core rendering and spatial presentation mandates:
+1. **Ghost / Translucent Artifacts on Parts and Primitives:**
+   - *Observation:* Instantiated primitives (Box, Cylinder, Sphere, Cone, Torus, Prism, Wedge, Tube) and imported CAD bodies rendered in a semi-transparent, ghost-like appearance where rear faces, hidden vertices, and background terrain bled through foreground geometry.
+   - *Root Cause:* Visual opacity fallbacks defaulting to fractional alpha values ($0.15$ to $0.45$), canvas blend mode overlap without hardware depth testing, and premature alpha-blending in `<gmp-polygon-3d>` markup without explicit $1.0$ opacity RGBA / Hex assignments.
 
-1. **Full-Opacity Solid Shading with True N-Gon Planar Faces & Light Edge Outlines:**
-   - *Requirement:* Render solid CAD faces with **100% full opacity** (FreeCAD / STEP standard) to guarantee visual solid volume integrity, eliminate transparent triangle clutter, and ensure hardware depth buffer occlusion.
-   - *N-Gon Rule:* Planar CAD faces (`GeomAbs_Plane`) must be rendered as clean N-Gon polygonal boundary loops (`<gmp-polygon-3d>`), completely eliminating internal triangulation diagonals.
-   - *Edge Outlines:* Surface boundaries must be delineated by clean, light edge lines (stroke styling: `rgba(255, 255, 255, 0.45)` or `#ffffff` with $1.0\text{px}$ -- $1.5\text{px}$ width) to provide crisp CAD boundary definition without visual weight.
+2. **Triangulation Diagonal Pollution & Absence of Clean N-Gon Edges:**
+   - *Observation:* Flat planar surfaces exhibited spurious internal triangular diagonals across quad, circular, and polygonal faces instead of true N-gon perimeters with subtle, distinct boundary lines.
+   - *Root Cause:* Direct pipeline feeding of raw incremental mesh triangle topologies to 2D canvas drawing routines rather than extracting authoritative closed boundary loops (`GeomAbs_Plane` outer and inner wires) with dedicated subtle edge stroke outlines.
 
-2. **Infinite 1' $\times$ 1' (12-Inch / 304.8 mm) XY Plane Reference Grid:**
-   - *Requirement:* The ground plane reference grid on the $Z=0$ datum must extend seamlessly to the visual horizon (infinite grid projection) calibrated to exact $1' \times 1'$ ($12" \times 12"$ or $304.8\text{ mm} \times 304.8\text{ mm}$) major/minor subdivisions with distinct coordinate axes ($X=$ Red, $Y=$ Green, $Z=$ Blue).
+3. **Ground Grid Boundary Clipping at High Zoom Levels:**
+   - *Observation:* The ground construction grid had a fixed finite extent ($\pm 10$ squares), causing it to terminate abruptly when panning or zooming out, losing spatial reference.
+   - *Root Cause:* Hardcoded loop ranges for grid generation rather than an adaptive, camera-frustum-driven infinite grid projector that dynamically evaluates visible ground plane extents while maintaining exact $1' \times 1'$ ($304.8\text{ mm} \times 304.8\text{ mm}$) spacing.
 
-3. **Authoritative Dimensional Invariance & Single-Conversion Unit Pipeline:**
-   - *Requirement:* All spatial coordinates, curve parameters, and topological geometry reside in canonical internal linear millimeters (`CANONICAL_INTERNAL_UNIT = 'mm'`). Transformations (Scale, Rotation, Translation) maintain dimensionless scale factors without mutating global position datums.
-
-4. **Coordinate Snapping (CSnap) Bearing Edge Isolation:**
-   - *Requirement:* Screen-space raycasting isolates the primary bearing edge under cursor contact via face-normal occlusion testing and camera view-angle weighting, preventing false multi-edge captures across adjacent coplanar boundaries.
+This specification establishes the authoritative mathematical, topological, and visual rendering standards to resolve these issues across the entire GeoParametric3D stack.
 
 ---
 
-## 2. True N-Gon Planar Topology vs. Adaptive Curved Surface Route
+## 2. Solid B-Rep Opaque Rendering & Edge Rendering Architecture
 
 ```
 +-------------------------------------------------------------------------------------------------+
-|                                 EXACT CANONICAL GEOMETRY (GeoPart)                              |
-|         GeoAssembly -> GeoInstance -> GeoPart -> GeoSolid -> GeoShell -> GeoFace -> GeoSurface |
-+------------------------------------------------+------------------------------------------------+
-                                                 |
-                                                 v
-                                  [Surface Type Classification]
-                                                 |
-                   +-----------------------------+-----------------------------+
-                   |                                                           |
-                   v (GeomAbs_Plane / SurfaceType.PLANE)                       v (Curved / Freeform / NURBS)
-+-------------------------------------------------+         +-------------------------------------------------+
-|        PLANAR BOUNDARY EXTRACTOR (N-Gon)        |         |          ADAPTIVE TESSELLATION PIPELINE         |
-|  - Extract Outer Boundary Wires                 |         |  - Quasi-Uniform Chordal Deflection             |
-|  - Extract Inner Hole Cutout Wires              |         |  - Adaptive Angular Deflection Scaling          |
-|  - Zero Internal Triangulation Diagonals        |         |  - Compact Float32 / Uint32 Render Buffers      |
-+------------------------+------------------------+         +------------------------+------------------------+
-                         |                                                           |
-                         v                                                           v
-+-------------------------------------------------+         +-------------------------------------------------+
-|            NATIVE <gmp-polygon-3d>              |         |           WATERTIGHT RENDER MESH                |
-|  - 100% Full Opacity Solid Shading              |         |  - 100% Full Opacity Shading                    |
-|  - Light Boundary Edge Outlines (1.0 - 1.5px)   |         |  - Light Silhouette & Feature Edge Lines        |
-|  - Hardware Depth Occlusion on Maps 3D Engine   |         |  - Direct GPU Shading Buffers                   |
-+-------------------------------------------------+         +-------------------------------------------------+
+|                                   CANONICAL GEOMETRY ENGINE                                     |
+|   GeoPart / CADObject -> GeoSolid -> GeoShell -> GeoFace -> GeoSurface                         |
++-------------------------------------------------------------------------------------------------+
+                                                |
+                                                v
++-------------------------------------------------------------------------------------------------+
+|                                 DUAL-ROUTE SURFACE CLASSIFIER                                   |
++-------------------------------------------------------------------------------------------------+
+                        |                                               |
+       [SurfaceType == PLANE / N-Gon]                   [SurfaceType == CURVED / NURBS]
+                        |                                               |
+                        v                                               v
++-----------------------------------------------+   +---------------------------------------------+
+|      PLANAR N-GON BOUNDARY EXTRACTION         |   |         ADAPTIVE TESSELLATOR ENGINE         |
+|  - Outer perimeter wire loop (N vertices)     |   |  - Quasi-uniform chordal deflection         |
+|  - Inner cutout void loops (genus > 0)        |   |  - Smooth vertex normal generation          |
+|  - ZERO internal triangulation diagonals      |   |  - Watertight vertex welding                |
++-----------------------------------------------+   +---------------------------------------------+
+                        |                                               |
+                        +-----------------------+-----------------------+
+                                                |
+                                                v
++-------------------------------------------------------------------------------------------------+
+|                            100% OPAQUE SHADING & DEPTH BUFFERING                                |
+|  - Solid faces: Hex/RGB Color with Alpha = 1.0 (No transparency bleeding)                       |
+|  - Painter's Algorithm Depth Sorting (Back-to-Front on Canvas) + Native GPU Depth Buffer        |
+|  - Subtle Boundary Edge Line Stroke: #ffffff / rgba(255,255,255,0.7) at 1.0px                   |
++-------------------------------------------------------------------------------------------------+
 ```
 
-### 2.1 The N-Gon Extraction Pipeline
-For every face in a solid body, the underlying surface adaptor is queried:
+### 2.1 Full Opacity Enforcement & Shading Invariant
+All solid bodies and parametric primitives in GeoParametric3D must default to $100\%$ opacity (alpha $= 1.0$). Ghost rendering is eliminated by strictly enforcing:
 
-1. **Analytical Plane Extraction:** If `surface_type == GeomAbs_Plane`, the boundary loops are extracted as ordered $3\text{D}$ coordinate rings via `BRepTools_WireExplorer` or canonical `GeoLoop` traversal.
-2. **Outer Perimeter & Inner Voids:**
-   - `outerCoordinates`: Points defining the outer closed boundary polygon.
-   - `innerCoordinates`: Array of coordinate loops defining internal cutouts/holes.
-3. **Full Opacity & Edge Stroke Contract:**
-   - `fillColor`: Solid opaque hex/RGB color (opacity $\alpha = 1.0$).
-   - `strokeColor`: Light subtle edge stroke (`rgba(255, 255, 255, 0.45)` for unselected parts, `#ffffff` for selected parts, `#fbbf24` gold for active selection).
-   - `strokeWidth`: $1.0\text{px}$ to $1.5\text{px}$ ($2.0\text{px}$ on selected bodies).
+1. **Material Fill Invariant:** Face fill colors must be pure hexadecimal (`#38bdf8`, `#34d399`, `#ec4899`, etc.) or opaque RGBA (`rgba(r, g, b, 1.0)`).
+2. **Depth Buffer Occlusion:** When projecting to WebGL canvas or `<gmp-map-3d>`, faces are depth-tested against the scene z-buffer so front-facing solid surfaces completely occlude rear-facing surfaces and internal features.
+3. **Subtle Light Edge Lines:** Every N-gon face perimeter is outlined with a subtle, light boundary edge stroke ($1.0\text{px}$ width, stroke color `rgba(255, 255, 255, 0.75)` or `#ffffff` under selection) providing crisp engineering contrast without visual clutter.
 
----
+### 2.2 Mathematical Definition of Clean N-Gon Boundaries
 
-## 3. Infinite 1' $\times$ 1' (304.8 mm) XY Plane Reference Grid Architecture
+For any planar face $\mathbf{F}_i$ embedded on plane $\Pi: \mathbf{n} \cdot \mathbf{x} + d = 0$, the face boundary is defined by an ordered sequence of coplanar boundary points:
 
-### 3.1 Mathematical Projection of the Infinite Grid
-The ground reference grid is generated dynamically on the $Z=0$ Local Tangent Plane (ENU Cartesian datum). Given viewport camera parameters (center $[\text{lat}_0, \text{lng}_0, \text{alt}_0]$, heading $\theta_{\text{hdg}}$, tilt $\theta_{\text{tilt}}$, range $R$, pan offsets $[\Delta x, \Delta y]$):
+$$\mathbf{P}_{\text{outer}} = \left[ \mathbf{v}_1, \mathbf{v}_2, \dots, \mathbf{v}_N \right], \quad \mathbf{v}_k \in \mathbb{R}^3, \; \mathbf{n} \cdot \mathbf{v}_k + d = 0$$
 
-$$\text{Grid Step } \Delta_{\text{grid}} = 304.8\text{ mm} \equiv 1.0\text{ foot (12 inches)}$$
+accompanied by $M$ interior cutout boundary loops $\mathbf{P}_{\text{inner}, m}$ ($m \in \{1, \dots, M\}$).
 
-$$\text{Minor Subdivisions } = 25.4\text{ mm} \equiv 1.0\text{ inch} \quad (\text{enabled during high-zoom inspection})$$
-
-### 3.2 Dynamic Horizon Extension
-To achieve the visual perception of an infinite ground plane:
-1. The camera frustum unprojects viewport bounding corners to the ground plane $Z=0$.
-2. Grid lines are rendered across the visible bounding rectangle with a dynamic radial fade factor $\kappa(r)$:
-
-$$\kappa(r) = \operatorname{clamp}\left(1.0 - \frac{r - R_{\text{fade\_start}}}{R_{\text{horizon}} - R_{\text{fade\_start}}}, 0.0, 1.0\right)$$
-
-3. Coordinate axes at $(0, 0, 0)$ are rendered with authoritative engineering colors:
-   - $+X$ Axis (East): Red (`#ef4444`)
-   - $+Y$ Axis (North): Green (`#10b981`)
-   - $+Z$ Axis (Up): Blue (`#3b82f6`)
+When rendering to `<gmp-polygon-3d>` or canvas paths, the outer ring is traversed as a closed polygonal boundary without internal chordal decomposition, guaranteeing zero visible triangulation diagonals.
 
 ---
 
-## 4. Dimensional Invariants & Authoritative Unit Pipeline
+## 3. Infinite Ground Grid Architecture ($1' \times 1'$ Foot Spacing)
 
-| Unit Dimension | Canonical Datum | Imperial Equivalent | Scale Ratio to Canonical (mm) |
-| :--- | :--- | :--- | :--- |
-| **Linear Length ($L$)** | $1.0\text{ mm}$ | $\frac{1}{25.4}\text{ in} \approx 0.03937\text{ in}$ | $1.0$ |
-| **1-Foot Standard Block** | $304.8\text{ mm}$ | $12.0\text{ in} = 1.0\text{ ft}$ | $304.8$ |
-| **Area ($L^2$)** | $1.0\text{ mm}^2$ | $\frac{1}{645.16}\text{ in}^2$ | $1.0$ |
-| **Volume ($L^3$)** | $1.0\text{ mm}^3 = 0.001\text{ cm}^3$ | $\frac{1}{16387.064}\text{ in}^3$ | $1.0$ |
-| **Standard Mass Density** | $7.85\text{ g/cm}^3$ | Structural Steel A36 | -- |
+```
+                          [Camera State: Heading, Tilt, Range, Pan]
+                                             |
+                                             v
+                          [Unproject Viewport Viewport Frustum]
+                        Raycast Screen Corners -> Ground Plane (Z = 0)
+                                             |
+                                             v
+                          [Visible Ground Bounding Box (ENU mm)]
+                             [X_min, Y_min] to [X_max, Y_max]
+                                             |
+                                             v
+                          [Align Bounds to 1-Foot Grid Grid Units]
+                        i_min = floor(X_min / 304.8), i_max = ceil(X_max / 304.8)
+                        j_min = floor(Y_min / 304.8), j_max = ceil(Y_max / 304.8)
+                                             |
+                                             v
+                          [Render Infinite Grid Lines on Ground]
+                             - Primary Grid: Step = 304.8 mm (1 foot)
+                             - Accent Origin Axes: X (Red), Y (Green), Z (Blue)
+```
 
-### 4.1 Invariant Rules
-1. **Internal Linear Millimeters:** All B-Rep vertices, wire loops, NURBS control points, and bounding extents are evaluated and stored in millimeters.
-2. **Single Conversion Boundary:** User display preferences (`in` vs `mm`) only modify label formatting and numeric input parsing in the UI. Geometry inside shaders, WebGL, and `<gmp-map-3d>` remains in canonical mm.
-3. **Scale Transformation Invariance:** Scaling an object mutates its dimension multiplier $\mathbf{S} = [s_x, s_y, s_z]$ without shifting its position $\mathbf{P} = [p_x, p_y, p_z]$ in world space:
+### 3.1 Mathematical Formulation of Infinite 1'x1' Grid
 
-$$\mathbf{P}_{\text{after}} \equiv \mathbf{P}_{\text{before}}$$
+1. **Grid Unit Datum:** The grid spacing is strictly constant in canonical linear millimeters:
 
----
+$$\Delta_{\text{grid}} = 304.8\text{ mm} \equiv 1.0\text{ foot} \equiv 12.0\text{ inches}$$
 
-## 5. Coordinate Snapping (CSnap) Bearing Edge Selection
+2. **Frustum-Ground Intersection:** Given viewport width $W$ and height $H$, the 4 viewport corners $(0, 0), (W, 0), (W, H), (0, H)$ are unprojected to the ground plane $Z = 0$ via camera inverse transformation $\mathbf{M}_{\text{view}}^{-1} \mathbf{M}_{\text{proj}}^{-1}$ yielding bounding coordinates:
 
-### 5.1 Disambiguation Algorithm
-When the user hovers near geometry in CSnap mode:
-1. **Screen-Space Projection:** All 3D topological edges are projected to 2D screen coordinates $\mathbf{s}_1, \mathbf{s}_2$.
-2. **Euclidean Distance:** The shortest 2D distance $d_{2\text{D}}$ to the pointer $[u, v]$ is computed.
-3. **Bearing Weight Scoring:**
+$$X_{\text{min}} = \min_{k} x_k, \quad X_{\text{max}} = \max_{k} x_k, \quad Y_{\text{min}} = \min_{k} y_k, \quad Y_{\text{max}} = \max_{k} y_k$$
 
-$$w(\mathbf{E}_k) = \frac{1}{\max(d_{2\text{D}}, 1.0)} \cdot \left(\mathbf{n}_{\text{face}} \cdot \mathbf{v}_{\text{cam}}\right)$$
+3. **Integer Index Extents:** To guarantee infinite continuity without boundary clipping, lines are drawn over the dynamic range:
 
-4. **Occlusion & Back-Face Culling:** Edges belonging to occluded or back-facing faces ($\mathbf{n}_{\text{face}} \cdot \mathbf{v}_{\text{cam}} \le 0$) are rejected, isolating the single true visible bearing edge.
+$$i \in \left[ \left\lfloor \frac{X_{\text{min}} - M}{\Delta_{\text{grid}}} \right\rfloor, \; \left\lceil \frac{X_{\text{max}} + M}{\Delta_{\text{grid}}} \right\rceil \right], \quad j \in \left[ \left\lfloor \frac{Y_{\text{min}} - M}{\Delta_{\text{grid}}} \right\rfloor, \; \left\lceil \frac{Y_{\text{max}} + M}{\Delta_{\text{grid}}} \right\rceil \right]$$
 
----
+where $M$ is a safety margin buffer ($20 \times \Delta_{\text{grid}}$).
 
-## 6. Comprehensive Verification Matrix
-
-| Subsystem | Verification Suite | Target Requirement | Status |
-| :--- | :--- | :--- | :--- |
-| **N-Gon Planar Extraction** | `test_canonical_geometry.py` | Zero triangulation diagonals on plane faces; outer & inner loops intact | **PASS** |
-| **Full Opacity Solid Shading** | `test_cad_architecture.py` | 100% opaque surface fills with hardware depth buffering | **PASS** |
-| **Infinite 1'x1' Grid** | `test_kernel_math.py` | $304.8\text{ mm}$ grid step with XYZ origin axes | **PASS** |
-| **Unit Scale Precision** | `test_cad_architecture.py` | $1' = 304.8\text{ mm}$, $1" = 25.4\text{ mm}$, single-conversion integrity | **PASS** |
-| **Scale Invariance** | `test_workstation_repair.py` | $\mathbf{P}_{\text{before}} = \mathbf{P}_{\text{after}}$ under scale transforms | **PASS** |
-| **STEP B-Rep Ingestion** | `test_cad_architecture.py` | Direct AP203/AP214/AP242 topological parsing | **PASS** |
-| **Vertex AI Assistant** | `app.py` / `command_engine.py` | Google Cloud Vertex AI integration (`broadcasterfishmap` / `global`) | **PASS** |
+4. **Scale-Invariant Visual Clarity:** Even when zooming from a single $1''$ bolt up to a $1000\text{ ft}$ industrial facility, the grid lines maintain exact $1' \times 1'$ unit spacing, providing a steady physical datum.
 
 ---
 
-## 7. Architectural Governance Directives
+## 4. Subsystem Integration & Verification Matrix
 
-1. **B-Rep Primacy:** The exact topological model (`GeoPart`, `GeoFace`, `GeoEdge`) is authoritative; render polygons and tessellated meshes are derived representations.
-2. **Solid Shading Default:** All CAD solid parts must render at $1.0$ opacity with light boundary edge lines to maintain FreeCAD-grade CAD solid definition.
-3. **Infinite Grid Consistency:** The XY reference datum grid must remain calibrated to $1' \times 1'$ ($304.8\text{ mm}$) to serve as an intuitive dimensional grounding plane.
-4. **Dual-Route Rendering:** Never triangulate planar faces when native N-gon polygons (`<gmp-polygon-3d>`) can be dispatched directly to the graphics engine.
+| Subsystem | Requirement | Implementation Standard | Verification | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Solid Rendering** | Full Opacity (No ghosting) | Alpha = 1.0, depth-sorted N-gon fills | Direct visual opacity inspection | **ENFORCED** |
+| **Face Geometry** | True N-Gon Boundaries | Extract outer/inner wire loops; zero diagonals | `test_canonical_box_brep_structure` | **ENFORCED** |
+| **Edge Rendering** | Subtle Light Edge Lines | $1\text{px}$ crisp stroke line (`#ffffff` / `rgba(255,255,255,0.7)`) | Overlay rendering queue test | **ENFORCED** |
+| **Ground Grid** | Infinite 1'x1' Datum | Dynamic frustum ground unprojection; $\Delta = 304.8\text{ mm}$ | `test_scale_dimensionless_invariant` | **ENFORCED** |
+| **Units & Math** | Authoritative Linear mm | Internal datum $= 1.0\text{ mm}$; conversions at UI boundary | `test_unit_conversion_integrity` | **ENFORCED** |
+| **AI Assistant** | Domain CAD Grounding | Vertex AI (`broadcasterfishmap`/`global`) with B-Rep context | `test_cad_architecture.py` | **ENFORCED** |
+
+---
+
+## 5. Architectural Governing Directives
+
+1. **No Semi-Transparent Primitive Instantiations:** All primitive solids (Box, Cylinder, Sphere, etc.) and imported CAD bodies must be added to the state with `opacity: 1.0` and rendered as fully opaque geometric solids.
+2. **Preserve N-Gon Topology at All Render Boundaries:** When planar CAD faces are rendered, internal triangulation must never be displayed. The outer perimeter and inner cutout loops must be drawn as coherent N-gon polygons with subtle boundary strokes.
+3. **Maintain Strict 1-Foot Grid Spacing:** The ground grid must remain fixed at $304.8\text{ mm} \times 304.8\text{ mm}$ ($1' \times 1'$) across all zoom levels and pan coordinates indefinitely.
 
 ---  
-*End of Master Architectural Summary Specification.*
+*End of Master Architectural Specification.*
