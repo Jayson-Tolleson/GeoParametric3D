@@ -793,8 +793,7 @@ export class UIController {
       }
       if (log) {
         const replyText = res.message || res.reply || res.response || 'Command executed.';
-        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\
-/g, '<br>')}</div>`;
+        log.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\n/g, '<br>')}</div>`;
         log.scrollTop = log.scrollHeight;
       }
     };
