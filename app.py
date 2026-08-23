@@ -436,6 +436,8 @@ async def get_telemetry():
         "success": True,
         "system": "GeoParametric3D Workstation",
         "version": "10.0.0-PROD",
+        "canonical_base": "metric_linear_mm",
+        "geodetic_anchor": SITE_ANCHOR,
         "objects": len(objs),
         "objectsCount": len(objs),
         "vertices": total_vertices,
