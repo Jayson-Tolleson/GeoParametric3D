@@ -17,7 +17,6 @@ from canonical_geometry import (
     create_canonical_box_part,
     AdaptiveTessellator,
     LODLevel,
-    MeshPolicy,
     CANONICAL_INTERNAL_UNIT,
     sanitize_for_json,
     GeometryPipelineException
@@ -82,12 +81,7 @@ async def health():
 @app.route('/GeoParametric3D/api/site')
 @app.route('/cad/api/site')
 async def site_info():
-    return json_response({
-        'success': True,
-        'anchor': SITE_ANCHOR,
-        'map3d_enabled': True,
-        'canonical_unit': CANONICAL_INTERNAL_UNIT
-    })
+    return json_response({'success': True, 'anchor': SITE_ANCHOR, 'map3d_enabled': True, 'canonical_unit': CANONICAL_INTERNAL_UNIT})
 
 @app.route('/api/project/new', methods=['POST'])
 @app.route('/GeoParametric3D/api/project/new', methods=['POST'])
@@ -467,6 +461,7 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         ]
         context_snippet = f"\nCurrent Active Assembly Scene ({len(objs)} bodies, canonical unit: {CANONICAL_INTERNAL_UNIT}): " + "; ".join(parts_summary)
 
+    # Vertex AI REST invocation with project broadcasterfishmap and location global
     token = None
     try:
         import google.auth
@@ -475,7 +470,7 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         auth_req = google.auth.transport.requests.Request()
         creds.refresh(auth_req)
         token = creds.token
-    except Exception:
+    except Exception as auth_err:
         token = os.environ.get("VERTEX_AI_BEARER_TOKEN") or None
 
     headers = {'Content-Type': 'application/json'}
@@ -519,12 +514,9 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
 
 @app.route('/api/assistant/chat', methods=['POST'])
 @app.route('/api/assistant', methods=['POST'])
-@app.route('/api/generate', methods=['POST'])
 @app.route('/GeoParametric3D/api/assistant/chat', methods=['POST'])
-@app.route('/GeoParametric3D/api/generate', methods=['POST'])
 @app.route('/cad/api/assistant/chat', methods=['POST'])
 @app.route('/cad/api/assistant', methods=['POST'])
-@app.route('/cad/api/generate', methods=['POST'])
 async def assistant_chat():
     data = (await request.get_json()) or {}
     user_message = (data.get('message', '') or data.get('prompt', '') or '').strip()
