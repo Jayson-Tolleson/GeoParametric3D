@@ -5,12 +5,13 @@ Modular Architecture & Ingestion Flow with Detailed Step-by-Step Telemetry:
   FOREIGN BYTES (Binary, Mesh, Solid B-Rep)
        |
        +--> [STEP 1: FORMAT_DETECTION] Byte signature, Magic byte inspection & Schema Identification
-       +--> [STEP 2: UNIT_INSPECTION] Header SI_UNIT & CONVERSION_BASED_UNIT resolution
-       +--> [STEP 3: B-REP_KERNEL_INGESTION] OCCT/OCP / Polyhedron topology recovery
-       +--> [STEP 4: MULTI_SOLID_COMPOUND_UNPACK] Solid / Shell / Face traversal
-       +--> [STEP 5: DUAL_ROUTE_CLASSIFICATION] GeomAbs_Plane -> N-Gon Loops vs Non-Planar -> Adaptive Deflection
-       +--> [STEP 6: NUMERIC_COMPACTION] Finite validation, index remapping & zero-copy packing
-       +--> [STEP 7: CANONICAL_ASSEMBLY_PROJECTION] GeoAssembly tree & native <gmp-map-3d> viewport handoff
+       +--> [STEP 2: UNIT & COLOR INSPECTION] Header SI_UNIT, CONVERSION_BASED_UNIT & COLOUR_RGB resolution
+       +--> [STEP 3: OUT-OF-SCALE ADAPTATION] Automatic dimensional sanity check & linear scaling
+       +--> [STEP 4: B-REP_KERNEL_INGESTION] OCCT/OCP / Polyhedron topology recovery with color mapping
+       +--> [STEP 5: MULTI_SOLID_COMPOUND_UNPACK] Solid / Shell / Face traversal
+       +--> [STEP 6: DUAL_ROUTE_CLASSIFICATION] GeomAbs_Plane -> N-Gon Loops vs Non-Planar -> Adaptive Deflection
+       +--> [STEP 7: NUMERIC_COMPACTION] Finite validation, index remapping & zero-copy packing
+       +--> [STEP 8: CANONICAL_ASSEMBLY_PROJECTION] GeoAssembly tree & native <gmp-map-3d> viewport handoff
 """
 
 import re
@@ -236,7 +237,7 @@ def extract_occt_shape_color(occ_shape, color_tool) -> Optional[str]:
 
 
 # ============================================================
-# 1. UNIT SUBSYSTEM & COORDINATE NORMALIZATION
+# 1. UNIT & COLOR SUBSYSTEM & COORDINATE NORMALIZATION
 # ============================================================
 
 UNIT_TO_MM_SCALE: Dict[str, float] = {
@@ -309,6 +310,64 @@ def rgb_to_hex(r: Union[int, float], g: Union[int, float], b: Union[int, float])
     g = max(0, min(255, int(g)))
     b = max(0, min(255, int(b)))
     return f"#{r:02x}{g:02x}{b:02x}"
+
+def extract_step_colors_from_header(header_text: str) -> List[str]:
+    """
+    Scans STEP text/header for COLOUR_RGB and colour assignments to provide
+    congruent entity/subpart colors directly from CAD source definitions.
+    """
+    colors = []
+    if not header_text:
+        return colors
+    # Matches #ID = COLOUR_RGB('name', R, G, B);
+    color_matches = re.findall(
+        r"COLOUR_RGB\s*\(\s*(?:'[^']*')?\s*,\s*([\-+]?\d*\.?\d+(?:[eE][\-+]?\d+)?)\s*,\s*([\-+]?\d*\.?\d+(?:[eE][\-+]?\d+)?)\s*,\s*([\-+]?\d*\.?\d+(?:[eE][\-+]?\d+)?)\s*\)",
+        header_text,
+        re.IGNORECASE
+    )
+    for r_str, g_str, b_str in color_matches:
+        try:
+            r_f, g_f, b_f = float(r_str), float(g_str), float(b_str)
+            hex_col = rgb_to_hex(r_f, g_f, b_f)
+            if hex_col not in colors:
+                colors.append(hex_col)
+        except Exception:
+            pass
+    return colors
+
+def adapt_out_of_scale_geometry(vertices: np.ndarray, source_unit: str = "mm") -> Tuple[np.ndarray, float, str]:
+    """
+    Sanity-checks imported model bounding diagonal. If the model is vastly out of scale
+    (e.g., in meters/microns or user CAD exported unitless coordinates), adapts scale factor
+    to maintain canonical millimeter truth and clean interactive viewport rendering.
+    """
+    if len(vertices) == 0:
+        return vertices, 1.0, source_unit
+    
+    v_arr = np.asarray(vertices, dtype=np.float64)
+    finite_mask = np.all(np.isfinite(v_arr), axis=1) if v_arr.ndim == 2 else np.isfinite(v_arr)
+    clean_v = v_arr[finite_mask]
+    if len(clean_v) == 0:
+        return vertices, 1.0, source_unit
+        
+    min_v = np.min(clean_v, axis=0)
+    max_v = np.max(clean_v, axis=0)
+    extents = max_v - min_v
+    diag = float(np.linalg.norm(extents))
+    
+    # Heuristic adaptation:
+    # If extents < 0.2 (likely meters or feet labeled as mm)
+    if 0.0 < diag < 0.15:
+        adapted_scale = 1000.0
+        adapted_unit = "meter (adapted to mm)"
+        return v_arr * adapted_scale, adapted_scale, adapted_unit
+    # If extents > 50,000,000 (likely microns labeled as mm)
+    elif diag > 50000000.0:
+        adapted_scale = 0.001
+        adapted_unit = "micron (adapted to mm)"
+        return v_arr * adapted_scale, adapted_scale, adapted_unit
+        
+    return v_arr, 1.0, source_unit
 
 def enu_to_wgs84(coords, lat0=SITE_ANCHOR['lat'], lon0=SITE_ANCHOR['lng'], alt0=SITE_ANCHOR['altitude'], rot_z=0.0, face_id=None) -> List[Dict[str, Any]]:
     if coords is None or len(coords) == 0:
@@ -664,6 +723,7 @@ class ImportDescriptor:
         self.has_colors = False
         self.has_product_structure = False
         self.metadata: Dict[str, Any] = {}
+        self.colors: List[str] = []
 
     def to_dict(self) -> dict:
         return {
@@ -682,6 +742,7 @@ class ImportDescriptor:
             "has_materials": self.has_materials,
             "has_colors": self.has_colors,
             "has_product_structure": self.has_product_structure,
+            "colors": self.colors,
             "metadata": self.metadata
         }
 
@@ -725,6 +786,7 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.confidence = 1.0
         desc.has_topology = True
         desc.has_assembly = True
+        desc.has_colors = True
         desc.source_units = "mm"
         return desc
         
@@ -732,6 +794,7 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.format = "GLB"
         desc.confidence = 1.0
         desc.has_assembly = True
+        desc.has_colors = True
         desc.source_units = "meter"
         desc.scale_to_canonical = 1000.0
         return desc
@@ -764,12 +827,18 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         detected_unit, detected_scale = detect_step_units(full_text_sample)
         desc.source_units = detected_unit
         desc.scale_to_canonical = detected_scale
+        
+        header_colors = extract_step_colors_from_header(full_text_sample)
+        if header_colors:
+            desc.has_colors = True
+            desc.colors = header_colors
         return desc
 
     if magic4.startswith(b'PK') and (ext == '3mf' or b'3D/3dmodel.model' in content_bytes[:4096]):
         desc.format = "3MF"
         desc.confidence = 0.98
         desc.has_assembly = True
+        desc.has_colors = True
         desc.source_units = "mm"
         return desc
         
@@ -777,6 +846,7 @@ def detect_format_descriptor(content_bytes: bytes, filename: str) -> ImportDescr
         desc.format = "GLTF"
         desc.confidence = 0.95
         desc.has_assembly = True
+        desc.has_colors = True
         desc.source_units = "meter"
         desc.scale_to_canonical = 1000.0
         return desc
@@ -800,6 +870,7 @@ f ' in head_latin):
         desc.format = "DAE"
         desc.confidence = 0.95
         desc.has_assembly = True
+        desc.has_colors = True
         desc.source_units = "meter"
         desc.scale_to_canonical = 1000.0
         return desc
@@ -808,6 +879,7 @@ f ' in head_latin):
         desc.format = "WRL"
         desc.confidence = 0.95
         desc.has_assembly = True
+        desc.has_colors = True
         desc.source_units = "meter"
         desc.scale_to_canonical = 1000.0
         return desc
@@ -877,6 +949,7 @@ def build_assembly_tree_from_canonical(assembly: GeoAssembly, is_multi_comp: boo
             "objectId": inst.part_id if part else inst.id,
             "name": inst.name or (part.name if part else "PartInstance"),
             "type": "PartInstance",
+            "color": getattr(inst, 'color', '#38bdf8'),
             "structure_type": "RECOVERED_ASSEMBLY" if is_multi_comp else ("SOURCE_ASSEMBLY" if len(assembly.parts) > 1 else "SOURCE_BODY"),
             "children": part_children
         })
@@ -962,7 +1035,10 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             
             products = re.findall(r"#(\d+)\s*=\s*PRODUCT\s*\(\s*'([^']*)'\s*,\s*'([^']*)'", header_sample)
             product_names = [p[1] or p[2] or f"Product_{p[0]}" for p in products]
-            palette = ["#38bdf8", "#34d399", "#fbbf24", "#f43f5e", "#a78bfa", "#fb923c", "#06b6d4", "#ec4899"]
+            
+            # Header colors extracted congruent with CAD definition
+            header_colors = extract_step_colors_from_header(header_sample)
+            palette = header_colors if header_colors else ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
 
             # Parallel process solids with adaptive deflection
             processed_solids = []
@@ -1068,6 +1144,9 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 if len(final_t) == 0 and not s_item.get("planar_polygons"):
                     continue
                     
+                # Adapt out of scale geometry if necessary
+                final_v, adapted_s, display_unit = adapt_out_of_scale_geometry(final_v, source_unit=source_u)
+                
                 total_vertices_extracted += len(final_v)
                 total_triangles_extracted += len(final_t)
 
@@ -1077,7 +1156,8 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 geo_part.solids[solid.id] = solid
                 
                 assembly.add_part(geo_part)
-                assembly.create_instance(geo_part.id, name=geo_part.name)
+                inst = assembly.create_instance(geo_part.id, name=geo_part.name)
+                inst.color = part_color
                 
                 body_faces = []
                 for t_idx, (i0, i1, i2) in enumerate(final_t):
@@ -1096,7 +1176,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 ngon_loops = s_item.get("planar_polygons") or []
                 if not ngon_loops and extract_planar_ngons_from_occt is not None:
                     try:
-                        ngon_loops = extract_planar_ngons_from_occt(sub_shape, scale=scale, color=part_color)
+                        ngon_loops = extract_planar_ngons_from_occt(sub_shape, scale=scale * adapted_s, color=part_color)
                     except Exception:
                         pass
                 total_planar_ngons_extracted += len(ngon_loops)
@@ -1108,7 +1188,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "name": subpart_name,
                     "primitive_type": "solid_imported",
                     "color": part_color,
-                    "material": "Steel",
+                    "material": "Structural Steel A36 (7.85 g/cm³)",
                     "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0],
                     "rotation": [0.0, 0.0, 0.0],
@@ -1126,12 +1206,14 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                     "canonical_unit": CANONICAL_INTERNAL_UNIT,
                     "original_unit": source_u,
                     "parameters": {
-                        "facets": len(body_faces),
-                        "kernel": "OCCT",
-                        "subpart_index": s_idx,
-                        "source_units": source_u,
+                        "body_uuid": subpart_id,
                         "canonical_unit": CANONICAL_INTERNAL_UNIT,
-                        "job_uuid": job_uuid
+                        "facets": len(body_faces),
+                        "job_uuid": job_uuid,
+                        "kernel": "OCCT",
+                        "source_units": source_u,
+                        "subpart_index": s_idx,
+                        "color": part_color
                     }
                 }
                 bodies.append(cad_obj)
@@ -1152,6 +1234,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
                 "filename": filename,
                 "source_units": source_u,
                 "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "colors": header_colors,
                 "performance": {"total_elapsed_ms": total_elapsed},
                 "pipeline_steps": steps_log,
                 "diagnostics": {
@@ -1218,9 +1301,12 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
         entity_matches = entity_pattern.findall(text)
         entity_map: Dict[str, Tuple[str, str]] = {e[0]: (e[1], e[2]) for e in entity_matches}
         
-        # Extract Product metadata
+        # Extract Product metadata & colors
         prod_name = "STEP_Part"
-        material_name = "Steel"
+        material_name = "Structural Steel A36 (7.85 g/cm³)"
+        header_colors = extract_step_colors_from_header(text[:65536])
+        part_color = header_colors[0] if header_colors else "#38bdf8"
+        
         for eid, (etype, eargs) in entity_map.items():
             if etype == 'PRODUCT':
                 pm = re.search(r"'([^']*)'", eargs)
@@ -1273,27 +1359,40 @@ def parse_step_brep_structured(content_bytes: bytes, filename: str = "model.step
                 
         final_v, final_t, diag = validate_and_compact_mesh(global_verts, global_tris)
         if len(final_t) == 0: return None
+        
+        final_v, adapted_s, display_unit = adapt_out_of_scale_geometry(final_v, source_unit=source_u)
             
         body_faces = [enu_to_wgs84(final_v[[i0, i1, i2]], face_id=part_id) for (i0, i1, i2) in final_t]
         bbox = compute_bounding_box(final_v)
         
         assembly.add_part(geo_part)
-        assembly.create_instance(geo_part.id, name=geo_part.name)
+        inst = assembly.create_instance(geo_part.id, name=geo_part.name)
+        inst.color = part_color
         assembly_tree = build_assembly_tree_from_canonical(assembly)
         add_step("CANONICAL_MESH_COMPACTION", (time.perf_counter() - t0) * 1000, f"Triangulated {len(final_t)} faces from {len(final_v)} vertices")
         
         cad_obj = {
             "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": prod_name,
-            "primitive_type": "solid_imported", "color": "#38bdf8", "material": material_name, "opacity": 1.0,
+            "primitive_type": "solid_imported", "color": part_color, "material": material_name, "opacity": 1.0,
             "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
             "faces": body_faces, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-            "bounding_box": bbox, "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(body_faces)}
+            "bounding_box": bbox, "canonical_unit": CANONICAL_INTERNAL_UNIT,
+            "parameters": {
+                "body_uuid": part_id,
+                "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "facets": len(body_faces),
+                "job_uuid": f"job_{uuid.uuid4().hex[:8]}",
+                "kernel": "STEP_STRUCTURED",
+                "source_units": source_u,
+                "color": part_color
+            }
         }
         return {
             "headers": {
                 "format": "STEP_STRUCTURED",
                 "filename": filename,
                 "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                "colors": header_colors,
                 "pipeline_steps": steps_log,
                 "diagnostics": diag
             },
@@ -1350,8 +1449,11 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
         quantized = np.round(clean_v_flat * grid_scale).astype(np.int64)
         unique_q, unique_first_indices, inverse_indices = np.unique(quantized, axis=0, return_index=True, return_inverse=True)
         unique_vertices = clean_v_flat[unique_first_indices]
-        tri_indices = inverse_indices.reshape(-1, 3)
         
+        # Out-of-scale adaptation
+        unique_vertices, adapted_s, display_u = adapt_out_of_scale_geometry(unique_vertices, "mm")
+        
+        tri_indices = inverse_indices.reshape(-1, 3)
         non_deg_mask = (tri_indices[:, 0] != tri_indices[:, 1]) & (tri_indices[:, 1] != tri_indices[:, 2]) & (tri_indices[:, 2] != tri_indices[:, 0])
         tri_indices = tri_indices[non_deg_mask]
         if len(tri_indices) == 0: return None
@@ -1385,6 +1487,7 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
                             q.append(neighbor)
                 components.append(comp)
                 
+        palette = ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
         assembly = GeoAssembly(f"asm_stl_{uuid.uuid4().hex[:6]}", filename)
         bodies = []
         all_faces = []
@@ -1392,6 +1495,8 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
         for c_idx, comp_tri_idxs in enumerate(components):
             part_id = f"part_stl_{c_idx+1}_{uuid.uuid4().hex[:4]}"
             comp_name = f"{filename} - Component {c_idx+1}" if len(components) > 1 else filename
+            part_col = palette[c_idx % len(palette)]
+            
             geo_part = GeoPart(part_id, comp_name)
             comp_tris = tri_indices[comp_tri_idxs]
             comp_faces_wgs = [enu_to_wgs84(unique_vertices[tri], face_id=part_id) for tri in comp_tris]
@@ -1405,17 +1510,23 @@ def parse_stl_with_topology_reconstruction(content_bytes: bytes, filename: str =
             geo_part.solids[solid.id] = solid
             
             assembly.add_part(geo_part)
-            assembly.create_instance(geo_part.id, name=comp_name)
+            inst = assembly.create_instance(geo_part.id, name=comp_name)
+            inst.color = part_col
             all_faces.extend(comp_faces_wgs)
             
             comp_verts = unique_vertices[np.unique(comp_tris)]
             bodies.append({
                 "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": comp_name,
-                "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
+                "primitive_type": "solid_imported", "color": part_col, "material": "Steel", "opacity": 1.0,
                 "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                 "faces": comp_faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
                 "bounding_box": compute_bounding_box(comp_verts), "canonical_unit": CANONICAL_INTERNAL_UNIT,
-                "parameters": {"facets": len(comp_faces_wgs)}
+                "parameters": {
+                    "body_uuid": part_id,
+                    "canonical_unit": CANONICAL_INTERNAL_UNIT,
+                    "facets": len(comp_faces_wgs),
+                    "color": part_col
+                }
             })
             
         assembly_tree = build_assembly_tree_from_canonical(assembly, is_multi_comp=len(components) > 1)
@@ -1448,24 +1559,27 @@ def parse_fcstd(content_bytes: bytes, filename: str = "model.FCStd") -> Optional
             assembly = GeoAssembly(f"asm_fcstd_{uuid.uuid4().hex[:6]}", filename)
             bodies = []
             all_faces = []
-            for obj_elem in root.findall('.//Object'):
+            palette = ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
+            for idx, obj_elem in enumerate(root.findall('.//Object')):
                 obj_name = obj_elem.get('name', 'FCStd_Part')
                 part_id = f"part_fc_{uuid.uuid4().hex[:6]}"
+                part_color = palette[idx % len(palette)]
                 from canonical_geometry import create_canonical_box_part
                 geo_part = create_canonical_box_part(304.8, 304.8, 304.8, name=obj_name)
                 geo_part.id = part_id
                 mesh = AdaptiveTessellator().tessellate_part(geo_part, LODLevel.HIGH_LOD3)
                 body_faces = [enu_to_wgs84(mesh.vertices[[i0, i1, i2]], face_id=part_id) for i0, i1, i2 in mesh.indices]
                 assembly.add_part(geo_part)
-                assembly.create_instance(geo_part.id, name=obj_name)
+                inst = assembly.create_instance(geo_part.id, name=obj_name)
+                inst.color = part_color
                 all_faces.extend(body_faces)
                 bodies.append({
                     "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": obj_name,
-                    "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
+                    "primitive_type": "solid_imported", "color": part_color, "material": "Steel", "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                     "faces": body_faces, "brep": geo_part.to_dict(), "canonical_part": geo_part,
                     "bounding_box": compute_bounding_box(mesh.vertices), "canonical_unit": CANONICAL_INTERNAL_UNIT,
-                    "parameters": {"facets": len(body_faces)}
+                    "parameters": {"facets": len(body_faces), "color": part_color, "canonical_unit": CANONICAL_INTERNAL_UNIT}
                 })
             if bodies:
                 return {
@@ -1501,14 +1615,15 @@ def parse_obj(content_bytes: bytes, filename: str = "model.obj") -> Optional[Dic
             solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
             geo_part.solids[solid.id] = solid
             assembly.add_part(geo_part)
-            assembly.create_instance(geo_part.id, name=filename)
+            inst = assembly.create_instance(geo_part.id, name=filename)
+            inst.color = "#38bdf8"
             cad_obj = {
                 "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": filename,
                 "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
                 "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                 "faces": faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
                 "bounding_box": compute_bounding_box(np.array(vertices, dtype=np.float64)), "canonical_unit": CANONICAL_INTERNAL_UNIT,
-                "parameters": {"facets": len(faces_wgs)}
+                "parameters": {"facets": len(faces_wgs), "color": "#38bdf8", "canonical_unit": CANONICAL_INTERNAL_UNIT}
             }
             return {
                 "headers": {"format": "OBJ", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT},
@@ -1528,8 +1643,10 @@ def parse_3mf(content_bytes: bytes, filename: str = "model.3mf") -> Optional[Dic
                     assembly = GeoAssembly(f"asm_3mf_{uuid.uuid4().hex[:6]}", filename)
                     bodies = []
                     all_faces = []
-                    for obj in root.findall('.//{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}object'):
+                    palette = ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
+                    for idx, obj in enumerate(root.findall('.//{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}object')):
                         obj_name = obj.get('name') or f"Part_{obj.get('id', '1')}"
+                        part_col = palette[idx % len(palette)]
                         verts = [[float(v.get('x', 0)), float(v.get('y', 0)), float(v.get('z', 0))] for v in obj.findall('.//{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}vertex')]
                         tris = [[verts[int(t.get('v1'))], verts[int(t.get('v2'))], verts[int(t.get('v3'))]] for t in obj.findall('.//{http://schemas.microsoft.com/3dmanufacturing/core/2015/02}triangle') if max(int(t.get('v1')), int(t.get('v2')), int(t.get('v3'))) < len(verts)]
                         if tris:
@@ -1541,14 +1658,15 @@ def parse_3mf(content_bytes: bytes, filename: str = "model.3mf") -> Optional[Dic
                             solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
                             geo_part.solids[solid.id] = solid
                             assembly.add_part(geo_part)
-                            assembly.create_instance(geo_part.id, name=obj_name)
+                            inst = assembly.create_instance(geo_part.id, name=obj_name)
+                            inst.color = part_col
                             all_faces.extend(faces_wgs)
                             bodies.append({
                                 "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": obj_name,
-                                "primitive_type": "solid_imported", "color": "#38bdf8", "material": "ABS", "opacity": 1.0,
+                                "primitive_type": "solid_imported", "color": part_col, "material": "ABS", "opacity": 1.0,
                                 "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                                 "faces": faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-                                "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs)}
+                                "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs), "color": part_col, "canonical_unit": CANONICAL_INTERNAL_UNIT}
                             })
                     if bodies:
                         return {
@@ -1571,8 +1689,10 @@ def parse_gltf_glb(content_bytes: bytes, filename: str = "model.glb") -> Optiona
             assembly = GeoAssembly(f"asm_glb_{uuid.uuid4().hex[:6]}", filename)
             bodies = []
             all_faces = []
+            palette = ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
             for m_idx, mesh in enumerate(json_data.get('meshes', [])):
                 mesh_name = mesh.get('name') or f"Mesh_{m_idx + 1}"
+                mesh_color = palette[m_idx % len(palette)]
                 mesh_positions = []
                 for prim in mesh.get('primitives', []):
                     pos_idx = prim.get('attributes', {}).get('POSITION')
@@ -1593,14 +1713,15 @@ def parse_gltf_glb(content_bytes: bytes, filename: str = "model.glb") -> Optiona
                     solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
                     geo_part.solids[solid.id] = solid
                     assembly.add_part(geo_part)
-                    assembly.create_instance(geo_part.id, name=mesh_name)
+                    inst = assembly.create_instance(geo_part.id, name=mesh_name)
+                    inst.color = mesh_color
                     all_faces.extend(faces_wgs)
                     bodies.append({
                         "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": mesh_name,
-                        "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
+                        "primitive_type": "solid_imported", "color": mesh_color, "material": "Steel", "opacity": 1.0,
                         "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                         "faces": faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-                        "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs)}
+                        "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs), "color": mesh_color, "canonical_unit": CANONICAL_INTERNAL_UNIT}
                     })
             if bodies:
                 return {
@@ -1621,8 +1742,10 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             if l.startswith('element vertex'): v_count = int(l.split()[-1])
             elif l.startswith('element face'): f_count = int(l.split()[-1])
         header_end_idx = content_bytes.find(b'end_header') + len(b'end_header')
-        if content_bytes[header_end_idx:header_end_idx+1] == b'\n': header_end_idx += 1
-        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\n': header_end_idx += 2
+        if content_bytes[header_end_idx:header_end_idx+1] == b'\
+': header_end_idx += 1
+        elif content_bytes[header_end_idx:header_end_idx+2] == b'\r\
+': header_end_idx += 2
         body = content_bytes[header_end_idx:].decode('utf-8', errors='ignore').splitlines()
         verts = [[float(p[0]), float(p[1]), float(p[2])] for p in (body[i].split() for i in range(min(v_count, len(body)))) if len(p) >= 3]
         faces_wgs = []
@@ -1642,7 +1765,8 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
             solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
             geo_part.solids[solid.id] = solid
             assembly.add_part(geo_part)
-            assembly.create_instance(geo_part.id, name=geo_part.name)
+            inst = assembly.create_instance(geo_part.id, name=geo_part.name)
+            inst.color = "#38bdf8"
             return {
                 "headers": {"format": "PLY", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT},
                 "canonical_assembly": assembly.to_dict(), "objects": [{
@@ -1650,7 +1774,7 @@ def parse_ply(content_bytes: bytes, filename: str = "model.ply") -> Optional[Dic
                     "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                     "faces": faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-                    "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs)}
+                    "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs), "color": "#38bdf8"}
                 }],
                 "assembly_tree": build_assembly_tree_from_canonical(assembly), "faces": faces_wgs
             }
@@ -1667,8 +1791,10 @@ def parse_dae(content_bytes: bytes, filename: str = "model.dae") -> Optional[Dic
         assembly = GeoAssembly(f"asm_dae_{uuid.uuid4().hex[:6]}", filename)
         bodies = []
         all_faces = []
+        palette = ["#34d399", "#ec4899", "#38bdf8", "#fbbf24", "#a78bfa", "#fb923c", "#06b6d4", "#f43f5e"]
         for g_idx, geom in enumerate(root.findall('.//c:library_geometries/c:geometry', ns)):
             g_name = geom.get('name') or geom.get('id') or f"Collada_Mesh_{g_idx+1}"
+            part_col = palette[g_idx % len(palette)]
             mesh = geom.find('c:mesh', ns)
             if mesh is None: continue
             sources = {src.get('id'): np.array([float(v) for v in src.find('c:float_array', ns).text.split()], dtype=np.float64) for src in mesh.findall('c:source', ns) if src.find('c:float_array', ns) is not None and src.find('c:float_array', ns).text}
@@ -1695,14 +1821,15 @@ def parse_dae(content_bytes: bytes, filename: str = "model.dae") -> Optional[Dic
                 solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
                 geo_part.solids[solid.id] = solid
                 assembly.add_part(geo_part)
-                assembly.create_instance(geo_part.id, name=g_name)
+                inst = assembly.create_instance(geo_part.id, name=g_name)
+                inst.color = part_col
                 all_faces.extend(body_faces)
                 bodies.append({
                     "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": g_name,
-                    "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
+                    "primitive_type": "solid_imported", "color": part_col, "material": "Steel", "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                     "faces": body_faces, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-                    "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(body_faces)}
+                    "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(body_faces), "color": part_col}
                 })
         if bodies:
             return {
@@ -1742,7 +1869,8 @@ def parse_wrl(content_bytes: bytes, filename: str = "model.wrl") -> Optional[Dic
             solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
             geo_part.solids[solid.id] = solid
             assembly.add_part(geo_part)
-            assembly.create_instance(geo_part.id, name=geo_part.name)
+            inst = assembly.create_instance(geo_part.id, name=geo_part.name)
+            inst.color = "#38bdf8"
             return {
                 "headers": {"format": "VRML_WRL", "filename": filename, "canonical_unit": CANONICAL_INTERNAL_UNIT},
                 "canonical_assembly": assembly.to_dict(), "objects": [{
@@ -1750,7 +1878,7 @@ def parse_wrl(content_bytes: bytes, filename: str = "model.wrl") -> Optional[Dic
                     "primitive_type": "solid_imported", "color": "#38bdf8", "material": "Steel", "opacity": 1.0,
                     "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                     "faces": faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-                    "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs)}
+                    "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs), "color": "#38bdf8"}
                 }],
                 "assembly_tree": build_assembly_tree_from_canonical(assembly), "faces": faces_wgs
             }
@@ -1790,14 +1918,15 @@ def parse_xbf(content_bytes: bytes, filename: str = "model.xbf") -> Optional[Dic
                     solid = GeoSolid(f"solid_{uuid.uuid4().hex[:4]}", shell.id)
                     geo_part.solids[solid.id] = solid
                     assembly.add_part(geo_part)
-                    assembly.create_instance(geo_part.id, name=body_name)
+                    inst = assembly.create_instance(geo_part.id, name=body_name)
+                    inst.color = color_hex
                     all_faces.extend(faces_wgs)
                     bodies.append({
                         "id": part_id, "object_id": part_id, "manifest_id": part_id, "name": body_name,
                         "primitive_type": "solid_imported", "color": color_hex, "material": "Steel", "opacity": opacity,
                         "position": [0.0, 0.0, 0.0], "rotation": [0.0, 0.0, 0.0], "scale": [1.0, 1.0, 1.0],
                         "faces": faces_wgs, "brep": geo_part.to_dict(), "canonical_part": geo_part,
-                        "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs)}
+                        "canonical_unit": CANONICAL_INTERNAL_UNIT, "parameters": {"facets": len(faces_wgs), "color": color_hex, "canonical_unit": CANONICAL_INTERNAL_UNIT}
                     })
             if bodies:
                 return {
@@ -1854,7 +1983,8 @@ def export_step_bytes(cad_objects: List[Any]) -> bytes:
         step_lines.append(f"#{ent_id} = PRODUCT('{pname}','{pname}','',(#3));")
         ent_id += 1
     step_lines.extend(["ENDSEC;", "END-ISO-10303-21;"])
-    return "\n".join(step_lines).encode('utf-8')
+    return "\
+".join(step_lines).encode('utf-8')
 
 
 # ============================================================
