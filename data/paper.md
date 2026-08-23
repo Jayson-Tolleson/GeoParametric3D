@@ -14,7 +14,7 @@ Recent integration audits, user feedback, and forensic inspection of the renderi
 
 1. **Ghost / Translucent Parts & Default Opacity Flaws:**
    - *Observation:* CAD primitives and imported solid bodies rendered with unintentional translucency ("ghost solids"), causing internal triangle meshes to be visible, washing out material colors, and breaking visual depth perception.
-   - *Root Cause:* CSS and canvas rendering routines defaulted polygon fills to low alpha channels (e.g., `rgba(56, 189, 248, 0.4)`), and the data store lacked strict enforcement of 100% opaque shading ($A=1.0$) for solid CAD bodies. Furthermore, STEP AP214/AP242 presentation styles were losing alpha channel distinction across the serialization boundary.
+   - *Root Cause:* CSS and canvas rendering routines defaulted polygon fills to low alpha channels (e.g., `rgba(56, 189, 248, 0.4)`), and the data store lacked strict enforcement of 100% opaque shading ($A=1.0$) for solid CAD bodies. Furthermore, STEP AP214/AP242 presentation style styles were losing alpha channel distinction across the serialization boundary.
 
 2. **Absence of Crisp Topological Edge Lines ("N-Gon Outlines"):**
    - *Observation:* Flat planar surfaces exhibited internal triangulation diagonals rather than clean physical N-Gon boundaries with subtle, high-contrast boundary edge lines.
@@ -80,7 +80,7 @@ Recent integration audits, user feedback, and forensic inspection of the renderi
 +-------------------------------------------------------------------------------------------------+
 ```
 
----
+--- 
 
 ## 3. Transparency, Material & Appearance Governance
 
