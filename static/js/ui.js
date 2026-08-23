@@ -843,3 +843,50 @@ export class UIController {
 
 export const windowUI = new UIController();
 window.uiController = windowUI;
+    const telemFps = document.getElementById('telem-fps');
+
+    if (telemObj) telemObj.textContent = CADState.state.objects.length;
+    if (telemVert) {
+      const vertCount = CADState.state.objects.reduce((acc, obj) => {
+        return acc + (obj.vertices ? obj.vertices.length / 3 : 0);
+      }, 0);
+      telemVert.textContent = vertCount;
+    }
+    if (telemFps && window.CADViewport) {
+      telemFps.textContent = window.CADViewport.fps || 60;
+    }
+  }
+
+  initAssistant() {
+    const btnSend = document.getElementById('btn-send-assistant');
+    const inputMsg = document.getElementById('assistant-input-msg');
+    const chatLog = document.getElementById('assistant-chat-log');
+
+    if (!btnSend || !inputMsg) return;
+
+    const sendMessage = async () => {
+      const msg = inputMsg.value.trim();
+      if (!msg) return;
+
+      if (chatLog) {
+        chatLog.innerHTML += `<div class="chat-msg user-msg"><strong>You:</strong> ${msg}</div>`;
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+      inputMsg.value = '';
+
+      const res = await CADApi.queryAssistant(msg, CADState.state);
+      if (res && res.response && chatLog) {
+        const replyText = res.message || res.reply || res.response || 'Command executed.';
+        chatLog.innerHTML += `<div style="margin: 4px 0; color: var(--accent-color);">${replyText.replace(/\n/g, '<br>')}</div>`;
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    };
+
+    btnSend.addEventListener('click', sendMessage);
+    inputMsg.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+  }
+}
+
+export const windowUI = new UIController();
