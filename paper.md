@@ -1,8 +1,8 @@
 # MASTER ARCHITECTURAL SPECIFICATION & SYSTEM DESIGN REPORT
 **System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
-**Document Version:** 8.0.0-PROD-CONSOLIDATED  
+**Document Version:** 9.0.0-PROD-CONSOLIDATED  
 **Status:** Authoritative Architectural Governing Standard  
-**Classification:** Core CAD/CAM, Native Google Maps 3D & Geospatial Engine Architecture  
+**Classification:** Core CAD/CAM, Native Google Maps 3D Viewport Engine & Extended Geodetic Grid System  
 
 ---
 
@@ -221,6 +221,7 @@ CSnap eliminates selection ambiguity across adjacent coplanar and non-coplanar b
 2. **B-Rep Authoritative Primacy:** Visual polygons are derived presentations; all geometric operations mutate authoritative B-Rep topology.
 3. **Universal Internal Millimeters:** All geometry is stored in canonical linear millimeters (`mm`). Display unit conversions occur strictly at the UI presentation boundary.
 4. **Exclusive Null Island Geodetic Anchor:** The entire workstation is anchored exclusively to Null Island `[0.0, 0.0, 0.0]` for zero longitudinal distortion and optimal isometric mapping.
+5. **2,000-Foot Ground Grid:** The ground datum grid extends to $\pm 2,000\text{ ft}$ ($\pm 609,600\text{ mm}$) with a 1-foot mesh increment, providing continuous spatial context across sub-millimeter parts and massive assemblies.
 
 ---  
 *End of Master Architectural Specification.*

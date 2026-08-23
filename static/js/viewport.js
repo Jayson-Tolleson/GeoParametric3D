@@ -939,8 +939,8 @@ export class ViewportController {
           const isFaceSel = isObjSel && (selFaceIdx === polyIndex || (CADState.state.selectedFaceInfo && CADState.state.selectedFaceInfo.face_id === poly.face_id));
           const baseColor = poly.color || object.color || '#38bdf8';
           const fillColor = isFaceSel ? 'rgba(251, 191, 36, 1.0)' : (isObjSel && selMode === 'part' ? 'rgba(235, 203, 139, 1.0)' : baseColor);
-          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.7)');
-          const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1);
+          const strokeColor = isFaceSel ? '#ffffff' : (isObjSel ? '#ffffff' : 'rgba(255,255,255,0.85)');
+          const strokeWidth = isFaceSel ? 3 : (isObjSel ? 2 : 1.2);
 
           let polygon = polygonPool.get(key);
           if (polygon) {
@@ -1032,12 +1032,25 @@ export class ViewportController {
     const isImp = CADState.isImperial();
     const gridStep = isImp ? 304.8 : 300.0;
     
-    // 1. Draw Infinite Horizon Ground Grid & XYZ Datum Axes
+    // 1. Draw 2,000-Foot Extended Horizon Ground Grid & XYZ Datum Axes
     if (prefs.showGrid !== false) {
+      const maxGridFt = 2000;
+      const gridExtent = maxGridFt * gridStep;
+      const cam = CADState.state.camera || { range: 1828.8 };
+      const rangeMeters = (cam.range || 1828.8) / 1000.0;
+      
+      // Adaptive stride to maintain sustained 60 FPS while covering 2,000 ft grid
+      let stride = 1;
+      if (rangeMeters > 500) stride = 50;
+      else if (rangeMeters > 150) stride = 20;
+      else if (rangeMeters > 50) stride = 5;
+      else if (rangeMeters > 20) stride = 2;
+
+      const step = gridStep * stride;
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.lineWidth = 1;
-      const gridExtent = gridStep * 35;
-      for (let x = -gridExtent; x <= gridExtent; x += gridStep) {
+
+      for (let x = -gridExtent; x <= gridExtent; x += step) {
         const p1 = this.project3DTo2D(x, -gridExtent, 0);
         const p2 = this.project3DTo2D(x, gridExtent, 0);
         ctx.beginPath();
@@ -1045,7 +1058,7 @@ export class ViewportController {
         ctx.lineTo(p2.px, p2.py);
         ctx.stroke();
       }
-      for (let y = -gridExtent; y <= gridExtent; y += gridStep) {
+      for (let y = -gridExtent; y <= gridExtent; y += step) {
         const p1 = this.project3DTo2D(-gridExtent, y, 0);
         const p2 = this.project3DTo2D(gridExtent, y, 0);
         ctx.beginPath();
