@@ -80,7 +80,7 @@ Recent integration audits, user feedback, and forensic inspection of the renderi
 +-------------------------------------------------------------------------------------------------+
 ```
 
---- 
+---
 
 ## 3. Transparency, Material & Appearance Governance
 
