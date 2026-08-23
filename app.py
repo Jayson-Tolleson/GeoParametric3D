@@ -454,7 +454,8 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
         "Provide substantive, technically precise engineering reasoning, CAD/CAM/CAE guidance, mechanical/structural analysis, "
         "B-Rep topological insight, material selection, and mathematical derivations.\n"
         "B-Rep geometry is authoritative; render meshes are derived representations.\n"
-        "Always distinguish CAD topology (faces, edges, loops, vertices) from render artifacts (triangles, diagonals)."
+        "Always distinguish CAD topology (faces, edges, loops, vertices) from render artifacts (triangles, diagonals).\n"
+        "Internal canonical length units are Linear Millimeters (mm). Always format imperial conversions as: X in (Y ft) [Z mm]."
     )
     
     context_snippet = ""

@@ -719,6 +719,35 @@ def validate_and_compact_mesh(
     
     return final_positions, final_indices, diagnostics
 
+def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) -> Dict[str, Any]:
+    """
+    Computes exact dual-unit metric/imperial metrics from canonical mm bounds.
+    """
+    extents_mm = bounds.get("extents", [0.0, 0.0, 0.0])
+    dx_mm, dy_mm, dz_mm = float(extents_mm[0]), float(extents_mm[1]), float(extents_mm[2])
+    
+    # Linear scale conversions
+    dx_in, dy_in, dz_in = dx_mm / 25.4, dy_mm / 25.4, dz_mm / 25.4
+    dx_ft, dy_ft, dz_ft = dx_mm / 304.8, dy_mm / 304.8, dz_mm / 304.8
+    
+    # Volumetric scale conversion (1 in³ = 16.387064 cm³)
+    volume_in3 = volume_cm3 / 16.387064 if volume_cm3 else 0.0
+    
+    formatted_dim = (
+        f"{dx_in:.3f} × {dy_in:.3f} × {dz_in:.3f} in "
+        f"({dx_ft:.3f} × {dy_ft:.3f} × {dz_ft:.3f} ft) "
+        f"[{dx_mm:.1f} × {dy_mm:.1f} × {dz_mm:.1f} mm]"
+    )
+    
+    return {
+        "dimensions_formatted": formatted_dim,
+        "extents_mm": [dx_mm, dy_mm, dz_mm],
+        "extents_in": [dx_in, dy_in, dz_in],
+        "extents_ft": [dx_ft, dy_ft, dz_ft],
+        "volume_cm3": volume_cm3,
+        "volume_in3": volume_in3
+    }
+
 def compute_bounding_box(positions: np.ndarray) -> Dict[str, Any]:
     if len(positions) == 0:
         return {

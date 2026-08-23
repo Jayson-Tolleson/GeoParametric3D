@@ -484,12 +484,29 @@ export class ViewportController {
   findCsnapCandidate(mx, my, maxPixelDistance = 16) {
     if (CADState.state.preferences.csnap === false) return null;
     let best = null;
-    let bestDist = maxPixelDistance;
+    let bestWeight = -Infinity;
+    const cam = CADState.state.camera || { heading: 30, tilt: 65 };
+    const tiltRad = ((cam.tilt || 65) * Math.PI) / 180;
+    const hdgRad = ((cam.heading || 30) * Math.PI) / 180;
+    const viewVec = [
+      -Math.sin(hdgRad) * Math.sin(tiltRad),
+      -Math.cos(hdgRad) * Math.sin(tiltRad),
+      -Math.cos(tiltRad)
+    ];
+
     for (const snap of this.snapCandidates) {
       const d = Math.hypot(mx - snap.px, my - snap.py);
-      if (d < bestDist) {
-        bestDist = d;
-        best = snap;
+      if (d <= maxPixelDistance) {
+        let normalWeight = 1.0;
+        if (snap.normal && Array.isArray(snap.normal)) {
+          const dot = snap.normal[0] * viewVec[0] + snap.normal[1] * viewVec[1] + snap.normal[2] * viewVec[2];
+          normalWeight = Math.max(0.01, -dot);
+        }
+        const weight = (1.0 / (d + 0.1)) * normalWeight;
+        if (weight > bestWeight) {
+          bestWeight = weight;
+          best = snap;
+        }
       }
     }
     return best;

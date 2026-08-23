@@ -330,14 +330,15 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     const bb = sel.bounding_box || {};
-    const dims = [
-      Math.abs((bb.max?.[0] ?? 0) - (bb.min?.[0] ?? 0)),
-      Math.abs((bb.max?.[1] ?? 0) - (bb.min?.[1] ?? 0)),
-      Math.abs((bb.max?.[2] ?? 0) - (bb.min?.[2] ?? 0))
-    ];
-    const u = CADState.isImperial() ? 'in' : 'mm';
-    const conv = CADState.isImperial() ? 1 / 25.4 : 1;
-    alert(`MEASURE\n${sel.name}\nBounding size: ${dims.map(v => (v * conv).toFixed(3)).join(' × ')} ${u}\nVolume: ${(Number(sel.volume_cm3) || 0).toFixed(2)} cm³`);
+    const dx_mm = Math.abs((bb.max?.[0] ?? 0) - (bb.min?.[0] ?? 0));
+    const dy_mm = Math.abs((bb.max?.[1] ?? 0) - (bb.min?.[1] ?? 0));
+    const dz_mm = Math.abs((bb.max?.[2] ?? 0) - (bb.min?.[2] ?? 0));
+    const dx_in = dx_mm / 25.4, dy_in = dy_mm / 25.4, dz_in = dz_mm / 25.4;
+    const dx_ft = dx_mm / 304.8, dy_ft = dy_mm / 304.8, dz_ft = dz_mm / 304.8;
+    const vol_cm3 = Number(sel.volume_cm3) || 0;
+    const vol_in3 = vol_cm3 / 16.387064;
+    const formattedDim = `${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`;
+    alert(`MEASURE\n${sel.name}\nDimensions: ${formattedDim}\nVolume: ${vol_cm3.toFixed(2)} cm³ (${vol_in3.toFixed(2)} in³)`);
   });
 
   bindBtn('btn-insp-mass', () => {
