@@ -532,7 +532,7 @@ async def assistant_chat():
     if chat_response.requires_action:
         final_message = f"{chat_response.text}\n\n{ai_reply}" if ai_reply else chat_response.text
     else:
-        final_message = ai_reply if ai_reply else f"Engineering Assistant ({PROJECT_ID}/{LOCATION}): Analyzed model state with {len(cad_ctx.get('objects', []))} bodies."
+        final_message = ai_reply if ai_reply else f"[Vertex AI ({PROJECT_ID}/{LOCATION})]: Analyzed active CAD assembly state ({len(cad_ctx.get('objects', []))} bodies). Ready for parametric modeling and B-Rep queries."
         
     return json_response({
         "status": "success",
