@@ -10,7 +10,6 @@ export function applyTheme(themeName) {
   if (window.CADViewport) {
     window.CADViewport.render();
   }
-}
 
 export class UIController {
   constructor() {
@@ -48,7 +47,6 @@ export class UIController {
     if (lblPos) {
       lblPos.textContent = `Position (X, Y, Z - ${unitLabel})`;
     }
-  }
 
   logServerEvent(msg) {
     const logs = document.getElementById('server-terminal-logs');
@@ -121,7 +119,6 @@ export class UIController {
         close();
       });
     }
-  }
 
   initCncModal() {
     const modal = document.getElementById('cnc-modal');
@@ -163,7 +160,6 @@ export class UIController {
         a.click();
       });
     }
-  }
 
   openCncModal() {
     const modal = document.getElementById('cnc-modal');
@@ -202,7 +198,6 @@ export class UIController {
         }
       });
     }
-  }
 
   openScriptModal() {
     const modal = document.getElementById('scripting-modal');
@@ -301,7 +296,6 @@ export class UIController {
             console.warn('[UI] WASM direct parse fallback:', wasmErr);
             res = null;
           }
-        }
 
         if (!res || !res.ok) {
           res = await CADApi.importBytes(file);
@@ -383,7 +377,6 @@ export class UIController {
         dismiss();
       });
     }
-  }
 
   openActionPanel(actionType, title, configFields, extraState = {}) {
     const panelBox = document.getElementById('action-panel-box');
@@ -572,7 +565,6 @@ export class UIController {
             if (inp.dataset.paramLength === 'true' && Number.isFinite(n)) {
               parameters[key] = CADState.fromUserLength(n);
             }
-          }
         });
         await CADCommands.setProperty('parameters', parameters);
       });
@@ -595,7 +587,6 @@ export class UIController {
     if (btnCsnap) {
       btnCsnap.classList.toggle('active-snap-btn', CADState.state.preferences.csnap !== false);
     }
-  }
 
   renderAssemblyTree() {
     const tree = document.getElementById('assembly-tree');
@@ -661,7 +652,6 @@ export class UIController {
         tree.appendChild(li);
       });
     }
-  }
 
   renderInspector() {
     const notice = document.getElementById('no-selection-notice');
@@ -688,7 +678,6 @@ export class UIController {
       } else {
         subElemBadge.classList.add('hidden');
       }
-    }
 
     if (!sel) {
       if (notice) notice.classList.remove('hidden');
@@ -784,8 +773,6 @@ export class UIController {
       if (Object.keys(params).filter(k => !k.startsWith('_')).length === 0) {
         paramHost.innerHTML = '<div class="placeholder-text">No parametric dimensions exposed for this imported body.</div>';
       }
-    }
-  }
 
   renderTelemetry() {
     const telemObj = document.getElementById('telem-objects');
@@ -825,7 +812,6 @@ export class UIController {
     if (telemFps && window.CADViewport) {
       telemFps.textContent = window.CADViewport.fps || 60;
     }
-  }
 
   initAssistant() {
     const btnSend = document.getElementById('btn-send-assistant');
@@ -857,7 +843,6 @@ export class UIController {
       if (e.key === 'Enter') sendMessage();
     });
   }
-}
 
   }
 export const windowUI = new UIController();
