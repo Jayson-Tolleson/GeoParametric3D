@@ -544,6 +544,7 @@ async def assistant_chat():
         "action_intent": chat_response.action_intent if chat_response.requires_action else {},
         "vertex_ai_project": PROJECT_ID,
         "location": LOCATION,
+        "canonical_unit": CANONICAL_INTERNAL_UNIT,
         "document": global_cad_state.to_dict()
     })
 
