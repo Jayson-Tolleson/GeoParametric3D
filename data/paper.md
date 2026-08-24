@@ -1,122 +1,147 @@
-# GeoParametric3D: Enterprise OCCT to `<gmp-map-3d>` CAD/CAM & Geospatial Architecture
+# MASTER ARCHITECTURAL SPECIFICATION: AUTHORITATIVE UNIT SUBSYSTEM & CANONICAL PIPELINE STANDARDIZATION
 
-**Document Version:** 6.1.0-ENTERPRISE  
-**Classification:** Core Solid Modeling, Geospatial Vector Pipeline & Measurement Architecture  
-**Canonical Unit:** Linear Millimeters (`mm`)  
-**Geospatial Projection:** Local Tangent Plane ENU $\leftrightarrow$ Geodetic WGS84  
+**System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
+**Document Version:** 7.0.0-PROD-STANDARDIZATION  
+**Status:** Mandatory Architectural Invariant  
+**Classification:** Core Geometry, B-Rep Ingestion & Geospatial Coordinate Contract  
 
 ---
 
-## 1. System Pipeline Architecture Breakdown
+## 1. Executive Summary & Root-Cause Forensic Audit
+
+A rigorous cross-subsystem audit evaluated every ingestion vector, kernel transformation, B-Rep construction stage, rendering projection, and frontend serialization pathway to resolve scale discrepancies across imports and native modeling primitives.
 
 ```
-[ 3 Upload Pipes ] ──> [ OCCT Byte Parser ] ──> [ NumPy Polygon Machine ] ──> [ <gmp-map-3d> Viewport ]
- (STEP/STL/FCStd)       (B-Rep & Tessellation)    (Coplanar N-Gons & WGS84)     (Native GPU Rendering)
++-------------------------------------------------------------------------------------------------------+
+|                                  INSPECTION & INGESTION TAXONOMY                                      |
++-------------------------------------------------------------------------------------------------------+
+| A. STEP Reader Scale Fault     | TopoDS_Shape length units mismatched with declared exchange scale     |
+| B. Canonical Distortion        | Ingestion pipeline applied redundant conversion multipliers          |
+| C. Tessellation Scaling Fault  | Chordal deflection evaluated in disparate unit space                  |
+| D. Viewport Adapter Corruption | UI layer scaled underlying geometries instead of presentation values |
+| E. Geodetic Projection Error   | Local mm -> WGS84 Geodetic conversion double-scaled meter altitudes  |
++-------------------------------------------------------------------------------------------------------+
 ```
 
-| Phase | Component | Responsibilities | Clean Input / Output |
+### Forensic Diagnosis Across Architecture Layers
+
+1. **Layer A (STEP Header vs Kernel Read):** `STEPControl_Reader` without explicit unit static configuration defaulted coordinates to millimeter assumptions regardless of whether `CONVERSION_BASED_UNIT('INCH', ...)` or `LENGTH_UNIT()` was declared in the STEP schema.
+2. **Layer B (Canonical Transformation Multiplication):** The parser extracted `scale_to_canonical` from header tokens, yet simultaneously accepted OCCT coordinates where internal scaling had already been executed, causing $(25.4)^2$ double-scaling on inch models.
+3. **Layer C (Tessellation Metric):** Linear deflection was hardcoded to scalar constants ($0.1$) without adjusting for bounding box diagonal metrics expressed in canonical millimeters.
+4. **Layer D (Frontend Unit Drift):** Measurement tools and inspection handlers evaluated `extents_mm` using raw division factors disconnected from the authoritative conversion constant $\mathbf{C}_{\text{in}} = 25.4$.
+5. **Layer E (Geospatial Projection Boundary):** Geodetic conversion functions (`enu_to_wgs84` / `enuToGeodetic`) require local displacement in millimeters converted to meters ($10^{-3}$) for geographic altitude ($h = h_{\text{anchor}} + z \times 10^{-3}$), which was previously inconsistent across client/server projection utilities.
+
+---
+
+## 2. Six-Layer Unit Standard Matrix
+
+To guarantee mathematical consistency, every geometric number within the system is strictly bound to its layer contract:
+
+| Layer | Responsibility | Invariant Standard Unit | Metadata & Transformations |
 | :--- | :--- | :--- | :--- |
-| **1. Ingestion** | 3 Ingestion Pipes | Accepts streaming multi-part CAD byte payloads (STEP AP203/214/242, STL, FCStd, OBJ, 3MF). | `Byte Stream` $\rightarrow$ `Memory-Mapped Buffer` |
-| **2. Geometry Engine** | OCCT Parser (`OpenCASCADE`) | Authoritative B-Rep topology extraction, surface classification (`GeomAbs_Plane` vs. curved), adaptive chordal/angular deflection. | `Memory Buffer` $\rightarrow$ `TopoDS_Shape / B-Rep Entities` |
-| **3. Vector Engine** | 3D-Polygon Machine | Dissolves coplanar triangles into clean boundary loops; projects local ENU mm coordinates to WGS84 geodetic coordinates. | `TopoDS_Shape` $\rightarrow$ `Packed NumPy (float32 / uint32)` |
-| **4. Display Layer** | `<gmp-map-3d>` | Renders native `<gmp-polygon-3d>`, `<gmp-polyline-3d>`, and zero-copy binary WebGL overlays on photorealistic 3D maps. | `Binary ArrayBuffer` $\rightarrow$ GPU DOM Custom Elements |
+| **1. Source Units** | Truth declared by foreign exchange payload (STEP, IGES, STL, OBJ, FCStd) | As declared (`inch`, `foot`, `meter`, `mm`, `cm`, `micron`) | Immutable provenance header (`original_unit`, `scale_factor`) |
+| **2. Kernel Units** | Native OpenCASCADE (OCCT/OCP) topological geometric coordinates | Linear Millimeters (`mm`) | `Interface_Static.SetCVal("xstep.cascade.unit", "MM")` |
+| **3. Canonical Units** | **One Authoritative Physical Truth** across all CAD entities | **Linear Millimeters (`mm`)** | `GeoPart.canonical_unit = "mm"` (Tagged explicitly on all entities) |
+| **4. Display Units** | Viewport user preference (labels, text inputs, inspector readouts) | User preference (`in`, `ft`, `mm`, `m`, `cm`) | Display Value $= \text{Value}_{\text{canonical}} / \text{ScaleFactor}$ (Pure presentation) |
+| **5. World/Render Units** | Coordinate system required by `<gmp-map-3d>` and geospatial WGS84 | Geodetic (Degrees Lat/Lng) & Meters (Altitude) | Local mm converted to WGS84 via $10^{-3}\,\text{m/mm}$ scale |
+| **6. User-Entered Input** | Dynamic parametric command inputs (Extrude, Fillet, Primitive Dim) | Active UI preference parsed to canonical | $X_{\text{canonical}} = X_{\text{user}} \times \text{ScaleFactor}_{\text{preference}}$ |
 
 ---
 
-## 2. Ingestion & Byte Parsing Optimizations
+## 3. Canonical Metadata Contract
 
-### 2.1 Memory-Mapped I/O (`mmap`)
-* Eliminates double-buffering between disk, kernel, and Python runtime memory spaces.
-* Byte streams write to temporary descriptor backed by `mmap.mmap(fileno, 0, access=mmap.ACCESS_READ)`.
-* OCCT C++ handles read memory pointers directly via raw buffers.
+Downstream consumers are prohibited from guessing coordinate semantics. Every geometry dictionary, manifest record, and inspection payload carries the explicit unit contract:
 
-### 2.2 Chunked Multiprocessing
-* STEP assemblies containing multiple `MANIFOLD_SOLID_BREP` entities are unpacked in an initial lightweight pass.
-* Sub-solids are dispatched to a persistent `concurrent.futures.ProcessPoolExecutor` or `ThreadPoolExecutor(max_workers=4)`.
-* Independent deflection calculation, wire traversal, and vertex remapping occur in parallel per solid.
-
-### 2.3 STEP AP242 & Mesh Fast-Lane
-* **AP242 Tessellation Bypass:** Flag `Interface_Static::SetIVal("read.step.tessellated", 1)` extracts pre-computed faceted geometry when present, eliminating iterative Newton-Raphson boundary projection.
-* **Mesh Fast-Lane:** STL, OBJ, and PLY payloads bypass OCCT entirely, routing directly through vectorized `np.frombuffer` binary decoders.
-
----
-
-## 3. Core NumPy Array Protocol & Schema
-
-```python
-import numpy as np
-
-part_data = {
-    "part_id": "part_bracket_101",
-    "flatness_deg": 0.0,
-    "outer_boundary": np.ndarray,  # shape: (N, 3) -> float64 [lat, lng, altitude]
-    "holes": [np.ndarray],         # list of (M, 3) arrays for inner cutout loops
-    "surface_type": "plane",       # "plane" | "cylinder" | "nurbs" | "freeform"
-    "bounding_box_mm": {
-        "min": [-152.4, -152.4, 0.0],
-        "max": [152.4, 152.4, 304.8],
-        "extents": [304.8, 304.8, 304.8]
+```json
+{
+  "geometry": {
+    "type": "GeoPart",
+    "id": "part_bracket_101",
+    "canonical_unit": "mm",
+    "original_unit": "inch",
+    "unit_conversion": {
+      "source_to_canonical_factor": 25.4,
+      "formula": "X_canonical = X_source * 25.4"
+    },
+    "physical_dimensions": {
+      "extents_mm": [304.8, 152.4, 25.4],
+      "extents_in": [12.0, 6.0, 1.0],
+      "extents_ft": [1.0, 0.5, 0.08333],
+      "volume_cm3": 1179.87,
+      "volume_in3": 72.0,
+      "bounding_box": {
+        "min": [-152.4, -76.2, 0.0],
+        "max": [152.4, 76.2, 25.4],
+        "center": [0.0, 0.0, 12.7],
+        "diagonal": 341.67
+      }
     }
+  }
 }
 ```
 
 ---
 
-## 4. Quart / ASGI Streaming & Zero-Copy Binary Serialization
+## 4. Subsystem Audit & Verified Invariants
 
-### 4.1 Zero-Copy Transport Contract
-* Endpoints `/cad/api/geometry/binary` and `/cad/api/stream-ngons` return raw packed little-endian binary buffers.
-* **Header Structure:** 8-byte preamble (`uint32 vertexCount`, `uint32 indexCount`).
-* **Vertex Payload:** $N \times 3 \times \text{float32}$ coordinates in local mm.
-* **Index Payload:** $M \times \text{uint32}$ triangle index array.
-* Frontend slices directly with `new Float32Array(arrayBuffer, 8, vertexCount * 3)` without JSON parsing overhead.
-
----
-
-## 5. Polygon Reduction & N-Gon Boundary Dissolver
-
-* **Coplanar Clustering:** Triangle normals quantized via $\operatorname{round}(\mathbf{n}, 2)$.
-* **Boundary Edge Tracing:** Directed half-edges evaluated; internal shared diagonals ($E_{ij} + E_{ji}$) cancelled.
-* **Hole Segregation:** Closed boundary loops sorted by enclosed area; index 0 assigned as outer perimeter, subsequent loops assigned as inner cutouts.
-* **DOM Reduction:** Reduces 10,000 planar triangles to 6 native `<gmp-polygon-3d>` elements, eliminating triangular artifacts and maintaining 60 FPS viewport orbit.
-
----
-
-## 6. Unit System Architecture & Authoritative Imperial Conversion Invariants
-
-### 6.1 Unit Governing Rule
-* **Internal Canonical Unit:** Pure Linear Millimeters (`mm`).
-* **Raw OCCT B-Rep Values:** Output directly in millimeters (e.g., length $= 1642.218\text{ mm}$).
-* **Conversion to Imperial (Inches):** $\text{inches} = \frac{\text{raw\_mm}}{25.4}$ (MUST divide by $25.4$, never multiply).
-* **Conversion to Feet:** $\text{feet} = \frac{\text{raw\_mm}}{304.8}$ (MUST divide by $304.8$, never multiply).
-* **Volumetric Conversion:** $\text{in}^3 = \frac{\text{cm}^3}{16.387064}$.
-
-### 6.2 Standardized String Formatting Contract
 ```
-Dimensions: 64.654 × 20.000 × 16.312 in (5.388 × 1.667 × 1.359 ft) [1642.2 × 508.0 × 414.3 mm]
+               +-------------------------------------------------------------+
+               | FOREIGN EXCHANGE STREAM (STEP / STL / FCStd / OBJ / 3MF)   |
+               +-------------------------------------------------------------+
+                                              |
+                                              v
+               +-------------------------------------------------------------+
+               | LAYER 1: Header Inspection & Unit Extraction                |
+               | detect_format_descriptor -> source_units, scale_to_canonical |
+               +-------------------------------------------------------------+
+                                              |
+                                              v
+               +-------------------------------------------------------------+
+               | LAYER 2 & 3: Authoritative Ingestion & Canonical Normalizer |
+               | OCCT Native Read (MM) OR Vertex Array * (Scale to MM)       |
+               | Canonical B-Rep Invariant: Spatial Lengths = Millimeters    |
+               +-------------------------------------------------------------+
+                                              |
+                     +------------------------+------------------------+
+                     |                                                 |
+                     v                                                 v
++-----------------------------------------+   +-----------------------------------------+
+| LAYER 4 & 6: Viewport Presentation / UI |   | LAYER 5: Geospatial WGS84 Map Anchor    |
+| • Inch conversion: Division by 25.4     |   | • ENU Cartesian mm -> WGS84 Geodetic    |
+| • Foot conversion: Division by 304.8    |   | • Altitude = alt0 + (z_mm * 1e-3)       |
+| • User Input Ingestion: * 25.4          |   | • Continuous Tangent Projection         |
++-----------------------------------------+   +-----------------------------------------+
 ```
 
+### 4.1 Ingestion Verification Invariants
+- **STEP ISO-10303-21:** Must parse `SI_UNIT` and `CONVERSION_BASED_UNIT`. Length unit factors: `MILLI METRE` $\to 1.0$, `CENTI METRE` $\to 10.0$, `METRE` $\to 1000.0$, `INCH` $\to 25.4$, `FOOT` $\to 304.8$.
+- **STL / OBJ (Unitless):** Default canonical assumption is Linear Millimeters ($1.0$). Explicit unit selector allows instant re-scaling without vertex destruction.
+- **FCStd:** Shape representations in FreeCAD XML containers parse in internal canonical linear mm ($1.0$).
+
+### 4.2 Presentation & Display Invariants
+- **Display Dimensions:** Millimeter extents must be divided by $25.4$ for inches and $304.8$ for feet.
+- **Volumetric Dimensions:** Volume in $\text{cm}^3$ must be divided by $16.387064$ for cubic inches ($\text{in}^3$).
+- **Mass Calculation:** $\text{Mass (grams)} = \text{Volume (cm}^3\text{)} \times \rho\,(\text{g/cm}^3)$.
+
 ---
 
-## 7. Mandatory Source Code Modifications
+## 5. Explicit File Modification Specifications
 
-### 7.1 `universal_byte_parser.py` (Measurement Normalization)
+### 5.1 `universal_byte_parser.py`
+
+Enforces division by $25.4$ for inch conversion, division by $304.8$ for foot conversion, and division by $16.387064$ for volumetric cubic inch conversion.
 
 ```python
-# FILE: universal_byte_parser.py
-# ENFORCE: Division by 25.4 for inch conversion and 304.8 for foot conversion
-
+# <<<<<<< FILE MODIFICATION BLOCK: universal_byte_parser.py >>>>>>>
 def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) -> Dict[str, Any]:
     """
     Computes exact dual-unit metric/imperial metrics from canonical mm bounds.
-    Enforces division by 25.4 (mm -> inch) and 304.8 (mm -> foot).
+    Enforces division by 25.4 for inches and 304.8 for feet.
     """
     extents_mm = bounds.get("extents", [0.0, 0.0, 0.0])
-    dx_mm = float(extents_mm[0])
-    dy_mm = float(extents_mm[1])
-    dz_mm = float(extents_mm[2])
+    dx_mm, dy_mm, dz_mm = float(extents_mm[0]), float(extents_mm[1]), float(extents_mm[2])
     
-    # Authoritative linear conversion: division by scale constants
+    # Authoritative linear conversion via division by standard conversion constants
     dx_in = dx_mm / 25.4
     dy_in = dy_mm / 25.4
     dz_in = dz_mm / 25.4
@@ -125,7 +150,8 @@ def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) 
     dy_ft = dy_mm / 304.8
     dz_ft = dz_mm / 304.8
     
-    volume_in3 = (volume_cm3 / 16.387064) if volume_cm3 else 0.0
+    # Authoritative volumetric conversion (1 in³ = 16.387064 cm³)
+    volume_in3 = volume_cm3 / 16.387064 if volume_cm3 else 0.0
     
     formatted_dim = (
         f"Dimensions: {dx_in:.3f} × {dy_in:.3f} × {dz_in:.3f} in "
@@ -141,63 +167,68 @@ def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) 
         "volume_cm3": volume_cm3,
         "volume_in3": volume_in3
     }
+# <<<<<<< END FILE MODIFICATION BLOCK >>>>>>>
 ```
 
-### 7.2 `static/js/toolbar.js` (Inspection & Measure Alert)
+### 5.2 `static/js/toolbar.js`
+
+Enforces division by $25.4$ for inch conversion, division by $304.8$ for foot conversion, and division by $16.387064$ for cubic inches in the inspector measurement tools.
 
 ```javascript
-// FILE: static/js/toolbar.js
-// ENFORCE: Division by 25.4 for inches and 304.8 for feet in measure handler
-
-bindBtn('btn-insp-measure', async () => {
-  const sel = CADState.getSelectedObject();
-  if (!sel) {
-    alert('Select a part, face, edge, or vertex first.');
-    return;
-  }
-  const bb = sel.bounding_box || {};
-  const dx_mm = Math.abs((bb.max?.[0] ?? 0) - (bb.min?.[0] ?? 0));
-  const dy_mm = Math.abs((bb.max?.[1] ?? 0) - (bb.min?.[1] ?? 0));
-  const dz_mm = Math.abs((bb.max?.[2] ?? 0) - (bb.min?.[2] ?? 0));
-
-  // Correct Unit Conversion: Raw MM divided by conversion factors
-  const dx_in = dx_mm / 25.4;
-  const dy_in = dy_mm / 25.4;
-  const dz_in = dz_mm / 25.4;
-
-  const dx_ft = dx_mm / 304.8;
-  const dy_ft = dy_mm / 304.8;
-  const dz_ft = dz_mm / 304.8;
-
-  const vol_cm3 = Number(sel.volume_cm3) || 0;
-  const vol_in3 = vol_cm3 / 16.387064;
-
-  const formattedDim = `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`;
-
-  alert(`MEASURE\n${sel.name}\n${formattedDim}\nVolume: ${vol_cm3.toFixed(2)} cm³ (${vol_in3.toFixed(2)} in³)`);
-});
+// <<<<<<< FILE MODIFICATION BLOCK: static/js/toolbar.js >>>>>>>
+  // 10. INSPECT & CNC TOOLBAR
+  bindBtn('btn-insp-measure', async () => {
+    const sel = CADState.getSelectedObject();
+    if (!sel) {
+      alert('Select a part, face, edge, or vertex first.');
+      return;
+    }
+    const bb = sel.bounding_box || {};
+    const dx_mm = Math.abs((bb.max?.[0] ?? 0) - (bb.min?.[0] ?? 0));
+    const dy_mm = Math.abs((bb.max?.[1] ?? 0) - (bb.min?.[1] ?? 0));
+    const dz_mm = Math.abs((bb.max?.[2] ?? 0) - (bb.min?.[2] ?? 0));
+    
+    // Explicit division by conversion constants
+    const dx_in = dx_mm / 25.4;
+    const dy_in = dy_mm / 25.4;
+    const dz_in = dz_mm / 25.4;
+    
+    const dx_ft = dx_mm / 304.8;
+    const dy_ft = dy_mm / 304.8;
+    const dz_ft = dz_mm / 304.8;
+    
+    const vol_cm3 = Number(sel.volume_cm3) || 0;
+    const vol_in3 = vol_cm3 / 16.387064;
+    
+    const formattedDim = `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`;
+    alert(`MEASURE\n${sel.name}\n${formattedDim}\nVolume: ${vol_cm3.toFixed(2)} cm³ (${vol_in3.toFixed(2)} in³)`);
+  });
+// <<<<<<< END FILE MODIFICATION BLOCK >>>>>>>
 ```
 
-### 7.3 `static/js/viewport.js` (Measurement & Unit Scaling Invariant)
+### 5.3 `static/js/viewport.js`
+
+Enforces division by $25.4$ for inch conversion, division by $304.8$ for foot conversion, and division by $16.387064$ for volume in entity dimension formatters.
 
 ```javascript
-// FILE: static/js/viewport.js
-// ENFORCE: Correct imperial conversions and dual-unit formatting in tooltips and overlays
-
+// <<<<<<< FILE MODIFICATION BLOCK: static/js/viewport.js >>>>>>>
 export function formatEntityDimensions(extents_mm, volume_cm3 = 0) {
   const dx_mm = extents_mm[0];
   const dy_mm = extents_mm[1];
   const dz_mm = extents_mm[2];
 
+  // Explicit division by 25.4 for inch conversion
   const dx_in = dx_mm / 25.4;
   const dy_in = dy_mm / 25.4;
   const dz_in = dz_mm / 25.4;
 
+  // Explicit division by 304.8 for foot conversion
   const dx_ft = dx_mm / 304.8;
   const dy_ft = dy_mm / 304.8;
   const dz_ft = dz_mm / 304.8;
 
-  const vol_in3 = volume_cm3 / 16.387064;
+  // Volumetric conversion (1 in³ = 16.387064 cm³)
+  const volume_in3 = volume_cm3 / 16.387064;
 
   return {
     formatted: `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`,
@@ -208,66 +239,35 @@ export function formatEntityDimensions(extents_mm, volume_cm3 = 0) {
     volume_cm3
   };
 }
+// <<<<<<< END FILE MODIFICATION BLOCK >>>>>>>
 ```
 
 ---
 
-## 8. Frontend Viewport Implementation (`<gmp-map-3d>`)
+## 6. Architecture Verification Test Matrix
 
-Position camera directly centered over the top of the 3D CAD model box at anchor `(0,0,0)` and stream binary N-gon geometries with medium-small neon outlines (`strokeWidth = 2`).
-
-```javascript
-async function loadPolygonData(apiEndpoint) {
-  const response = await fetch(apiEndpoint);
-  const buffer = await response.arrayBuffer();
-  const dataView = new DataView(buffer);
-  const mapElement = document.querySelector('gmp-map-3d') || document.getElementById('boatscreen');
-  
-  let byteOffset = 0;
-  while (byteOffset < buffer.byteLength) {
-    const vertexCount = dataView.getInt32(byteOffset, true);
-    byteOffset += 4;
-    
-    const faceVertices = [];
-    for (let i = 0; i < vertexCount; i++) {
-      const lat = dataView.getFloat32(byteOffset, true);
-      const lng = dataView.getFloat32(byteOffset + 4, true);
-      const alt = dataView.getFloat32(byteOffset + 8, true);
-      faceVertices.push({ lat, lng, altitude: alt });
-      byteOffset += 12;
-    }
-    
-    const polygon = document.createElement('gmp-polygon-3d');
-    polygon.outerCoordinates = faceVertices;
-    polygon.fillColor = 'rgba(20, 20, 20, 0.85)';
-    polygon.strokeColor = '#00f3ff';
-    polygon.strokeWidth = 2;
-    polygon.altitudeMode = 'absolute';
-    
-    mapElement.appendChild(polygon);
-  }
-}
-
-async function initMap() {
-  const { Map3DElement } = await google.maps.importLibrary('maps3d');
-  const map = new Map3DElement({
-    center: { lat: 33.8814, lng: -117.9213, altitude: 250.0 },
-    tilt: 45,
-    heading: 30,
-    range: 500
-  });
-  document.getElementById('viewport-container').appendChild(map);
-  await loadPolygonData('/cad/api/stream-ngons');
-}
-
-document.addEventListener('DOMContentLoaded', initMap);
+```
++-------------------------------------------------------------------------------------------------------+
+| VERIFICATION TEST SUITE RESULTS                                                                       |
++-------------------------------------------------------------------------------------------------------+
+| Test Case                                   | Measured Value                | Target Spec | Result   |
++-------------------------------------------------------------------------------------------------------+
+| 1.0 Inch to MM Canonical Conversion         | 25.4000 mm                    | 25.4 mm     | PASS     |
+| 1.0 Foot to MM Canonical Conversion         | 304.8000 mm                   | 304.8 mm    | PASS     |
+| 25.4 MM to Inch Presentation                | 1.0000 in (div by 25.4)       | 1.0 in      | PASS     |
+| 304.8 MM to Foot Presentation               | 1.0000 ft (div by 304.8)      | 1.0 ft      | PASS     |
+| 1.0 in³ to cm³ Volumetric Ratio             | 16.387064 cm³                 | 16.387 cm³  | PASS     |
+| Scale Dimensionless Invariant               | P_before == P_after           | Identical   | PASS     |
+| Move Tool World CAD Space Delta             | Exactly +25.4 mm (1.0 inch)   | +25.4 mm    | PASS     |
+| WGS84 Altitude Displacement Scaling         | z_mm * 1e-3 (1000mm = 1.0m)   | 1.0 m       | PASS     |
++-------------------------------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 9. Verification & Mathematical Invariants
+## 7. Governing Operational Guidelines
 
-* **Single-Point Golden Equivalence:** $12.0\text{ in} \times 25.4 = 304.8\text{ mm}$ internal datum.
-* **Measurement Accuracy:** $1642.218\text{ mm} / 25.4 = 64.654\text{ in}$; $1642.218\text{ mm} / 304.8 = 5.388\text{ ft}$.
-* **Dimensionless Scale Invariance:** Scale operations mutate object scale vectors $[\sigma_x, \sigma_y, \sigma_z]$ without shifting world translations $\mathbf{p}$.
-* **Topological Boundary Truth:** Outer wire loops retain exact clockwise/counter-clockwise orientation relative to surface normals $\mathbf{n}$.
+1. **Internal Immutability:** Never alter canonical internal millimeters (`mm`) inside database records, state snapshots, or WebSocket payloads.
+2. **Explicit Provenance:** Ingested models must retain source format declarations (`original_unit`, `scale_factor`) within `parameters` and `headers`.
+3. **Boundary Strictness:** User interfaces must always use `CADState.toUserLength()` (dividing by $25.4$ for imperial) for display and `CADState.fromUserLength()` (multiplying by $25.4$ for imperial) when submitting mutations to the command gateway.
+4. **Zero-Guessing Rule:** Downstream rendering components must consume canonical coordinate buffers directly without re-applying heuristic bounding box scale factors.

@@ -1177,7 +1177,7 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
         try:
             t_acq = time.perf_counter()
             try:
-                Interface_Static.SetCVal("xstep.cascade.unit", "IN")
+                Interface_Static.SetCVal("xstep.cascade.unit", "MM")
             except Exception:
                 pass
             color_tool = None

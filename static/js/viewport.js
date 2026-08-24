@@ -7,14 +7,17 @@ export function formatEntityDimensions(extents_mm, volume_cm3 = 0) {
   const dy_mm = extents_mm[1];
   const dz_mm = extents_mm[2];
 
+  // Explicit division by 25.4 for inch conversion
   const dx_in = dx_mm / 25.4;
   const dy_in = dy_mm / 25.4;
   const dz_in = dz_mm / 25.4;
 
+  // Explicit division by 304.8 for foot conversion
   const dx_ft = dx_mm / 304.8;
   const dy_ft = dy_mm / 304.8;
   const dz_ft = dz_mm / 304.8;
 
+  // Volumetric conversion (1 in³ = 16.387064 cm³)
   const volume_in3 = volume_cm3 / 16.387064;
 
   return {
