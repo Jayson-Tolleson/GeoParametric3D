@@ -337,8 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const dx_ft = dx_mm / 304.8, dy_ft = dy_mm / 304.8, dz_ft = dz_mm / 304.8;
     const vol_cm3 = Number(sel.volume_cm3) || 0;
     const vol_in3 = vol_cm3 / 16.387064;
-    const formattedDim = `${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`;
-    alert(`MEASURE\n${sel.name}\nDimensions: ${formattedDim}\nVolume: ${vol_cm3.toFixed(2)} cm³ (${vol_in3.toFixed(2)} in³)`);
+    const formattedDim = `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`;
+    alert(`MEASURE\n${sel.name}\n${formattedDim}\nVolume: ${vol_cm3.toFixed(2)} cm³ (${vol_in3.toFixed(2)} in³)`);
   });
 
   bindBtn('btn-insp-mass', () => {

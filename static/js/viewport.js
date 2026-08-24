@@ -2,6 +2,31 @@ import { CADState, enuToGeodetic, geodeticToEnu } from './state.js';
 import { CADCommands } from './commands.js';
 import { CADApi } from './api.js';
 
+export function formatEntityDimensions(extents_mm, volume_cm3 = 0) {
+  const dx_mm = extents_mm[0];
+  const dy_mm = extents_mm[1];
+  const dz_mm = extents_mm[2];
+
+  const dx_in = dx_mm / 25.4;
+  const dy_in = dy_mm / 25.4;
+  const dz_in = dz_mm / 25.4;
+
+  const dx_ft = dx_mm / 304.8;
+  const dy_ft = dy_mm / 304.8;
+  const dz_ft = dz_mm / 304.8;
+
+  const volume_in3 = volume_cm3 / 16.387064;
+
+  return {
+    formatted: `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`,
+    inches: [dx_in, dy_in, dz_in],
+    feet: [dx_ft, dy_ft, dz_ft],
+    mm: [dx_mm, dy_mm, dz_mm],
+    volume_in3,
+    volume_cm3
+  };
+}
+
 export class SphericalTrackball {
   constructor(containerElement, onRotateCallback) {
     this.container = containerElement;

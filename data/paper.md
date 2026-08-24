@@ -1,301 +1,273 @@
-execute:
+# GeoParametric3D: Enterprise OCCT to `<gmp-map-3d>` CAD/CAM & Geospatial Architecture
 
-
-# Master Architectural & Engineering Specification: GeoParametric3D
-**System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
-**Document Version:** 6.1.0-PROD-SPEC  
-**Author:** Lead Systems Architect  
-**Classification:** Core CAD/CAM, B-Rep Topology & Geospatial Engineering Standards  
+**Document Version:** 6.1.0-ENTERPRISE  
+**Classification:** Core Solid Modeling, Geospatial Vector Pipeline & Measurement Architecture  
+**Canonical Unit:** Linear Millimeters (`mm`)  
+**Geospatial Projection:** Local Tangent Plane ENU $\leftrightarrow$ Geodetic WGS84  
 
 ---
 
-## 1. Executive Summary & Forensic Audit
-
-GeoParametric3D is a cloud-native Computer-Aided Design and Manufacturing (CAD/CAM) workstation operating directly in modern browser environments. It bridges high-precision Boundary Representation (B-Rep) solid modeling (Open CASCADE Technology / OCP) with the planetary-scale geospatial rendering engine of Google Maps 3D (`<gmp-map-3d>`) and Vertex AI engineering intelligence.
+## 1. System Pipeline Architecture Breakdown
 
 ```
-+----------------------------------------------------------------------------------------------------+
-|                                    GEOPARAMETRIC3D RUNTIME TOPOLOGY                                |
-+----------------------------------------------------------------------------------------------------+
-|                                                                                                    |
-|   +--------------------------+         +--------------------------+         +------------------+   |
-|   |   CANONICAL B-REP TRUTH  |  ====>  |   ADAPTIVE TESSELLATOR   |  ====>  |  CLIENT VIEWPORT |   |
-|   |  - Authoritative Solid   |         |  - Linear/Angular Defl.  |         |  - <gmp-map-3d>  |   |
-|   |  - Topological Winding   |         |  - Planar Wire Dissolver |         |  - Native Ngons  |   |
-|   |  - Canonical Unit: 'mm'  |         |  - Zero-Copy Typed Array |         |  - CSnap Overlay |   |
-|   +--------------------------+         +--------------------------+         +------------------+   |
-|                ^                                                                     |             |
-|                |                                                                     v             |
-|   +--------------------------+                                              +------------------+   |
-|   |    COMMAND GATEWAY       | <=========================================== |   VERTEX AI DOCK |   |
-|   |  - Strict Scale Divisor  |          POST /api/assistant/chat            |  - B-Rep Context |   |
-|   |  - Undo/Redo Snapshots   |          Project: broadcasterfishmap         |  - CNC Toolpaths |   |
-|   +--------------------------+                                              +------------------+   |
-|                                                                                                    |
-+----------------------------------------------------------------------------------------------------+
+[ 3 Upload Pipes ] ──> [ OCCT Byte Parser ] ──> [ NumPy Polygon Machine ] ──> [ <gmp-map-3d> Viewport ]
+ (STEP/STL/FCStd)       (B-Rep & Tessellation)    (Coplanar N-Gons & WGS84)     (Native GPU Rendering)
 ```
 
-### 1.1 Forensic Unit Anomaly & Mathematical Invariants
-A dimensional scaling flaw was identified where metric millimeter coordinates extracted from the OCCT B-Rep kernel were erroneously multiplied by $25.4$ instead of divided during inspection and presentation, transforming a $1642.218\text{ mm}$ ($5.388\text{ ft}$) model into a $41,712.3\text{ mm}$ ($136.85\text{ ft}$) artifact.
-
-* **Governing Unit Law:** The internal engine datum is strictly Linear Millimeters ($\text{mm}$).
-* **Conversion Formulations:**
-  $$\text{Length}_{\text{in}} = \frac{\text{Length}_{\text{mm}}}{25.4}, \quad \text{Length}_{\text{ft}} = \frac{\text{Length}_{\text{mm}}}{304.8}, \quad \text{Volume}_{\text{in}^3} = \frac{\text{Volume}_{\text{cm}^3}}{16.387064}$$
-* **Standardized Inspection Format:**
-  $$\text{Dimensions: } X_{\text{in}} \times Y_{\text{in}} \times Z_{\text{in}}\text{ in } (X_{\text{ft}} \times Y_{\text{ft}} \times Z_{\text{ft}}\text{ ft}) \; [X_{\text{mm}} \times Y_{\text{mm}} \times Z_{\text{mm}}\text{ mm}]$$
+| Phase | Component | Responsibilities | Clean Input / Output |
+| :--- | :--- | :--- | :--- |
+| **1. Ingestion** | 3 Ingestion Pipes | Accepts streaming multi-part CAD byte payloads (STEP AP203/214/242, STL, FCStd, OBJ, 3MF). | `Byte Stream` $\rightarrow$ `Memory-Mapped Buffer` |
+| **2. Geometry Engine** | OCCT Parser (`OpenCASCADE`) | Authoritative B-Rep topology extraction, surface classification (`GeomAbs_Plane` vs. curved), adaptive chordal/angular deflection. | `Memory Buffer` $\rightarrow$ `TopoDS_Shape / B-Rep Entities` |
+| **3. Vector Engine** | 3D-Polygon Machine | Dissolves coplanar triangles into clean boundary loops; projects local ENU mm coordinates to WGS84 geodetic coordinates. | `TopoDS_Shape` $\rightarrow$ `Packed NumPy (float32 / uint32)` |
+| **4. Display Layer** | `<gmp-map-3d>` | Renders native `<gmp-polygon-3d>`, `<gmp-polyline-3d>`, and zero-copy binary WebGL overlays on photorealistic 3D maps. | `Binary ArrayBuffer` $\rightarrow$ GPU DOM Custom Elements |
 
 ---
 
-## 2. Viewport & Grid Assembly
+## 2. Ingestion & Byte Parsing Optimizations
 
-The client rendering surface is a hybrid composition comprising the native `<gmp-map-3d>` custom element and a hardware-accelerated 2D/WebGL overlay canvas.
+### 2.1 Memory-Mapped I/O (`mmap`)
+* Eliminates double-buffering between disk, kernel, and Python runtime memory spaces.
+* Byte streams write to temporary descriptor backed by `mmap.mmap(fileno, 0, access=mmap.ACCESS_READ)`.
+* OCCT C++ handles read memory pointers directly via raw buffers.
 
-```
-+-----------------------------------------------------------------------+
-|  CONTAINER: #viewport-container (100vw x 100vh)                       |
-|                                                                       |
-|   +---------------------------------------------------------------+   |
-|   | LAYER 1: <gmp-map-3d id="boatscreen"> (z-index: 1)            |   |
-|   | - Photorealistic 3D Tiles & Terrain Engine                    |   |
-|   | - Native Child Elements: <gmp-polygon-3d>, <gmp-polyline-3d>  |   |
-|   +---------------------------------------------------------------+   |
-|                                   |                                   |
-|   +---------------------------------------------------------------+   |
-|   | LAYER 2: <canvas id="viewport-overlay-canvas"> (z-index: 2)   |   |
-|   | - Coordinate Grid, XYZ Axes, Dynamic Construction Rays        |   |
-|   | - CSnap Vertex, Midpoint & Edge Highlighting                  |   |
-|   +---------------------------------------------------------------+   |
-|                                   |                                   |
-|   +---------------------------------------------------------------+   |
-|   | LAYER 3: #viewcube-wrapper & HUD Elements (z-index: 95)       |   |
-|   | - Spherical Viridian Trackball with Neon-Blue Glow Ring       |   |
-|   | - Recording HUD & Social Sharing Pipeline                     |   |
-|   +---------------------------------------------------------------+   |
-+-----------------------------------------------------------------------+
-```
+### 2.2 Chunked Multiprocessing
+* STEP assemblies containing multiple `MANIFOLD_SOLID_BREP` entities are unpacked in an initial lightweight pass.
+* Sub-solids are dispatched to a persistent `concurrent.futures.ProcessPoolExecutor` or `ThreadPoolExecutor(max_workers=4)`.
+* Independent deflection calculation, wire traversal, and vertex remapping occur in parallel per solid.
 
-### 2.1 Geospatial Anchoring & Projection Math
-All local Cartesian engineering coordinates ($x, y, z \in \mathbb{R}^3$ in $\text{mm}$) map to Geodetic WGS84 coordinates ($\phi, \lambda, h$) via a Local Tangent Plane (ENU) centered at the site datum:
+### 2.3 STEP AP242 & Mesh Fast-Lane
+* **AP242 Tessellation Bypass:** Flag `Interface_Static::SetIVal("read.step.tessellated", 1)` extracts pre-computed faceted geometry when present, eliminating iterative Newton-Raphson boundary projection.
+* **Mesh Fast-Lane:** STL, OBJ, and PLY payloads bypass OCCT entirely, routing directly through vectorized `np.frombuffer` binary decoders.
 
-$$\mathbf{p}_{\text{anchor}} = \left[\phi_0 = 33.8814^\circ\text{N}, \; \lambda_0 = -117.9213^\circ\text{W}, \; h_0 = 95.0\text{ m}\right]$$
+---
+
+## 3. Core NumPy Array Protocol & Schema
 
 ```python
-def enu_to_geodetic(x_mm: float, y_mm: float, z_mm: float, anchor: dict = SITE_ANCHOR) -> tuple[float, float, float]:
-    x_m, y_m, z_m = x_mm / 1000.0, y_mm / 1000.0, z_mm / 1000.0
-    lat_rad = math.radians(anchor['lat'])
-    sin_lat, cos_lat = math.sin(lat_rad), math.cos(lat_rad)
+import numpy as np
+
+part_data = {
+    "part_id": "part_bracket_101",
+    "flatness_deg": 0.0,
+    "outer_boundary": np.ndarray,  # shape: (N, 3) -> float64 [lat, lng, altitude]
+    "holes": [np.ndarray],         # list of (M, 3) arrays for inner cutout loops
+    "surface_type": "plane",       # "plane" | "cylinder" | "nurbs" | "freeform"
+    "bounding_box_mm": {
+        "min": [-152.4, -152.4, 0.0],
+        "max": [152.4, 152.4, 304.8],
+        "extents": [304.8, 304.8, 304.8]
+    }
+}
+```
+
+---
+
+## 4. Quart / ASGI Streaming & Zero-Copy Binary Serialization
+
+### 4.1 Zero-Copy Transport Contract
+* Endpoints `/cad/api/geometry/binary` and `/cad/api/stream-ngons` return raw packed little-endian binary buffers.
+* **Header Structure:** 8-byte preamble (`uint32 vertexCount`, `uint32 indexCount`).
+* **Vertex Payload:** $N \times 3 \times \text{float32}$ coordinates in local mm.
+* **Index Payload:** $M \times \text{uint32}$ triangle index array.
+* Frontend slices directly with `new Float32Array(arrayBuffer, 8, vertexCount * 3)` without JSON parsing overhead.
+
+---
+
+## 5. Polygon Reduction & N-Gon Boundary Dissolver
+
+* **Coplanar Clustering:** Triangle normals quantized via $\operatorname{round}(\mathbf{n}, 2)$.
+* **Boundary Edge Tracing:** Directed half-edges evaluated; internal shared diagonals ($E_{ij} + E_{ji}$) cancelled.
+* **Hole Segregation:** Closed boundary loops sorted by enclosed area; index 0 assigned as outer perimeter, subsequent loops assigned as inner cutouts.
+* **DOM Reduction:** Reduces 10,000 planar triangles to 6 native `<gmp-polygon-3d>` elements, eliminating triangular artifacts and maintaining 60 FPS viewport orbit.
+
+---
+
+## 6. Unit System Architecture & Authoritative Imperial Conversion Invariants
+
+### 6.1 Unit Governing Rule
+* **Internal Canonical Unit:** Pure Linear Millimeters (`mm`).
+* **Raw OCCT B-Rep Values:** Output directly in millimeters (e.g., length $= 1642.218\text{ mm}$).
+* **Conversion to Imperial (Inches):** $\text{inches} = \frac{\text{raw\_mm}}{25.4}$ (MUST divide by $25.4$, never multiply).
+* **Conversion to Feet:** $\text{feet} = \frac{\text{raw\_mm}}{304.8}$ (MUST divide by $304.8$, never multiply).
+* **Volumetric Conversion:** $\text{in}^3 = \frac{\text{cm}^3}{16.387064}$.
+
+### 6.2 Standardized String Formatting Contract
+```
+Dimensions: 64.654 × 20.000 × 16.312 in (5.388 × 1.667 × 1.359 ft) [1642.2 × 508.0 × 414.3 mm]
+```
+
+---
+
+## 7. Mandatory Source Code Modifications
+
+### 7.1 `universal_byte_parser.py` (Measurement Normalization)
+
+```python
+# FILE: universal_byte_parser.py
+# ENFORCE: Division by 25.4 for inch conversion and 304.8 for foot conversion
+
+def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) -> Dict[str, Any]:
+    """
+    Computes exact dual-unit metric/imperial metrics from canonical mm bounds.
+    Enforces division by 25.4 (mm -> inch) and 304.8 (mm -> foot).
+    """
+    extents_mm = bounds.get("extents", [0.0, 0.0, 0.0])
+    dx_mm = float(extents_mm[0])
+    dy_mm = float(extents_mm[1])
+    dz_mm = float(extents_mm[2])
     
-    # WGS84 Constants
-    a = 6378137.0
-    e2 = 0.00669437999014
-    n_rad = a / math.sqrt(1.0 - e2 * (sin_lat ** 2))
-    m_rad = (a * (1.0 - e2)) / math.pow(1.0 - e2 * (sin_lat ** 2), 1.5)
+    # Authoritative linear conversion: division by scale constants
+    dx_in = dx_mm / 25.4
+    dy_in = dy_mm / 25.4
+    dz_in = dz_mm / 25.4
     
-    lat = anchor['lat'] + math.degrees(y_m / (m_rad + anchor['altitude']))
-    lng = anchor['lng'] + math.degrees(x_m / ((n_rad + anchor['altitude']) * cos_lat))
-    alt = anchor['altitude'] + z_m
-    return lat, lng, alt
+    dx_ft = dx_mm / 304.8
+    dy_ft = dy_mm / 304.8
+    dz_ft = dz_mm / 304.8
+    
+    volume_in3 = (volume_cm3 / 16.387064) if volume_cm3 else 0.0
+    
+    formatted_dim = (
+        f"Dimensions: {dx_in:.3f} × {dy_in:.3f} × {dz_in:.3f} in "
+        f"({dx_ft:.3f} × {dy_ft:.3f} × {dz_ft:.3f} ft) "
+        f"[{dx_mm:.1f} × {dy_mm:.1f} × {dz_mm:.1f} mm]"
+    )
+    
+    return {
+        "dimensions_formatted": formatted_dim,
+        "extents_mm": [dx_mm, dy_mm, dz_mm],
+        "extents_in": [dx_in, dy_in, dz_in],
+        "extents_ft": [dx_ft, dy_ft, dz_ft],
+        "volume_cm3": volume_cm3,
+        "volume_in3": volume_in3
+    }
 ```
 
-### 2.2 Viewport Navigation, CSnap & Framing Ratios
-* **Framing Invariant (60:1 Ratio):** When triggering `fitView` or preset views, target range is computed as $D = \max(152.4\text{ mm}, 60.0 \times R)$, preventing edge clipping.
-* **CSnap Disambiguation Algorithm:**
-  1. Project 3D edge segments $\mathbf{E}_i \to \mathbf{s}_1, \mathbf{s}_2 \in \mathbb{R}^2$.
-  2. Compute screen-space point-to-segment distance $d_{\text{2D}}(\mathbf{p}_{\text{cursor}}, \mathbf{s}_1, \mathbf{s}_2)$.
-  3. Weight candidates by face-normal alignment against view vector:
-     $$w_i = \left(\frac{1}{d_{\text{2D}} + \epsilon}\right) \cdot \max\left(0.01, -\mathbf{n}_{\text{face}} \cdot \mathbf{v}_{\text{view}}\right)$$
-  4. Select edge with $\operatorname{argmax}(w_i)$ where $d_{\text{2D}} \le 16\text{ px}$.
+### 7.2 `static/js/toolbar.js` (Inspection & Measure Alert)
+
+```javascript
+// FILE: static/js/toolbar.js
+// ENFORCE: Division by 25.4 for inches and 304.8 for feet in measure handler
+
+bindBtn('btn-insp-measure', async () => {
+  const sel = CADState.getSelectedObject();
+  if (!sel) {
+    alert('Select a part, face, edge, or vertex first.');
+    return;
+  }
+  const bb = sel.bounding_box || {};
+  const dx_mm = Math.abs((bb.max?.[0] ?? 0) - (bb.min?.[0] ?? 0));
+  const dy_mm = Math.abs((bb.max?.[1] ?? 0) - (bb.min?.[1] ?? 0));
+  const dz_mm = Math.abs((bb.max?.[2] ?? 0) - (bb.min?.[2] ?? 0));
+
+  // Correct Unit Conversion: Raw MM divided by conversion factors
+  const dx_in = dx_mm / 25.4;
+  const dy_in = dy_mm / 25.4;
+  const dz_in = dz_mm / 25.4;
+
+  const dx_ft = dx_mm / 304.8;
+  const dy_ft = dy_mm / 304.8;
+  const dz_ft = dz_mm / 304.8;
+
+  const vol_cm3 = Number(sel.volume_cm3) || 0;
+  const vol_in3 = vol_cm3 / 16.387064;
+
+  const formattedDim = `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`;
+
+  alert(`MEASURE\n${sel.name}\n${formattedDim}\nVolume: ${vol_cm3.toFixed(2)} cm³ (${vol_in3.toFixed(2)} in³)`);
+});
+```
+
+### 7.3 `static/js/viewport.js` (Measurement & Unit Scaling Invariant)
+
+```javascript
+// FILE: static/js/viewport.js
+// ENFORCE: Correct imperial conversions and dual-unit formatting in tooltips and overlays
+
+export function formatEntityDimensions(extents_mm, volume_cm3 = 0) {
+  const dx_mm = extents_mm[0];
+  const dy_mm = extents_mm[1];
+  const dz_mm = extents_mm[2];
+
+  const dx_in = dx_mm / 25.4;
+  const dy_in = dy_mm / 25.4;
+  const dz_in = dz_mm / 25.4;
+
+  const dx_ft = dx_mm / 304.8;
+  const dy_ft = dy_mm / 304.8;
+  const dz_ft = dz_mm / 304.8;
+
+  const vol_in3 = volume_cm3 / 16.387064;
+
+  return {
+    formatted: `Dimensions: ${dx_in.toFixed(3)} × ${dy_in.toFixed(3)} × ${dz_in.toFixed(3)} in (${dx_ft.toFixed(3)} × ${dy_ft.toFixed(3)} × ${dz_ft.toFixed(3)} ft) [${dx_mm.toFixed(1)} × ${dy_mm.toFixed(1)} × ${dz_mm.toFixed(1)} mm]`,
+    inches: [dx_in, dy_in, dz_in],
+    feet: [dx_ft, dy_ft, dz_ft],
+    mm: [dx_mm, dy_mm, dz_mm],
+    volume_in3,
+    volume_cm3
+  };
+}
+```
 
 ---
 
-## 3. Kernel & B-Rep Translation
+## 8. Frontend Viewport Implementation (`<gmp-map-3d>`)
 
-The B-Rep subsystem preserves true CAD solid semantics independently from derived render buffers.
+Position camera directly centered over the top of the 3D CAD model box at anchor `(0,0,0)` and stream binary N-gon geometries with medium-small neon outlines (`strokeWidth = 2`).
 
+```javascript
+async function loadPolygonData(apiEndpoint) {
+  const response = await fetch(apiEndpoint);
+  const buffer = await response.arrayBuffer();
+  const dataView = new DataView(buffer);
+  const mapElement = document.querySelector('gmp-map-3d') || document.getElementById('boatscreen');
+  
+  let byteOffset = 0;
+  while (byteOffset < buffer.byteLength) {
+    const vertexCount = dataView.getInt32(byteOffset, true);
+    byteOffset += 4;
+    
+    const faceVertices = [];
+    for (let i = 0; i < vertexCount; i++) {
+      const lat = dataView.getFloat32(byteOffset, true);
+      const lng = dataView.getFloat32(byteOffset + 4, true);
+      const alt = dataView.getFloat32(byteOffset + 8, true);
+      faceVertices.push({ lat, lng, altitude: alt });
+      byteOffset += 12;
+    }
+    
+    const polygon = document.createElement('gmp-polygon-3d');
+    polygon.outerCoordinates = faceVertices;
+    polygon.fillColor = 'rgba(20, 20, 20, 0.85)';
+    polygon.strokeColor = '#00f3ff';
+    polygon.strokeWidth = 2;
+    polygon.altitudeMode = 'absolute';
+    
+    mapElement.appendChild(polygon);
+  }
+}
+
+async function initMap() {
+  const { Map3DElement } = await google.maps.importLibrary('maps3d');
+  const map = new Map3DElement({
+    center: { lat: 33.8814, lng: -117.9213, altitude: 250.0 },
+    tilt: 45,
+    heading: 30,
+    range: 500
+  });
+  document.getElementById('viewport-container').appendChild(map);
+  await loadPolygonData('/cad/api/stream-ngons');
+}
+
+document.addEventListener('DOMContentLoaded', initMap);
 ```
-                                [TopoDS_Shape / STEP / FCStd]
-                                              |
-                                              v
-                              [Face Type Classification (OCCT)]
-                                              |
-                     +------------------------+------------------------+
-                     |                                                 |
-                     v (GeomAbs_Plane)                                 v (Curved / Freeform)
-      [True Planar N-Gon Pipeline]                             [Adaptive Deflection Tessellator]
-      - BRepTools_WireExplorer                                 - BRepMesh_IncrementalMesh
-      - GCPnts_QuasiUniformDeflection                          - Dynamic Deflection Calculation
-      - Outer Loops & Inner Void Loops                         - Watertight Node Indexing
-                     |                                                 |
-                     v                                                 v
-         <gmp-polygon-3d> Elements                           Packed Float32/Uint32 Buffers
-```
-
-### 3.1 Adaptive Deflection Calculation
-
-To prevent polygon explosion on high-curvature surfaces while ensuring structural edges remain sharp, linear and angular deflections scale dynamically based on the bounding box diagonal $D_{\text{bbox}}$:
-
-| Bounding Diagonal ($D_{\text{bbox}}$) | Linear Deflection ($\delta_{\text{lin}}$) | Angular Deflection ($\theta_{\text{ang}}$) |
-| :--- | :--- | :--- |
-| $> 5000\text{ mm}$ | $\max(2.5, D_{\text{bbox}} \times 0.003)$ | $0.65\text{ rad}$ ($37.2^\circ$) |
-| $1000\text{ mm} - 5000\text{ mm}$ | $\max(1.0, D_{\text{bbox}} \times 0.002)$ | $0.52\text{ rad}$ ($29.8^\circ$) |
-| $200\text{ mm} - 1000\text{ mm}$ | $\max(0.5, D_{\text{bbox}} \times 0.002)$ | $0.45\text{ rad}$ ($25.8^\circ$) |
-| $< 200\text{ mm}$ | $\max(0.2, D_{\text{bbox}} \times 0.003)$ | $0.40\text{ rad}$ ($22.9^\circ$) |
-
-```python
-def compute_optimal_deflection(diag_mm: float) -> tuple[float, float]:
-    if diag_mm > 5000.0:
-        return max(2.5, diag_mm * 0.003), 0.65
-    elif diag_mm > 1000.0:
-        return max(1.0, diag_mm * 0.002), 0.52
-    elif diag_mm > 200.0:
-        return max(0.5, diag_mm * 0.002), 0.45
-    return max(0.2, diag_mm * 0.003), 0.40
-```
-
-### 3.2 Topological Hierarchy & Manifold Entities
-
-```python
-class GeoVertex:
-    id: str
-    point: np.ndarray  # [x, y, z] in mm (float64)
-
-class GeoCurve:
-    id: str
-    curve_type: CurveType  # LINE, CIRCLE, ARC, ELLIPSE, BSPLINE, NURBS
-    parameters: dict
-
-class GeoEdge:
-    id: str
-    vertex_start: str
-    vertex_end: str
-    curve_id: Optional[str]
-    is_forward: bool
-
-class GeoLoop:
-    id: str
-    ordered_edge_ids: list[str]
-    is_outer: bool
-
-class GeoSurface:
-    id: str
-    surface_type: SurfaceType  # PLANE, CYLINDER, CONE, SPHERE, TORUS, NURBS
-    parameters: dict
-
-class GeoFace:
-    id: str
-    surface_id: str
-    outer_loop_id: str
-    inner_loop_ids: list[str]
-    source_metadata: dict
-
-class GeoShell:
-    id: str
-    face_ids: list[str]
-    is_closed: bool
-
-class GeoSolid:
-    id: str
-    outer_shell_id: str
-    void_shell_ids: list[str]
-
-class GeoPart:
-    id: str
-    name: str
-    vertices: dict[str, GeoVertex]
-    curves: dict[str, GeoCurve]
-    edges: dict[str, GeoEdge]
-    loops: dict[str, GeoLoop]
-    surfaces: dict[str, GeoSurface]
-    faces: dict[str, GeoFace]
-    shells: dict[str, GeoShell]
-    solids: dict[str, GeoSolid]
-```
-
-### 3.3 Strict Memory and Index Validation Pipeline
-Render mesh generation passes through `validate_and_compact_mesh`:
-1. Rejects and logs non-finite (`NaN`, `Inf`) coordinates.
-2. Strips orphaned vertices and remaps 0-indexed triangle index buffers.
-3. Removes collinear/zero-area degenerate triangles where $\frac{1}{2} \|(\mathbf{p}_1 - \mathbf{p}_0) \times (\mathbf{p}_2 - \mathbf{p}_0)\| < 10^{-9}\text{ mm}^2$.
-4. Packs contiguous `Float32Array` positions and `Uint32Array` indices with 8-byte zero-copy binary transport headers: `struct.pack('<II', vertex_count, index_count)`.
 
 ---
 
-## 4. UI & Assistant Components
+## 9. Verification & Mathematical Invariants
 
-The interface exposes full parametric feature control through sliding panel architecture and an integrated Vertex AI engineering agent.
-
-```
-+----------------------------------------------------------------------------------------------------+
-| TOP TOOLBAR SLIDER (#top-slide-container)                                                          |
-| [New] [Open] [Save] [Import] [Export] [Undo] [Redo] | [Snapshot] [Snap+Bars] [Record] | [Primitives] |
-| [Move] [Rotate] [Scale] [Duplicate] [Align] | [Draft Tools] | [Csnap] [Part/Face/Edge/Vertex Mode]  |
-| [Extrude] [Cross Sections] [Hole] [Revolve] | [Union] [Sub] [Intersect] | [Fillet] [Chamfer] [CNC]  |
-+----------------------------------------------------------------------------------------------------+
-|                                                                                                    |
-|  LEFT SLIDER (#left-slide-container)                     RIGHT SLIDER (#right-slide-container)    |
-|  +--------------------------------+                     +---------------------------------------+  |
-|  | Assembly Tree                  |                     | Active Feature / Action Panel Box     |  |
-|  | - Hierarchical B-Rep Entities  |                     | Properties Inspector (XYZ / Scale)    |  |
-|  | - Face / Edge / Shell Proofs   |                     | Live System Telemetry & Logs          |  |
-|  +--------------------------------+                     +---------------------------------------+  |
-|                                                                                                    |
-+----------------------------------------------------------------------------------------------------+
-| BOTTOM DRAWER (#assistant-drawer)                                                                  |
-| [▲/▼ Toggle] Engineering Assistant & AI Script Engine (Project: broadcasterfishmap / global)      |
-| Chat Log & Action Intent Pipeline                                                                  |
-+----------------------------------------------------------------------------------------------------+
-```
-
-### 4.1 UI Component Architecture
-
-* **Tri-Panel Sliding Drawer System:** Top, Left, and Right drawers feature directional toggle controls (`▲/▼`, `◀/▶`, `▶/◀`) with CSS transforms (`translateY(-100%)`, `translateX(-110%)`, `translateX(110%)`).
-* **CAD Command Aliases:** The command engine resolves short alphanumeric entries directly:
-  `L` (Line), `C` (Circle), `REC` (Rectangle), `PL` (Polyline), `A` (Arc), `M` (Move), `RO` (Rotate), `SC` (Scale), `CO`/`CP` (Duplicate), `E`/`DEL` (Delete), `Z` (Zoom Fit), `I` (Import).
-* **LinuxCNC Toolpath Generator:** Extracts workpiece bounding boxes and outputs standard RS-274 / ISO G-Code with safe clearance planes ($Z+25\text{ mm}$), spindle control (`M3 S{rpm}`), and feed rate configurations.
-
-### 4.2 Vertex AI Engineering Assistant Gateway
-* **Target Project:** `broadcasterfishmap`
-* **Target Location:** `global`
-* **Model:** `gemini-1.5-flash`
-* **Domain Grounding:** Injects real-time active CAD state summaries (body counts, material allocations, volume in $\text{cm}^3$, bounding extents, and B-Rep topology keys).
-* **Intent Execution:** Emits structured parametric action intents executed by `CADCommands.execute()` without manual client intervention.
-
----
-
-## 5. System Telemetry & Performance Verification
-
-```
-+----------------------------------------------------------------------------------------------------+
-|                              TELEMETRY BENCHMARK RESULTS (60 FPS TARGET)                          |
-+----------------------------------------------------------------------------------------------------+
-| METRIC                       | RECORDED VALUE        | SPECIFICATION REQUIREMENT | PASS / FAIL     |
-+------------------------------+-----------------------+---------------------------+-----------------+
-| Frame Rate (Sustained)       | 60.0 FPS              | >= 58.0 FPS               | PASS            |
-| Frame Time (Average)         | 1.82 ms               | <= 16.67 ms (60 FPS mark) | PASS            |
-| Heap Allocations / Frame     | 0 objects (Retained)  | 0 objects per render loop | PASS            |
-| Binary STL Ingest (50k Tris) | 0.084 s               | < 1.50 s                  | PASS            |
-| STEP B-Rep Ingest & Tess.    | 0.312 s               | < 2.00 s                  | PASS            |
-| Coordinate Precision Error   | < 1e-9 mm             | < 1e-6 mm                 | PASS            |
-| Scale Invariance (Pos Delta) | [0.0, 0.0, 0.0]       | Identical (0 drift)       | PASS            |
-+----------------------------------------------------------------------------------------------------+
-```
-
-### 5.1 Verification Test Matrix
-
-```python
-# Validation Suite Summary (test_canonical_geometry.py, test_cad_architecture.py, test_kernel_math.py)
-TEST_GATES = [
-    ("Canonical Box B-Rep Construction", "8 verts, 12 edges, 6 loops, 6 faces, 1 shell, 1 solid", "VERIFIED"),
-    ("Transform Instancing Matrix Math", "100 lightweight instances share single part geometry", "VERIFIED"),
-    ("Strict Scale Divisor Law", "1642.218mm -> 64.654 in (5.388 ft) [Divisor enforced]", "VERIFIED"),
-    ("CSnap Bearing Edge Isolation", "Occluded back-edges culled; normal vector weighting active", "VERIFIED"),
-    ("STEP AP203/214/242 Topological Ingest", "Closed shell extraction with advanced face mapping", "VERIFIED"),
-    ("Zero-Copy Binary Transport", "contig Float32Array / Uint32Array stream packing", "VERIFIED"),
-    ("Vertex AI Context Grounding", "project: broadcasterfishmap, location: global", "VERIFIED"),
-]
-```
-
-### 5.2 Architectural Compliance Mandate
-1. **Source Geometry Immutability:** Derived render buffers and triangulated graphics meshes must never be treated as authoritative CAD definitions.
-2. **Strict Metric Boundary:** All geometric computations, transformations, and topological evaluations must be executed in linear millimeters ($\text{mm}$).
-3. **Hardware-Accelerated Zero-Copy Transfers:** Large polygon payloads must be passed across the WebAssembly/JavaScript boundary via direct array buffers without intermediate stringification.
+* **Single-Point Golden Equivalence:** $12.0\text{ in} \times 25.4 = 304.8\text{ mm}$ internal datum.
+* **Measurement Accuracy:** $1642.218\text{ mm} / 25.4 = 64.654\text{ in}$; $1642.218\text{ mm} / 304.8 = 5.388\text{ ft}$.
+* **Dimensionless Scale Invariance:** Scale operations mutate object scale vectors $[\sigma_x, \sigma_y, \sigma_z]$ without shifting world translations $\mathbf{p}$.
+* **Topological Boundary Truth:** Outer wire loops retain exact clockwise/counter-clockwise orientation relative to surface normals $\mathbf{n}$.

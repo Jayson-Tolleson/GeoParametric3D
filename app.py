@@ -169,6 +169,42 @@ async def canonical_export():
         'canonical_unit': CANONICAL_INTERNAL_UNIT
     })
 
+@app.route('/api/stream-ngons', methods=['GET', 'POST'])
+@app.route('/GeoParametric3D/api/stream-ngons', methods=['GET', 'POST'])
+@app.route('/cad/api/stream-ngons', methods=['GET', 'POST'])
+async def handle_stream_ngons():
+    """
+    Zero-copy binary transport stream for planar N-Gon polygons.
+    Header: int32 vertexCount, then vertexCount * 3 * float32 [lat, lng, altitude].
+    """
+    import struct
+    from quart import Response
+    payload = bytearray()
+    for obj in global_cad_state.objects.values():
+        if not obj.visible:
+            continue
+        polys = getattr(obj, 'planar_polygons', []) or []
+        if not polys and obj.faces:
+            for f in obj.faces:
+                if len(f) >= 3:
+                    payload.extend(struct.pack('<i', len(f)))
+                    for pt in f:
+                        lat = float(pt.get('lat', 33.8814))
+                        lng = float(pt.get('lng', -117.9213))
+                        alt = float(pt.get('altitude', 95.0))
+                        payload.extend(struct.pack('<fff', lat, lng, alt))
+        else:
+            for poly in polys:
+                outer = poly.get('outer_coordinates', []) or []
+                if len(outer) >= 3:
+                    payload.extend(struct.pack('<i', len(outer)))
+                    for pt in outer:
+                        lat = float(pt.get('lat', 33.8814))
+                        lng = float(pt.get('lng', -117.9213))
+                        alt = float(pt.get('altitude', 95.0))
+                        payload.extend(struct.pack('<fff', lat, lng, alt))
+    return Response(bytes(payload), mimetype='application/octet-stream')
+
 @app.route('/api/geometry/binary', methods=['GET', 'POST'])
 @app.route('/GeoParametric3D/api/geometry/binary', methods=['GET', 'POST'])
 @app.route('/cad/api/geometry/binary', methods=['GET', 'POST'])

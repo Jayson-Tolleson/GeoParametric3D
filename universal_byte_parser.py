@@ -734,7 +734,7 @@ def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) 
     volume_in3 = volume_cm3 / 16.387064 if volume_cm3 else 0.0
     
     formatted_dim = (
-        f"{dx_in:.3f} × {dy_in:.3f} × {dz_in:.3f} in "
+        f"Dimensions: {dx_in:.3f} × {dy_in:.3f} × {dz_in:.3f} in "
         f"({dx_ft:.3f} × {dy_ft:.3f} × {dz_ft:.3f} ft) "
         f"[{dx_mm:.1f} × {dy_mm:.1f} × {dz_mm:.1f} mm]"
     )
