@@ -726,7 +726,7 @@ def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) 
     extents_mm = bounds.get("extents", [0.0, 0.0, 0.0])
     dx_mm, dy_mm, dz_mm = float(extents_mm[0]), float(extents_mm[1]), float(extents_mm[2])
     
-    # Linear scale conversions
+    # Strict linear scale conversions (division by scale constants)
     dx_in, dy_in, dz_in = dx_mm / 25.4, dy_mm / 25.4, dz_mm / 25.4
     dx_ft, dy_ft, dz_ft = dx_mm / 304.8, dy_mm / 304.8, dz_mm / 304.8
     

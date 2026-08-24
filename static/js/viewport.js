@@ -199,14 +199,14 @@ export class ViewportController {
   }
 
   async initMap3D() {
-    this.map3d = document.getElementById('map-3d-element');
+    this.map3d = document.getElementById('boatscreen') || document.getElementById('map-3d-element') || document.querySelector('gmp-map-3d');
     try {
       await customElements.whenDefined('gmp-map-3d');
       if (!this.map3d) {
         const container = document.getElementById('viewport-container');
         if (container) {
           this.map3d = document.createElement('gmp-map-3d');
-          this.map3d.id = 'map-3d-element';
+          this.map3d.id = 'boatscreen';
           this.map3d.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1;';
           container.insertBefore(this.map3d, this.canvasOverlay);
         }
