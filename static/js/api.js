@@ -277,10 +277,10 @@ class APIClient {
     return this.requestJSON('/site');
   }
 
-  async sendAssistantPrompt(message) {
+  async sendAssistantPrompt(message, context = null) {
     return this.requestJSON('/assistant/chat', {
       method: 'POST',
-      body: JSON.stringify({ message })
+      body: JSON.stringify({ message, context })
     });
   }
 

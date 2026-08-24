@@ -820,7 +820,15 @@ export class UIController {
       }
       input.value = '';
 
-      const res = await CADApi.sendAssistantPrompt(text);
+      const selObj = CADState.getSelectedObject();
+      const selContext = selObj ? {
+        id: selObj.manifest_id || selObj.id,
+        name: selObj.name,
+        material: selObj.material,
+        volume_cm3: selObj.volume_cm3,
+        bounding_box: selObj.bounding_box
+      } : null;
+      const res = await CADApi.sendAssistantPrompt(text, selContext);
       if (res && res.document) {
         CADState.setDocument(res.document);
       }

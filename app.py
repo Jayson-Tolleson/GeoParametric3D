@@ -525,8 +525,11 @@ async def call_vertex_gemini(prompt: str, cad_context: dict = None) -> str:
 async def assistant_chat():
     data = (await request.get_json()) or {}
     user_message = (data.get('message', '') or data.get('prompt', '') or '').strip()
+    sel_ctx = data.get('context')
     chat_response = command_engine.process_chat(user_message)
     cad_ctx = global_cad_state.to_dict()
+    if sel_ctx:
+        cad_ctx['selected_context'] = sel_ctx
     ai_reply = await call_vertex_gemini(user_message, cad_ctx)
     
     if chat_response.requires_action:
