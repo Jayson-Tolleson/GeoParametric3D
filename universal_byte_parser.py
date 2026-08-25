@@ -722,15 +722,21 @@ def validate_and_compact_mesh(
 def normalize_and_format_measurement(bounds: Dict[str, Any], volume_cm3: float) -> Dict[str, Any]:
     """
     Computes exact dual-unit metric/imperial metrics from canonical mm bounds.
+    Enforces explicit division by 25.4 for inch conversion.
     """
     extents_mm = bounds.get("extents", [0.0, 0.0, 0.0])
     dx_mm, dy_mm, dz_mm = float(extents_mm[0]), float(extents_mm[1]), float(extents_mm[2])
     
-    # Strict linear scale conversions (division by scale constants)
-    dx_in, dy_in, dz_in = dx_mm / 25.4, dy_mm / 25.4, dz_mm / 25.4
-    dx_ft, dy_ft, dz_ft = dx_mm / 304.8, dy_mm / 304.8, dz_mm / 304.8
+    # Authoritative division by linear unit conversion constants
+    dx_in = dx_mm / 25.4
+    dy_in = dy_mm / 25.4
+    dz_in = dz_mm / 25.4
     
-    # Volumetric scale conversion (1 in³ = 16.387064 cm³)
+    dx_ft = dx_mm / 304.8
+    dy_ft = dy_mm / 304.8
+    dz_ft = dz_mm / 304.8
+    
+    # Volumetric conversion (1 in³ = 16.387064 cm³)
     volume_in3 = volume_cm3 / 16.387064 if volume_cm3 else 0.0
     
     formatted_dim = (
