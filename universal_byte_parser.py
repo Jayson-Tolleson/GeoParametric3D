@@ -1253,8 +1253,9 @@ def parse_step_with_occt(content_bytes: bytes, filename: str = "model.step", des
             except Exception:
                 bbox_diagonal = 300.0
 
-            linear_deflection = max(0.1, (bbox_diagonal / scale if scale > 0 else bbox_diagonal) * 0.005)
-            angular_deflection = 0.5
+            diag_effective = bbox_diagonal / scale if scale > 0 else bbox_diagonal
+            linear_deflection = max(0.1, diag_effective / 200.0)
+            angular_deflection = 0.50
             t_mesh_start = time.perf_counter()
             BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
             t_mesh_end = time.perf_counter()

@@ -1,37 +1,13 @@
-# MASTER ARCHITECTURAL SPECIFICATION: AUTHORITATIVE UNIT SUBSYSTEM & CANONICAL PIPELINE STANDARDIZATION
-
-**System:** GeoParametric3D Authoritative Cloud CAD/CAM Workstation  
-**Document Version:** 8.0.0-PROD-STANDARDIZATION  
-**Status:** Mandatory Architectural Invariant  
-**Classification:** Core Geometry, B-Rep Ingestion & Geospatial Coordinate Contract  
+# MASTER TECHNICAL ARCHITECTURAL SPECIFICATION: GEOPARAMETRIC3D V8.0
+**Author:** Lead Systems Architect, GeoParametric3D  
+**Classification:** Core Kernel, B-Rep Topology, Zero-Copy Binary Protocol & Geospatial Engine  
+**Status:** Authoritative Production Standard  
 
 ---
 
-## 1. Executive Summary & Root-Cause Forensic Audit
+## 1. System Topology & Standardized File Tree Strategy
 
-A cross-subsystem forensic audit evaluated ingestion vectors, kernel transformations, B-Rep construction stages, rendering projections, and frontend serialization pathways to resolve unit scaling discrepancies and bridge desktop/cloud pipelines.
-
-```
-+-------------------------------------------------------------------------------------------------------+
-|                                  INSPECTION & INGESTION TAXONOMY                                      |
-+-------------------------------------------------------------------------------------------------------+
-| A. STEP Reader Scale Fault     | TopoDS_Shape length units mismatched with declared exchange scale     |
-| B. Canonical Distortion        | Ingestion pipeline applied redundant conversion multipliers          |
-| C. Tessellation Scaling Fault  | Chordal deflection evaluated in disparate unit space                  |
-| D. Viewport Adapter Corruption | UI layer scaled underlying geometries instead of presentation values |
-| E. Geodetic Projection Error   | Local mm -> WGS84 Geodetic conversion double-scaled meter altitudes  |
-+-------------------------------------------------------------------------------------------------------+
-```
-
-### Forensic Diagnosis Across Architecture Layers
-1. **Layer A (STEP Header vs Kernel Read):** `STEPControl_Reader` without explicit unit static configuration defaulted coordinates to millimeter assumptions regardless of whether `CONVERSION_BASED_UNIT('INCH', ...)` or `LENGTH_UNIT()` was declared in the STEP schema.
-2. **Layer B (Canonical Transformation Multiplication):** The parser extracted `scale_to_canonical` from header tokens, yet simultaneously accepted OCCT coordinates where internal scaling had already been executed, causing $(25.4)^2$ double-scaling on inch models.
-3. **Layer C (Tessellation Metric):** Linear deflection was hardcoded to scalar constants ($0.1$) without adjusting for bounding box diagonal metrics expressed in canonical millimeters.
-4. **Layer D (Frontend Unit Drift):** Measurement tools and inspection handlers evaluated `extents_mm` using arbitrary multiplication factors instead of strict single-point division by authoritative constants ($25.4$ for inches, $304.8$ for feet).
-
----
-
-## 2. Standardized File Tree Strategy
+GeoParametric3D separates mathematical B-Rep topology (authoritative truth) from GPU render buffers (derived approximations). The system deploys as a hybrid architecture: a high-throughput Python CAD kernel (OpenCASCADE / VisPy / NumPy) driving client-side rendering (`<gmp-map-3d>` / WebGL2 / OGL) via low-latency binary streams.
 
 ```
 .
@@ -69,6 +45,31 @@ A cross-subsystem forensic audit evaluated ingestion vectors, kernel transformat
 
 ---
 
-## 3. Authoritative Unit Subsystem & Conversion Constants
+## 2. Universal 64-Byte Magic Header & Binary Wire Protocol
+
+All geometric payloads, on-disk caches (`.xbf`), and network frames adhere to a fixed 64-byte aligned header. The client parses only the first 64 bytes to establish memory offsets and GPU allocations.
+
+### 2.1 64-Byte Binary Header Memory Map
+
+| Byte Offset | Data Type | Field Name | Description |
+| :--- | :--- | :--- | :--- |
+| `0x00 - 0x07` | `char[8]` | `magic_signature` | `"XBF_STRM"` (ASCII validation) |
+| `0x08 - 0x0B` | `uint32` | `format_type` | `0x00`: Native XBF, `0x01`: STEP B-Rep, `0x02`: Mesh, `0x03`: SDF Quad |
+| `0x0C - 0x0F` | `uint32` | `schema_version` | Engine schema revision (`0x00000008`) |
+| `0x10 - 0x17` | `uint64` | `vertex_count` | Total vertex count $N$ |
+| `0x18 - 0x1F` | `uint64` | `index_count` | Total index count $M$ (or 0 for point cloud/SDF) |
+| `0x20 - 0x23` | `uint32` | `interleaved_stride`| Byte stride per vertex (e.g., `32` for `[Pos(12B), Norm(12B), UV(8B)]`) |
+| `0x24 - 0x27` | `uint32` | `command_id` | `0x01`: Full Sync, `0x02`: VBO SubData, `0x03`: Matrix Update, `0x04`: Delete |
+| `0x28 - 0x3F` | `uint8[24]` | `attribute_mask` | Bitfield flags (Bit 0: Pos, 1: Norm, 2: UV, 3: Color, 4: FaceID, 5: Tangents) |
+
+### 2.2 Interleaved Vertex Layout (32-Byte Stride)
+To prevent GPU memory bus stalls and ensure direct `Float32Array` zero-copy transfer:
+* **`Offset 0x00` (12 Bytes):** `Position_XYZ` (3 $\times$ `Float32`)
+* **`Offset 0x0C` (12 Bytes):** `Normal_XYZ` (3 $\times$ `Float32`)
+* **`Offset 0x18` (8 Bytes):** `TexCoord_UV` / `Feature_ID` (2 $\times$ `Float32` / `UInt32`)
+
+---
+
+## 3. Authoritative Unit Subsystem & Dimensionless Mathematical Scaling
 
 Canonical internal length truth is strictly **Linear Millimeters ($\text{mm
